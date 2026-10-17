@@ -1,0 +1,7 @@
+[Unit]
+Description=Deploy ni-han-bao bot from origin/main
+
+[Service]
+Type=oneshot
+User=deploy
+ExecStart=/opt/ni-han-bao/bot/deploy/update.sh

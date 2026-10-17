@@ -1,0 +1,11 @@
+# Runs on the Hetzner box (next to forge, separate stack). Started and updated by
+# ni-han-bao-update.timer; secrets in bot/deploy/.env on the box only.
+name: ni-han-bao
+services:
+  bot:
+    build:
+      context: ../..
+      dockerfile: bot/Dockerfile
+    image: ni-han-bao-bot:local
+    restart: unless-stopped
+    env_file: .env
