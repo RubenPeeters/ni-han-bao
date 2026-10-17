@@ -22,6 +22,9 @@ export default function Home() {
         <Link href="/leaderboard" className="text-sm underline underline-offset-4">
           Who talks the most? See the leaderboard →
         </Link>
+        <Link href="/channels" className="text-sm underline underline-offset-4">
+          Where and when is it busy? See the channels →
+        </Link>
       </div>
     </main>
   );

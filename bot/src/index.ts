@@ -1,6 +1,6 @@
 import { Client, Events, GatewayIntentBits, MessageFlags } from "discord.js";
 import { createClient } from "@supabase/supabase-js";
-import { ActivityBuffer, flushActivity, memberRow, shouldCount } from "./activity.js";
+import { ActivityBuffer, channelRow, flushActivity, memberRow, shouldCount } from "./activity.js";
 import { loadConfig } from "./config.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 
@@ -50,12 +50,19 @@ function flush(): Promise<void> {
         .upsert(rows.map((r) => ({ ...r, updated_at: new Date().toISOString() })));
       if (error) throw new Error(`members upsert: ${error.message}`);
     },
+    async upsertChannels(rows) {
+      const { error } = await db
+        .from("channels")
+        .upsert(rows.map((r) => ({ ...r, updated_at: new Date().toISOString() })));
+      if (error) throw new Error(`channels upsert: ${error.message}`);
+    },
     async incrementCounts(batch) {
-      const { error } = await db.rpc("increment_message_counts", {
+      const { error } = await db.rpc("increment_activity", {
         batch: batch.id,
         counts: batch.counts,
+        channel_counts: batch.channelCounts,
       });
-      if (error) throw new Error(`increment_message_counts: ${error.message}`);
+      if (error) throw new Error(`increment_activity: ${error.message}`);
     },
   })
     .catch((err: unknown) => console.error("activity flush failed:", err))
@@ -75,9 +82,23 @@ client.on(Events.MessageCreate, (message) => {
     },
     config.guildId,
   );
-  if (!counted) return;
-  activity.addMessage(message.author.id, message.createdAt);
+  // inGuild() is implied by shouldCount; it is here to narrow the channel type.
+  if (!counted || !message.inGuild()) return;
+  const { channel } = message;
+  const row = channelRow({
+    id: channel.id,
+    name: channel.name,
+    parent: channel.isThread() ? channel.parent : null,
+  });
+  activity.addMessage(message.author.id, row.channel_id, message.createdAt);
   activity.setMember(memberRow(message.author, message.member));
+  activity.setChannel(row);
+});
+
+// Renames while the bot is offline are picked up by the channel's next message.
+client.on(Events.ChannelUpdate, (_old, channel) => {
+  if (channel.isDMBased() || channel.isThread() || channel.guildId !== config.guildId) return;
+  activity.setChannel(channelRow({ id: channel.id, name: channel.name }));
 });
 
 client.on(Events.GuildMemberUpdate, (_old, member) => {

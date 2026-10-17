@@ -19,6 +19,30 @@ export function utcDay(at: Date): string {
   return at.toISOString().slice(0, 10);
 }
 
+/** Start of the UTC hour as an ISO timestamp (a Postgres `timestamptz` literal). */
+export function utcHour(at: Date): string {
+  return `${at.toISOString().slice(0, 13)}:00:00.000Z`;
+}
+
+export interface ChannelInfo {
+  id: string;
+  name: string;
+  /**
+   * The channel a thread lives in; null when uncached. Leave unset for other channels:
+   * their discord.js `parent` is a category, which must not take their messages.
+   */
+  parent?: { id: string; name: string } | null;
+}
+
+/**
+ * Threads come and go, so their messages count toward the channel they live in. A thread
+ * whose parent is unknown counts as itself rather than being dropped.
+ */
+export function channelRow(channel: ChannelInfo): ChannelRow {
+  const target = channel.parent ?? channel;
+  return { channel_id: target.id, name: target.name };
+}
+
 export interface NameParts {
   nickname: string | null;
   globalName: string | null;
@@ -71,10 +95,29 @@ export interface CountRow {
   count: number;
 }
 
+export interface ChannelRow {
+  channel_id: string;
+  name: string;
+}
+
+export interface ChannelCountRow {
+  channel_id: string;
+  hour: string;
+  count: number;
+}
+
 /** Counts sent together under one id, so the database can drop a retry it already applied. */
 export interface CountBatch {
   id: string;
   counts: CountRow[];
+  channelCounts: ChannelCountRow[];
+}
+
+export interface Drained {
+  members: MemberRow[];
+  channels: ChannelRow[];
+  counts: CountRow[];
+  channelCounts: ChannelCountRow[];
 }
 
 /**
@@ -83,19 +126,32 @@ export interface CountBatch {
  */
 export class ActivityBuffer {
   private counts = new Map<string, CountRow>();
+  private channelCounts = new Map<string, ChannelCountRow>();
   private members = new Map<string, MemberRow>();
+  private channels = new Map<string, ChannelRow>();
   /**
    * A batch whose write failed: it may still have committed (e.g. the response was lost),
    * so it is resent unchanged under the same id rather than merged with newer counts.
    */
   pending: CountBatch | null = null;
 
-  addMessage(userId: string, at: Date): void {
-    const day = utcDay(at);
-    const key = `${userId}:${day}`;
+  addMessage(userId: string, channelId: string, at: Date): void {
+    this.addCount({ user_id: userId, day: utcDay(at), count: 1 });
+    this.addChannelCount({ channel_id: channelId, hour: utcHour(at), count: 1 });
+  }
+
+  private addCount(c: CountRow): void {
+    const key = `${c.user_id}:${c.day}`;
     const row = this.counts.get(key);
-    if (row) row.count += 1;
-    else this.counts.set(key, { user_id: userId, day, count: 1 });
+    if (row) row.count += c.count;
+    else this.counts.set(key, { ...c });
+  }
+
+  private addChannelCount(c: ChannelCountRow): void {
+    const key = `${c.channel_id}:${c.hour}`;
+    const row = this.channelCounts.get(key);
+    if (row) row.count += c.count;
+    else this.channelCounts.set(key, { ...c });
   }
 
   /** Latest snapshot wins: a member is written once per flush however often they change. */
@@ -103,15 +159,33 @@ export class ActivityBuffer {
     this.members.set(member.user_id, member);
   }
 
+  /** Latest name wins, like members. */
+  setChannel(channel: ChannelRow): void {
+    this.channels.set(channel.channel_id, channel);
+  }
+
   get isEmpty(): boolean {
-    return this.counts.size === 0 && this.members.size === 0 && this.pending === null;
+    return (
+      this.counts.size === 0 &&
+      this.channelCounts.size === 0 &&
+      this.members.size === 0 &&
+      this.channels.size === 0 &&
+      this.pending === null
+    );
   }
 
   /** Take everything buffered so far, leaving the buffer empty for new events. */
-  drain(): { members: MemberRow[]; counts: CountRow[] } {
-    const drained = { members: [...this.members.values()], counts: [...this.counts.values()] };
+  drain(): Drained {
+    const drained = {
+      members: [...this.members.values()],
+      channels: [...this.channels.values()],
+      counts: [...this.counts.values()],
+      channelCounts: [...this.channelCounts.values()],
+    };
     this.counts = new Map();
+    this.channelCounts = new Map();
     this.members = new Map();
+    this.channels = new Map();
     return drained;
   }
 
@@ -119,28 +193,28 @@ export class ActivityBuffer {
    * Put back drained data that was never sent, so it goes out next flush. Counts are added
    * to anything that arrived meanwhile; members only fill gaps, since newer snapshots win.
    */
-  restore({ members, counts }: { members: MemberRow[]; counts: CountRow[] }): void {
+  restore({ members, channels, counts, channelCounts }: Drained): void {
     for (const m of members) {
       if (!this.members.has(m.user_id)) this.members.set(m.user_id, m);
     }
-    for (const c of counts) {
-      const key = `${c.user_id}:${c.day}`;
-      const row = this.counts.get(key);
-      if (row) row.count += c.count;
-      else this.counts.set(key, { ...c });
+    for (const ch of channels) {
+      if (!this.channels.has(ch.channel_id)) this.channels.set(ch.channel_id, ch);
     }
+    for (const c of counts) this.addCount(c);
+    for (const c of channelCounts) this.addChannelCount(c);
   }
 }
 
 export interface ActivityWriter {
   upsertMembers(rows: MemberRow[]): Promise<void>;
+  upsertChannels(rows: ChannelRow[]): Promise<void>;
   /** Must apply each batch id at most once, however often it is sent. */
   incrementCounts(batch: CountBatch): Promise<void>;
 }
 
 /**
- * Write everything buffered. Members and counts are drained together, so every count's
- * member is written before it (counts reference members). A pending batch goes before the
+ * Write everything buffered. Members, channels and counts are drained together, so every
+ * count's member and channel are written before it (counts reference both). A pending batch goes before the
  * new one; whatever fails is kept for the next flush, so a database hiccup loses no
  * messages and, thanks to the batch id, double counts none either.
  */
@@ -150,19 +224,21 @@ export async function flushActivity(
   newBatchId: () => string = randomUUID,
 ): Promise<void> {
   if (buffer.isEmpty) return;
-  const { members, counts } = buffer.drain();
+  const drained = buffer.drain();
+  const { members, channels, counts, channelCounts } = drained;
   try {
     if (members.length) await writer.upsertMembers(members);
+    if (channels.length) await writer.upsertChannels(channels);
     if (buffer.pending) {
       await writer.incrementCounts(buffer.pending);
       buffer.pending = null;
     }
   } catch (err) {
-    buffer.restore({ members, counts });
+    buffer.restore(drained);
     throw err;
   }
-  if (!counts.length) return;
-  const batch = { id: newBatchId(), counts };
+  if (!counts.length && !channelCounts.length) return;
+  const batch = { id: newBatchId(), counts, channelCounts };
   try {
     await writer.incrementCounts(batch);
   } catch (err) {
