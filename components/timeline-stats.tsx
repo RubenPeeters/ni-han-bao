@@ -66,7 +66,7 @@ export async function TimelineStats() {
   ]);
 
   if (snapshots.error || flow.error || voice.error) {
-    return <p className="text-sm text-red-600">Could not load the timeline.</p>;
+    return <p className="text-sm text-destructive">Could not load the timeline.</p>;
   }
   return (
     <div className="flex flex-col gap-6">
@@ -91,19 +91,19 @@ function MemberCount({ rows }: { rows: SnapshotRow[] }) {
   const y = (n: number) => PAD.top + (1 - (n - lo) / span) * (H - PAD.top - PAD.bottom);
   const last = rows.at(-1);
   return (
-    <section className="rounded-lg border p-5 flex flex-col gap-3">
+    <section className="card flex flex-col gap-3">
       <div>
         <h2 className="text-lg font-semibold">Members</h2>
-        <p className="text-xs text-foreground/60">
+        <p className="text-xs text-muted-foreground">
           Member count per day, UTC, last {HISTORY_DAYS} days
           {last ? ` · now ${last.member_count.toLocaleString("en-US")}` : ""}
         </p>
       </div>
       {rows.length === 0 ? (
-        <p className="text-sm text-foreground/60">No member counts recorded yet.</p>
+        <p className="text-sm text-muted-foreground">No member counts recorded yet.</p>
       ) : (
         <>
-          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto text-foreground/60" aria-hidden>
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto text-xs text-muted-foreground" aria-hidden>
             {[hi, lo].map((n) => (
               <g key={n}>
                 <line
@@ -114,15 +114,15 @@ function MemberCount({ rows }: { rows: SnapshotRow[] }) {
                   stroke="currentColor"
                   strokeOpacity={0.15}
                 />
-                <text x={PAD.left - 6} y={y(n) + 3} textAnchor="end" fontSize={10} fill="currentColor">
+                <text x={PAD.left - 6} y={y(n) + 3} textAnchor="end" fill="currentColor">
                   {n.toLocaleString("en-US")}
                 </text>
               </g>
             ))}
-            <text x={PAD.left} y={H - 4} fontSize={10} fill="currentColor">
+            <text x={PAD.left} y={H - 4} fill="currentColor">
               {shortDate(rows[0].day)}
             </text>
-            <text x={W - PAD.right} y={H - 4} textAnchor="end" fontSize={10} fill="currentColor">
+            <text x={W - PAD.right} y={H - 4} textAnchor="end" fill="currentColor">
               {shortDate(rows[rows.length - 1].day)}
             </text>
             <polyline
@@ -177,13 +177,13 @@ function JoinsLeaves({ rows }: { rows: WeekRow[] }) {
     />
   );
   return (
-    <section className="rounded-lg border p-5 flex flex-col gap-3">
+    <section className="card flex flex-col gap-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="text-lg font-semibold">Joins vs leaves</h2>
-          <p className="text-xs text-foreground/60">Per week (from Monday, UTC), last {WEEKS} weeks</p>
+          <p className="text-xs text-muted-foreground">Per week (from Monday, UTC), last {WEEKS} weeks</p>
         </div>
-        <ul className="flex gap-3 text-xs text-foreground/60">
+        <ul className="flex gap-3 text-xs text-muted-foreground">
           <li className="flex items-center gap-1">
             <span className="size-2 rounded-sm" style={{ backgroundColor: JOINS }} /> Joins
           </li>
@@ -193,7 +193,7 @@ function JoinsLeaves({ rows }: { rows: WeekRow[] }) {
         </ul>
       </div>
       {max === 0 ? (
-        <p className="text-sm text-foreground/60">No joins or leaves recorded yet.</p>
+        <p className="text-sm text-muted-foreground">No joins or leaves recorded yet.</p>
       ) : (
         <>
           <div className="flex items-end gap-1 h-32" aria-hidden>
@@ -208,7 +208,7 @@ function JoinsLeaves({ rows }: { rows: WeekRow[] }) {
               </div>
             ))}
           </div>
-          <div className="flex gap-1 text-[10px] text-foreground/60" aria-hidden>
+          <div className="flex gap-1 text-xs text-muted-foreground" aria-hidden>
             {rows.map((r, i) => (
               <span key={r.week} className="flex-1 text-center">
                 {i % 3 === 0 ? shortDate(r.week) : ""}
@@ -242,18 +242,18 @@ function JoinsLeaves({ rows }: { rows: WeekRow[] }) {
 
 function TopVoice({ rows }: { rows: VoiceRow[] }) {
   return (
-    <section className="rounded-lg border p-5 flex flex-col gap-3">
+    <section className="card flex flex-col gap-3">
       <div>
         <h2 className="text-lg font-semibold">Top voice members</h2>
-        <p className="text-xs text-foreground/60">Time in voice channels this month (UTC)</p>
+        <p className="text-xs text-muted-foreground">Time in voice channels this month (UTC)</p>
       </div>
       {rows.length === 0 ? (
-        <p className="text-sm text-foreground/60">No voice time recorded this month yet.</p>
+        <p className="text-sm text-muted-foreground">No voice time recorded this month yet.</p>
       ) : (
         <ol className="flex flex-col gap-2">
           {rows.map((row, i) => (
             <li key={row.user_id} className="flex items-center gap-3 text-sm">
-              <span className="w-5 text-right text-foreground/60">{i + 1}</span>
+              <span className="w-5 text-right text-muted-foreground">{i + 1}</span>
               {row.avatar_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={row.avatar_url} alt="" width={28} height={28} className="rounded-full" />

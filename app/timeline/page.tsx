@@ -1,29 +1,23 @@
 import { TimelineStats } from "@/components/timeline-stats";
-import { ThemeSwitcher } from "@/components/theme-switcher";
 import { hasEnvVars } from "@/lib/utils";
-import Link from "next/link";
 import { Suspense } from "react";
 
 export const metadata = { title: "Timeline · ni han bao" };
 
 export default function TimelinePage() {
   return (
-    <main className="min-h-screen flex flex-col items-center">
-      <div className="flex-1 w-full max-w-3xl flex flex-col gap-10 p-5">
-        <header className="flex justify-between items-center border-b border-b-foreground/10 py-4">
-          <h1 className="text-2xl font-bold">
-            <Link href="/">ni han bao</Link> · timeline
-          </h1>
-          <ThemeSwitcher />
-        </header>
-        {hasEnvVars ? (
-          <Suspense fallback={<p className="text-sm text-foreground/60">Loading…</p>}>
-            <TimelineStats />
-          </Suspense>
-        ) : (
-          <p className="text-sm">Supabase env vars are not set.</p>
-        )}
+    <>
+      <div className="flex flex-col gap-2">
+        <h1 className="text-4xl font-semibold">Timeline</h1>
+        <p className="text-muted-foreground">How the server grows, and who hangs out in voice.</p>
       </div>
-    </main>
+      {hasEnvVars ? (
+        <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
+          <TimelineStats />
+        </Suspense>
+      ) : (
+        <p className="text-sm">Supabase env vars are not set.</p>
+      )}
+    </>
   );
 }

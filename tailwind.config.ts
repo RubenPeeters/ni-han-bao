@@ -10,6 +10,15 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
+    // The whole type scale: six sizes, replacing Tailwind's defaults so no other size exists.
+    fontSize: {
+      xs: ["0.75rem", { lineHeight: "1rem" }],
+      sm: ["0.875rem", { lineHeight: "1.25rem" }],
+      base: ["1rem", { lineHeight: "1.5rem" }],
+      lg: ["1.125rem", { lineHeight: "1.75rem" }],
+      "2xl": ["1.5rem", { lineHeight: "1.2", letterSpacing: "-0.02em" }],
+      "4xl": ["2.25rem", { lineHeight: "1.1", letterSpacing: "-0.03em" }],
+    },
     extend: {
       colors: {
         background: "hsl(var(--background))",
@@ -42,15 +51,13 @@ export default {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))",
         },
+        success: "hsl(var(--success))",
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
         chart: {
           "1": "hsl(var(--chart-1))",
           "2": "hsl(var(--chart-2))",
-          "3": "hsl(var(--chart-3))",
-          "4": "hsl(var(--chart-4))",
-          "5": "hsl(var(--chart-5))",
         },
       },
       borderRadius: {

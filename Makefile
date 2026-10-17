@@ -4,6 +4,7 @@ install:
 # Builds without Supabase env vars (the example shows a setup notice instead), so CI needs no secrets.
 check: install
 	pnpm lint
+	node scripts/check-design-tokens.mjs
 	pnpm build
 	node scripts/check-public-pages.mjs
 	pnpm --filter ni-han-bao-bot typecheck
