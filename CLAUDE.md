@@ -34,6 +34,9 @@ Discord ──gateway──► bot/ (discord.js, container on the Hetzner box)
 ## Commands
 
 - `make check`: lint + build the site, typecheck + test the bot. Must pass before pushing.
+- `make screenshots`: build the site and write full-page PNGs of every page (375px and
+  1280px, dark) to `.forge/screenshots/`. Pages are discovered from `app/**/page.tsx`. Look
+  at them after any visible change; forge also attaches them to every review.
 - Bot tests: `bot/src/*.test.ts` (vitest). Keep Discord and Supabase out of unit tests:
   put logic in pure functions and test those.
 
