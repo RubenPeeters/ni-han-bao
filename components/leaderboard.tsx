@@ -1,3 +1,11 @@
+import {
+  EmptyState,
+  ErrorState,
+  MemberRankRow,
+  RankList,
+  StatCard,
+  StatGrid,
+} from "@/components/stat-ui";
 import { createClient } from "@/lib/supabase/server";
 
 const TOP = 10;
@@ -27,44 +35,34 @@ export async function Leaderboard() {
   ]);
 
   if (week.error || allTime.error) {
-    return <p className="text-sm text-destructive">Could not load the leaderboard.</p>;
+    return <ErrorState title="Could not load the leaderboard">Try again in a minute.</ErrorState>;
   }
   return (
-    <div className="grid gap-6 sm:grid-cols-2">
-      <Board title="This week" subtitle={`Since Monday ${weekStart} (UTC)`} rows={week.data} />
-      <Board title="All time" rows={allTime.data} />
-    </div>
+    <StatGrid>
+      <Board title="This week" description={`Since Monday ${weekStart} (UTC)`} rows={week.data} />
+      <Board title="All time" description="Every message since the bot joined" rows={allTime.data} />
+    </StatGrid>
   );
 }
 
-function Board({ title, subtitle, rows }: { title: string; subtitle?: string; rows: Row[] }) {
+function Board({ title, description, rows }: { title: string; description: string; rows: Row[] }) {
   return (
-    <section className="card flex flex-col gap-3">
-      <div>
-        <h2 className="text-lg font-semibold">{title}</h2>
-        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
-      </div>
+    <StatCard title={title} description={description}>
       {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No messages counted yet.</p>
+        <EmptyState>No messages counted yet.</EmptyState>
       ) : (
-        <ol className="flex flex-col gap-2">
+        <RankList>
           {rows.map((row, i) => (
-            <li key={row.user_id} className="flex items-center gap-3 text-sm">
-              <span className="w-5 text-right text-muted-foreground">{i + 1}</span>
-              {row.avatar_url ? (
-                // Discord CDN avatars are already small; next/image would need a remote
-                // pattern and optimisation quota for no visible gain.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={row.avatar_url} alt="" width={28} height={28} className="rounded-full" />
-              ) : (
-                <span className="size-7 rounded-full bg-foreground/10" />
-              )}
-              <span className="flex-1 truncate">{row.display_name}</span>
-              <span className="tabular-nums">{row.message_count.toLocaleString("en-US")}</span>
-            </li>
+            <MemberRankRow
+              key={row.user_id}
+              rank={i + 1}
+              name={row.display_name}
+              avatarUrl={row.avatar_url}
+              value={row.message_count.toLocaleString("en-US")}
+            />
           ))}
-        </ol>
+        </RankList>
       )}
-    </section>
+    </StatCard>
   );
 }

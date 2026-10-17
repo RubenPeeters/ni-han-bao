@@ -1,4 +1,5 @@
 import { Leaderboard } from "@/components/leaderboard";
+import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
@@ -7,16 +8,13 @@ export const metadata = { title: "Leaderboard · ni han bao" };
 export default function LeaderboardPage() {
   return (
     <>
-      <div className="flex flex-col gap-2">
-        <h1 className="text-4xl font-semibold">Leaderboard</h1>
-        <p className="text-muted-foreground">Who talks the most.</p>
-      </div>
+      <PageHeader title="Leaderboard" description="Who talks the most." />
       {hasEnvVars ? (
-        <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
+        <Suspense fallback={<StatsSkeleton cards={2} />}>
           <Leaderboard />
         </Suspense>
       ) : (
-        <p className="text-sm">Supabase env vars are not set.</p>
+        <NotConfigured />
       )}
     </>
   );
