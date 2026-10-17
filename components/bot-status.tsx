@@ -20,6 +20,11 @@ export async function BotStatus() {
   const online = Date.now() - lastSeen.getTime() < STALE_AFTER_MS;
   return (
     <div className="rounded-lg border p-5 flex flex-col gap-1">
+      {!online && (
+        <p role="status" className="rounded-md bg-red-600 px-3 py-2 font-semibold text-white">
+          Bot offline since {lastSeen.toUTCString()}
+        </p>
+      )}
       <p className="text-lg font-semibold">{data.guild_name}</p>
       <p className="text-sm">{data.member_count} members</p>
       <p className="text-sm text-foreground/60">

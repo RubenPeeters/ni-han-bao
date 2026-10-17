@@ -4,7 +4,11 @@ import {
   Events,
   GatewayIntentBits,
   MessageFlags,
+  type MessageReaction,
   Partials,
+  type PartialMessageReaction,
+  type PartialUser,
+  type User,
 } from "discord.js";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -16,7 +20,9 @@ import {
   utcDay,
   type MemberRow,
 } from "./activity.js";
+import { Backoff, flushUntil, InFlight } from "./backoff.js";
 import { loadConfig } from "./config.js";
+import { createLogger } from "./log.js";
 import { emojiRow, flushReactions, ReactionBuffer, receivesReaction } from "./reactions.js";
 import {
   CHANNEL_DAYS,
@@ -34,8 +40,12 @@ import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 
 const HEARTBEAT_MS = 60_000;
 const FLUSH_MS = 10_000;
+// Docker stop waits 10 s after SIGTERM before it kills the container.
+const SHUTDOWN_DEADLINE_MS = 8_000;
+const SHUTDOWN_KILL_MS = 9_500;
 
 const config = loadConfig();
+const log = createLogger(config.guildId);
 // The secret key bypasses RLS: the bot is the only writer. Never ship it to the website.
 const db = createClient(config.supabaseUrl, config.supabaseSecretKey, {
   auth: { persistSession: false },
@@ -56,6 +66,15 @@ const client = new Client({
 });
 
 async function heartbeat(): Promise<void> {
+  // Caught here: it runs from a timer, and an unhandled rejection would exit the bot.
+  try {
+    await writeHeartbeat();
+  } catch (err) {
+    log("error", "heartbeat_failed", { error: err });
+  }
+}
+
+async function writeHeartbeat(): Promise<void> {
   const guild = await client.guilds.fetch(config.guildId);
   const { error } = await db.from("bot_status").upsert({
     id: 1,
@@ -64,19 +83,23 @@ async function heartbeat(): Promise<void> {
     member_count: guild.memberCount,
     last_seen: new Date().toISOString(),
   });
-  if (error) console.error("heartbeat failed:", error.message);
+  if (error) log("error", "heartbeat_failed", { error: error.message });
   // Rewritten every heartbeat, so each day keeps the last count seen that day.
   const snapshot = await db.from("member_count_snapshots").upsert({
     day: utcDay(new Date()),
     member_count: guild.memberCount,
     updated_at: new Date().toISOString(),
   });
-  if (snapshot.error) console.error("member count snapshot failed:", snapshot.error.message);
+  if (snapshot.error) {
+    log("error", "member_count_snapshot_failed", { error: snapshot.error.message });
+  }
 }
 
 const activity = new ActivityBuffer();
 
-let flushing: Promise<void> | null = null;
+let flushing: Promise<boolean> | null = null;
+// Flushes and reaction lookups started before shutdown; they may still add or write counts.
+const inFlight = new InFlight();
 
 const reactions = new ReactionBuffer();
 
@@ -90,7 +113,13 @@ async function upsertMembers(rows: MemberRow[]): Promise<void> {
   if (error) throw new Error(`members upsert: ${error.message}`);
 }
 
-async function flushAll(): Promise<void> {
+/** Logs each stream that failed and reports whether all of them were written. */
+async function flushAll(): Promise<boolean> {
+  let ok = true;
+  const failed = (stream: string) => (err: unknown) => {
+    ok = false;
+    log("warn", "flush_failed", { stream, error: err });
+  };
   await flushActivity(activity, {
     upsertMembers,
     async upsertChannels(rows) {
@@ -107,7 +136,7 @@ async function flushAll(): Promise<void> {
       });
       if (error) throw new Error(`increment_activity: ${error.message}`);
     },
-  }).catch((err: unknown) => console.error("activity flush failed:", err));
+  }).catch(failed("activity"));
   await flushReactions(reactions, {
     upsertMembers,
     async incrementReactions(batch) {
@@ -119,7 +148,7 @@ async function flushAll(): Promise<void> {
       });
       if (error) throw new Error(`increment_reactions: ${error.message}`);
     },
-  }).catch((err: unknown) => console.error("reaction flush failed:", err));
+  }).catch(failed("reactions"));
   // Count open voice sessions up to now, so a crash loses at most one flush interval.
   timeline.addVoice(voice.collect(new Date()));
   await flushTimeline(timeline, {
@@ -132,15 +161,69 @@ async function flushAll(): Promise<void> {
       });
       if (error) throw new Error(`increment_timeline: ${error.message}`);
     },
-  }).catch((err: unknown) => console.error("timeline flush failed:", err));
+  }).catch(failed("timeline"));
+  return ok;
 }
 
 // One flush at a time, so shutdown can wait for the one in flight before writing the rest.
-function flush(): Promise<void> {
-  flushing ??= flushAll().finally(() => {
+function flush(): Promise<boolean> {
+  flushing ??= inFlight.track(
+    flushAll().finally(() => {
       flushing = null;
-    });
+    }),
+  );
   return flushing;
+}
+
+const sum = <T>(rows: T[], value: (row: T) => number) => rows.reduce((n, r) => n + value(r), 0);
+
+/** Totals for the log: what a retry carries, or what a shutdown could not write. */
+function totals(
+  counts: { count: number }[],
+  emojiCounts: { count: number }[],
+  flow: { joins: number; leaves: number }[],
+  voiceRows: { seconds: number }[],
+) {
+  return {
+    messages: sum(counts, (c) => c.count),
+    reactions: sum(emojiCounts, (c) => c.count),
+    joins: sum(flow, (f) => f.joins),
+    leaves: sum(flow, (f) => f.leaves),
+    voice_seconds: sum(voiceRows, (v) => v.seconds),
+  };
+}
+
+/** Everything not yet written: buffered counts plus failed batches. */
+function unwritten() {
+  // Drain and put straight back: restore into the emptied maps is exact, and nothing
+  // can run between the two calls.
+  const a = activity.drain();
+  const r = reactions.drain();
+  const t = timeline.drain();
+  activity.restore(a);
+  reactions.restore(r);
+  timeline.restore(t);
+  return totals(
+    [...a.counts, ...(activity.pending?.counts ?? [])],
+    [...r.emojiCounts, ...(reactions.pending?.emojiCounts ?? [])],
+    [...t.flow, ...(timeline.pending?.flow ?? [])],
+    [...t.voice, ...(timeline.pending?.voice ?? [])],
+  );
+}
+
+// Failed writes stay buffered, so retrying later loses nothing; backing off spares a
+// struggling database a request every 10 s.
+const flushBackoff = new Backoff(FLUSH_MS, 5 * 60_000);
+
+async function periodicFlush(): Promise<void> {
+  if (stopping || !flushBackoff.ready(Date.now())) return;
+  if (await flush()) {
+    if (flushBackoff.failures) log("info", "flush_recovered", { failures: flushBackoff.failures });
+    flushBackoff.succeed();
+    return;
+  }
+  const delay = flushBackoff.fail(Date.now());
+  log("warn", "flush_retry", { attempt: flushBackoff.failures, retry_in_ms: delay, ...unwritten() });
 }
 
 client.on(Events.MessageCreate, (message) => {
@@ -167,7 +250,12 @@ client.on(Events.MessageCreate, (message) => {
 });
 
 // Removals are ignored on purpose (see ReactionBuffer), so there is no MessageReactionRemove.
-client.on(Events.MessageReactionAdd, async (reaction, user) => {
+client.on(Events.MessageReactionAdd, (reaction, user) => void inFlight.track(countReaction(reaction, user)));
+
+async function countReaction(
+  reaction: MessageReaction | PartialMessageReaction,
+  user: User | PartialUser,
+): Promise<void> {
   const { message } = reaction;
   if (user.bot || message.guildId !== config.guildId) return;
   const emoji = emojiRow(reaction.emoji);
@@ -189,9 +277,9 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
       reactions.addReceived(memberRow(full.author, full.member), at);
     }
   } catch (err) {
-    console.error("reaction author lookup failed:", err);
+    log("error", "reaction_author_lookup_failed", { error: err });
   }
-});
+}
 
 // Renames while the bot is offline are picked up by the channel's next message.
 client.on(Events.ChannelUpdate, (_old, channel) => {
@@ -303,12 +391,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
         interaction.commandName === "me" ? { flags: MessageFlags.Ephemeral } : {},
       );
       const reply = await statsReply(interaction).catch((err: unknown) => {
-        console.error(`/${interaction.commandName} failed:`, err);
+        log("error", "command_failed", { command: interaction.commandName, error: err });
         return "Could not load the stats. Please try again later.";
       });
       await interaction.editReply(reply);
     } catch (err) {
-      console.error(`/${interaction.commandName} failed:`, err);
+      log("error", "command_failed", { command: interaction.commandName, error: err });
     }
     return;
   }
@@ -332,21 +420,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
     );
     await interaction.editReply(reply);
   } catch (err) {
-    console.error(`/${interaction.commandName} failed:`, err);
+    log("error", "command_failed", { command: interaction.commandName, error: err });
   }
 });
 
 client.once(Events.ClientReady, async (c) => {
-  console.log(`logged in as ${c.user.tag}`);
+  log("info", "ready", { user: c.user.tag });
   // Guild commands, not global ones: they apply instantly and only in our server.
   try {
     await c.application.commands.set([...VISIBILITY_COMMANDS, ...STATS_COMMANDS], config.guildId);
   } catch (err) {
-    console.error("command registration failed:", err);
+    log("error", "command_registration_failed", { error: err });
   }
   await heartbeat();
   setInterval(() => void heartbeat(), HEARTBEAT_MS);
-  setInterval(() => void flush(), FLUSH_MS);
+  setInterval(() => void periodicFlush(), FLUSH_MS);
   // Names and avatars may have changed while the bot was offline.
   try {
     const guild = await c.guilds.fetch(config.guildId);
@@ -360,20 +448,67 @@ client.once(Events.ClientReady, async (c) => {
     for (const m of inVoice) timeline.setMember(memberRow(m.user, m));
     timeline.addVoice(voice.sync(inVoice.map((m) => m.id), new Date()));
   } catch (err) {
-    console.error("member sync failed:", err);
+    log("error", "member_sync_failed", { error: err });
   }
 });
 
-const shutdown = () => {
+// discord.js reconnects by itself; these only make outages visible in the log.
+client.on(Events.ShardReconnecting, (shard) => log("warn", "discord_reconnecting", { shard }));
+client.on(Events.ShardResume, (shard, replayed) => log("info", "discord_resumed", { shard, replayed }));
+client.on(Events.ShardReady, (shard) => log("info", "discord_shard_ready", { shard }));
+client.on(Events.ShardError, (error, shard) => log("error", "discord_error", { shard, error }));
+client.on(Events.Warn, (message) => log("warn", "discord_warn", { message }));
+// Without a listener, an emitted "error" would throw and crash the bot.
+client.on(Events.Error, (error) => log("error", "discord_error", { error }));
+// Emitted only when discord.js has given up reconnecting: exit so Docker restarts us.
+client.on(Events.ShardDisconnect, (event, shard) => {
+  log("error", "discord_disconnected", { shard, code: event.code });
+  void shutdown(1);
+});
+
+let stopping = false;
+
+async function shutdown(code: number): Promise<void> {
+  if (stopping) return;
+  stopping = true;
+  const deadline = Date.now() + SHUTDOWN_DEADLINE_MS;
+  log("info", "shutdown", { code });
+  // A write can hang with no timeout of its own; exit before Docker's SIGKILL either way.
+  setTimeout(() => {
+    // A hung write holds its drained batch where unwritten() cannot see it, so `lost` is
+    // then a lower bound.
+    log("error", "shutdown_timeout", { flush_in_flight: flushing !== null, lost: unwritten() });
+    process.exit(code);
+  }, SHUTDOWN_KILL_MS);
+  // Stop new events first, then let work in flight finish: a flush drained the buffers before
+  // anything it missed arrived, and a reaction lookup may still add a count.
+  await client.destroy();
+  await inFlight.settle();
   // Close open voice sessions now, so the next start does not have to guess when they ended.
   timeline.addVoice(voice.closeAll(new Date()));
-  // The first call waits for any flush already in flight, the second writes what is left.
-  void flush()
-    .then(() => flush())
-    .finally(() => client.destroy())
-    .finally(() => process.exit(0));
-};
-process.on("SIGTERM", shutdown);
-process.on("SIGINT", shutdown);
+  const clock = {
+    now: Date.now,
+    sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+  };
+  const ok = await flushUntil(flush, deadline, new Backoff(500, 2000), clock, (attempt, delay) =>
+    log("warn", "flush_retry", { attempt, retry_in_ms: delay, ...unwritten() }),
+  );
+  if (ok) log("info", "flushed");
+  else log("error", "flush_lost", { lost: unwritten() });
+  process.exit(code);
+}
+
+process.on("SIGTERM", () => void shutdown(0));
+process.on("SIGINT", () => void shutdown(0));
+
+// Non-zero exit, so the unless-stopped restart policy brings the bot back.
+function fatal(event: string, error: unknown): void {
+  log("fatal", event, { error });
+  // Failing again while shutting down: the flush itself may be what broke, so stop now.
+  if (stopping) process.exit(1);
+  void shutdown(1);
+}
+process.on("unhandledRejection", (reason) => fatal("unhandled_rejection", reason));
+process.on("uncaughtException", (error) => fatal("uncaught_exception", error));
 
 await client.login(config.discordToken);
