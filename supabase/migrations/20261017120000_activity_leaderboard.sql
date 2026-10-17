@@ -23,24 +23,43 @@ alter table public.message_counts enable row level security;
 
 create policy "public read" on public.message_counts for select to anon, authenticated using (true);
 
+-- Ids of count batches already applied. A flush whose response is lost is retried with
+-- the same id; recording the id in the same transaction as the increment makes that
+-- retry a no-op instead of a double count. Holds ids and timestamps only.
+create table if not exists public.applied_count_batches (
+    batch_id uuid primary key,
+    applied_at timestamptz not null default now()
+);
+
+alter table public.applied_count_batches enable row level security;
+
+create policy "public read" on public.applied_count_batches for select to anon, authenticated using (true);
+
 -- The bot flushes buffered counts through this function so each increment happens inside
 -- one INSERT ... ON CONFLICT statement: no read-modify-write race between flushes.
-create or replace function public.increment_message_counts(counts jsonb)
+create or replace function public.increment_message_counts(batch uuid, counts jsonb)
 returns void
-language sql
+language plpgsql
 security invoker
 set search_path = ''
 as $$
+begin
+    insert into public.applied_count_batches (batch_id) values (batch) on conflict do nothing;
+    if not found then
+        return;  -- already applied by an earlier attempt
+    end if;
+
     insert into public.message_counts (user_id, day, count)
     select c.user_id, c.day, c.count
     from jsonb_to_recordset(counts) as c(user_id text, day date, count integer)
     on conflict (user_id, day)
     do update set count = public.message_counts.count + excluded.count;
+end;
 $$;
 
 -- Writes are for the bot only (service_role); the website must not be able to call this.
-revoke execute on function public.increment_message_counts(jsonb) from public, anon, authenticated;
-grant execute on function public.increment_message_counts(jsonb) to service_role;
+revoke execute on function public.increment_message_counts(uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.increment_message_counts(uuid, jsonb) to service_role;
 
 -- Top members by messages since `since` (UTC day, inclusive), or all time when null.
 -- security invoker: runs under the caller's RLS, so it can only see what anon can select.

@@ -1,6 +1,6 @@
-import { Client, Events, GatewayIntentBits, type GuildMember, type User } from "discord.js";
+import { Client, Events, GatewayIntentBits } from "discord.js";
 import { createClient } from "@supabase/supabase-js";
-import { ActivityBuffer, displayName, flushActivity, shouldCount, type MemberRow } from "./activity.js";
+import { ActivityBuffer, flushActivity, memberRow, shouldCount } from "./activity.js";
 import { loadConfig } from "./config.js";
 
 const HEARTBEAT_MS = 60_000;
@@ -38,20 +38,6 @@ async function heartbeat(): Promise<void> {
 
 const activity = new ActivityBuffer();
 
-// `member` can be missing on a message (e.g. uncached); fall back to the user so every
-// counted author still gets a members row, which message_counts references.
-function memberRow(user: User, member: GuildMember | null): MemberRow {
-  return {
-    user_id: user.id,
-    display_name: displayName({
-      nickname: member?.nickname ?? null,
-      globalName: user.globalName,
-      username: user.username,
-    }),
-    avatar_url: (member ?? user).displayAvatarURL(),
-  };
-}
-
 let flushing: Promise<void> | null = null;
 
 // One flush at a time, so shutdown can wait for the one in flight before writing the rest.
@@ -63,8 +49,11 @@ function flush(): Promise<void> {
         .upsert(rows.map((r) => ({ ...r, updated_at: new Date().toISOString() })));
       if (error) throw new Error(`members upsert: ${error.message}`);
     },
-    async incrementCounts(rows) {
-      const { error } = await db.rpc("increment_message_counts", { counts: rows });
+    async incrementCounts(batch) {
+      const { error } = await db.rpc("increment_message_counts", {
+        batch: batch.id,
+        counts: batch.counts,
+      });
       if (error) throw new Error(`increment_message_counts: ${error.message}`);
     },
   })
@@ -94,6 +83,16 @@ client.on(Events.GuildMemberUpdate, (_old, member) => {
   if (member.guild.id === config.guildId && !member.user.bot) {
     activity.setMember(memberRow(member.user, member));
   }
+});
+
+// Global name and avatar changes arrive only as UserUpdate: discord.js emits
+// GuildMemberUpdate just for guild-level changes (nickname, guild avatar, roles).
+client.on(Events.UserUpdate, (_old, user) => {
+  if (user.bot) return;
+  // The member cache is complete (fetched on ready, kept current by the GuildMembers
+  // intent), so a miss means the user is not in our server and gets no row.
+  const member = client.guilds.cache.get(config.guildId)?.members.cache.get(user.id);
+  if (member) activity.setMember(memberRow(user, member));
 });
 
 client.once(Events.ClientReady, async (c) => {

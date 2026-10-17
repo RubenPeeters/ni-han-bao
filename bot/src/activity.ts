@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 export interface MessageInfo {
   guildId: string | null;
   authorIsBot: boolean;
@@ -28,6 +30,35 @@ export function displayName({ nickname, globalName, username }: NameParts): stri
   return nickname || globalName || username;
 }
 
+export interface ProfileUser {
+  id: string;
+  username: string;
+  globalName: string | null;
+  displayAvatarURL(): string;
+}
+
+export interface ProfileMember {
+  nickname: string | null;
+  displayAvatarURL(): string;
+}
+
+/**
+ * `member` can be missing on a message (e.g. uncached); fall back to the user so every
+ * counted author still gets a members row, which message_counts references. A guild
+ * member's avatar already falls back to the global one.
+ */
+export function memberRow(user: ProfileUser, member: ProfileMember | null): MemberRow {
+  return {
+    user_id: user.id,
+    display_name: displayName({
+      nickname: member?.nickname ?? null,
+      globalName: user.globalName,
+      username: user.username,
+    }),
+    avatar_url: (member ?? user).displayAvatarURL(),
+  };
+}
+
 export interface MemberRow {
   user_id: string;
   display_name: string;
@@ -40,6 +71,12 @@ export interface CountRow {
   count: number;
 }
 
+/** Counts sent together under one id, so the database can drop a retry it already applied. */
+export interface CountBatch {
+  id: string;
+  counts: CountRow[];
+}
+
 /**
  * Collects message counts and member snapshots in memory between flushes. Increments are
  * summed here and applied by the database in one statement, so bursts never race.
@@ -47,6 +84,11 @@ export interface CountRow {
 export class ActivityBuffer {
   private counts = new Map<string, CountRow>();
   private members = new Map<string, MemberRow>();
+  /**
+   * A batch whose write failed: it may still have committed (e.g. the response was lost),
+   * so it is resent unchanged under the same id rather than merged with newer counts.
+   */
+  pending: CountBatch | null = null;
 
   addMessage(userId: string, at: Date): void {
     const day = utcDay(at);
@@ -62,7 +104,7 @@ export class ActivityBuffer {
   }
 
   get isEmpty(): boolean {
-    return this.counts.size === 0 && this.members.size === 0;
+    return this.counts.size === 0 && this.members.size === 0 && this.pending === null;
   }
 
   /** Take everything buffered so far, leaving the buffer empty for new events. */
@@ -74,8 +116,8 @@ export class ActivityBuffer {
   }
 
   /**
-   * Put back a batch whose write failed so it is retried next flush. Counts are added to
-   * anything that arrived meanwhile; members only fill gaps, since newer snapshots win.
+   * Put back drained data that was never sent, so it goes out next flush. Counts are added
+   * to anything that arrived meanwhile; members only fill gaps, since newer snapshots win.
    */
   restore({ members, counts }: { members: MemberRow[]; counts: CountRow[] }): void {
     for (const m of members) {
@@ -92,26 +134,39 @@ export class ActivityBuffer {
 
 export interface ActivityWriter {
   upsertMembers(rows: MemberRow[]): Promise<void>;
-  incrementCounts(rows: CountRow[]): Promise<void>;
+  /** Must apply each batch id at most once, however often it is sent. */
+  incrementCounts(batch: CountBatch): Promise<void>;
 }
 
 /**
- * Write one drained batch. Members go first because counts reference them; whatever fails
- * is restored into the buffer for the next flush, so a database hiccup loses no messages.
+ * Write everything buffered. Members and counts are drained together, so every count's
+ * member is written before it (counts reference members). A pending batch goes before the
+ * new one; whatever fails is kept for the next flush, so a database hiccup loses no
+ * messages and, thanks to the batch id, double counts none either.
  */
-export async function flushActivity(buffer: ActivityBuffer, writer: ActivityWriter): Promise<void> {
+export async function flushActivity(
+  buffer: ActivityBuffer,
+  writer: ActivityWriter,
+  newBatchId: () => string = randomUUID,
+): Promise<void> {
   if (buffer.isEmpty) return;
   const { members, counts } = buffer.drain();
   try {
     if (members.length) await writer.upsertMembers(members);
+    if (buffer.pending) {
+      await writer.incrementCounts(buffer.pending);
+      buffer.pending = null;
+    }
   } catch (err) {
     buffer.restore({ members, counts });
     throw err;
   }
+  if (!counts.length) return;
+  const batch = { id: newBatchId(), counts };
   try {
-    if (counts.length) await writer.incrementCounts(counts);
+    await writer.incrementCounts(batch);
   } catch (err) {
-    buffer.restore({ members: [], counts });
+    buffer.pending = batch;
     throw err;
   }
 }
