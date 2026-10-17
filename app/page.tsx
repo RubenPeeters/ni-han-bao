@@ -1,37 +1,50 @@
-import { BotStatus } from "@/components/bot-status";
+import {
+  AvatarPlaceholder,
+  BotAvatar,
+  BotStatusPill,
+  StatusPill,
+} from "@/components/bot-status";
+import { HomeStats, StatCards } from "@/components/home-stats";
+import { buttonVariants } from "@/components/ui/button";
 import { hasEnvVars } from "@/lib/utils";
 import Link from "next/link";
 import { Suspense } from "react";
 
-const SECTIONS = [
-  { href: "/leaderboard", title: "Leaderboard", text: "Who talks the most?" },
-  { href: "/channels", title: "Channels", text: "Where and when is it busy?" },
-  { href: "/emoji", title: "Emoji", text: "What does everyone react with?" },
-  { href: "/timeline", title: "Timeline", text: "How is the server growing, and who hangs out in voice?" },
-];
+const UNKNOWN = <StatusPill label="Status unknown" color="bg-muted-foreground" />;
 
 export default function Home() {
   return (
     <>
-      <div className="flex flex-col gap-2">
-        <h1 className="text-4xl font-semibold">ni han bao</h1>
-        <p className="text-muted-foreground">Fun statistics about our Discord server.</p>
-      </div>
+      <section className="hero-scroll flex flex-col items-center gap-4 py-6 text-center sm:py-10">
+        {hasEnvVars ? (
+          <Suspense fallback={<AvatarPlaceholder />}>
+            <BotAvatar />
+          </Suspense>
+        ) : (
+          <AvatarPlaceholder />
+        )}
+        <div className="flex flex-col gap-2">
+          <h1 className="text-4xl font-semibold">ni han bao</h1>
+          <p className="text-muted-foreground">Counts every message. Reads none of them.</p>
+        </div>
+        {hasEnvVars ? (
+          <Suspense fallback={UNKNOWN}>
+            <BotStatusPill />
+          </Suspense>
+        ) : (
+          UNKNOWN
+        )}
+        <Link href="/leaderboard" className={buttonVariants({ size: "lg", className: "mt-2" })}>
+          See the leaderboard
+        </Link>
+      </section>
       {hasEnvVars ? (
-        <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
-          <BotStatus />
+        <Suspense fallback={<StatCards />}>
+          <HomeStats />
         </Suspense>
       ) : (
-        <p className="text-sm">Supabase env vars are not set.</p>
+        <StatCards />
       )}
-      <div className="grid gap-4 sm:grid-cols-2">
-        {SECTIONS.map(({ href, title, text }) => (
-          <Link key={href} href={href} className="card flex flex-col gap-1 active:bg-secondary">
-            <span className="text-lg font-semibold">{title} →</span>
-            <span className="text-sm text-muted-foreground">{text}</span>
-          </Link>
-        ))}
-      </div>
     </>
   );
 }

@@ -10,7 +10,7 @@ interface Row {
 }
 
 /** Monday 00:00 UTC of the week containing `now`, as YYYY-MM-DD. */
-function utcWeekStart(now: Date): string {
+export function utcWeekStart(now: Date): string {
   const daysSinceMonday = (now.getUTCDay() + 6) % 7;
   const monday = new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysSinceMonday),

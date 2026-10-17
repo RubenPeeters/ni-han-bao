@@ -92,3 +92,22 @@
     @apply rounded-xl border bg-card/70 p-5 text-card-foreground transition-colors hover:border-primary/40;
   }
 }
+
+/* The home hero dims and blurs as it scrolls away. CSS scroll timeline, so browsers without
+   support just skip it, and nothing moves for people who ask for reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .hero-scroll {
+      animation: hero-dim linear both;
+      animation-timeline: view();
+      animation-range: exit;
+    }
+  }
+}
+
+@keyframes hero-dim {
+  to {
+    opacity: 0.3;
+    filter: blur(6px);
+  }
+}
