@@ -31,6 +31,8 @@ create table if not exists public.applied_count_batches (
     applied_at timestamptz not null default now()
 );
 
+create index if not exists applied_count_batches_applied_at on public.applied_count_batches (applied_at);
+
 alter table public.applied_count_batches enable row level security;
 
 create policy "public read" on public.applied_count_batches for select to anon, authenticated using (true);
@@ -44,6 +46,10 @@ security invoker
 set search_path = ''
 as $$
 begin
+    -- A batch id only needs remembering while the bot can still resend it: its pending
+    -- batch lives in memory and is retried every flush, so a week is far beyond that.
+    delete from public.applied_count_batches where applied_at < now() - interval '7 days';
+
     insert into public.applied_count_batches (batch_id) values (batch) on conflict do nothing;
     if not found then
         return;  -- already applied by an earlier attempt
