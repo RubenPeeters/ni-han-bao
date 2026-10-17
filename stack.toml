@@ -1,0 +1,14 @@
+# Defaults for a hosted web app: Next.js on Vercel, Supabase for Postgres + auth.
+# Scaffold is the official vercel/next.js `with-supabase` example (cookie-based Supabase auth).
+# Use the `webapp` template instead when the app should run on your own Hetzner box.
+[stack]
+framework = "nextjs"
+scaffold = "pnpm create next-app@latest __NAME__ -e with-supabase --use-pnpm --skip-install --disable-git --yes"
+# upstream example fails its own lint (require() in tailwind.config.ts); patch to an ESM import
+post = "sed -i '1i import tailwindcssAnimate from \"tailwindcss-animate\";' tailwind.config.ts && sed -i 's/require(\"tailwindcss-animate\")/tailwindcssAnimate/' tailwind.config.ts && ! grep -q 'require(' tailwind.config.ts"
+lock = "npm pkg set packageManager=pnpm@$(pnpm --version) && pnpm install"
+package_manager = "pnpm"
+database = "supabase"      # managed Postgres; schema changes as SQL files in supabase/migrations
+auth = "supabase"          # email/password out of the box; Discord etc. are Supabase providers
+hosting = "vercel"         # main -> production, every other branch (incl. dev) -> preview URL
+provision = ["supabase", "vercel"]   # what `forge new ... --provision` creates
