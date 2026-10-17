@@ -23,9 +23,8 @@ export async function createClient() {
               cookieStore.set(name, value, options),
             );
           } catch {
-            // The `setAll` method was called from a Server Component.
-            // This can be ignored if you have proxy refreshing
-            // user sessions.
+            // Server Components can't set cookies; safe to ignore because
+            // the site has no user sessions to refresh.
           }
         },
       },
