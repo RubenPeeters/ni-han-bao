@@ -1,4 +1,5 @@
 import {
+  ActivityType,
   type ChatInputCommandInteraction,
   Client,
   Events,
@@ -23,7 +24,9 @@ import {
 import { Backoff, flushUntil, InFlight } from "./backoff.js";
 import { loadConfig } from "./config.js";
 import { createLogger } from "./log.js";
+import { nextPresence, PRESENCE_PHRASES } from "./presence.js";
 import { emojiRow, flushReactions, ReactionBuffer, receivesReaction } from "./reactions.js";
+import { addDays, dueReportWeek, reportEmbed, type ReportData } from "./report.js";
 import {
   CHANNEL_DAYS,
   channelEmbed,
@@ -43,6 +46,8 @@ const FLUSH_MS = 10_000;
 // Docker stop waits 10 s after SIGTERM before it kills the container.
 const SHUTDOWN_DEADLINE_MS = 8_000;
 const SHUTDOWN_KILL_MS = 9_500;
+const PRESENCE_MS = 5 * 60_000;
+const REPORT_CHECK_MS = 60_000;
 
 const config = loadConfig();
 const log = createLogger(config.guildId);
@@ -424,6 +429,70 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
+let presenceIndex = 0;
+
+async function rotatePresence(): Promise<void> {
+  // Caught here: it runs from a timer, and an unhandled rejection would exit the bot.
+  try {
+    // shortcut: messages today are summed over at most 1000 channels; fine for one server.
+    const { data, error } = await db.rpc("busiest_channels", {
+      since: `${utcDay(new Date())}T00:00:00Z`,
+      top: 1000,
+    });
+    if (error) throw new Error(`busiest_channels: ${error.message}`);
+    const rows = data as { name: string; message_count: number }[];
+    const next = nextPresence(PRESENCE_PHRASES, presenceIndex, {
+      messagesToday: sum(rows, (r) => r.message_count),
+      busiestChannel: rows[0]?.name ?? null,
+      members: client.guilds.cache.get(config.guildId)?.memberCount ?? 0,
+    });
+    if (!next) return;
+    presenceIndex = next.next;
+    client.user?.setActivity({ type: ActivityType.Custom, name: next.text, state: next.text });
+  } catch (err) {
+    log("warn", "presence_failed", { error: err });
+  }
+}
+
+// Week last seen posted, so the database is asked once per week rather than every check.
+let reportedWeek: string | null = null;
+let reporting = false;
+
+async function weeklyReport(): Promise<void> {
+  const channelId = config.reportChannelId;
+  const week = dueReportWeek(new Date());
+  if (!channelId || week === null || week === reportedWeek || reporting) return;
+  reporting = true;
+  try {
+    // Claim the week before posting: after a restart, or with a second bot running, the
+    // insert hits the primary key and nobody posts it again.
+    const claim = await db.from("report_cards").insert({ week });
+    if (claim.error?.code === "23505") {
+      reportedWeek = week;
+      return;
+    }
+    if (claim.error) throw new Error(`report_cards insert: ${claim.error.message}`);
+    try {
+      const { data, error } = await db.rpc("report_card", { since: week, until: addDays(week, 7) });
+      if (error) throw new Error(`report_card: ${error.message}`);
+      const channel = await client.channels.fetch(channelId);
+      if (!channel?.isSendable()) throw new Error("REPORT_CHANNEL_ID is not a channel the bot can post in");
+      await channel.send({ embeds: [reportEmbed(week, data as ReportData, config.siteUrl)] });
+    } catch (err) {
+      // Release the claim so the next check retries.
+      const release = await db.from("report_cards").delete().eq("week", week);
+      if (release.error) log("error", "report_release_failed", { week, error: release.error.message });
+      throw err;
+    }
+    reportedWeek = week;
+    log("info", "report_posted", { week });
+  } catch (err) {
+    log("error", "report_failed", { week, error: err });
+  } finally {
+    reporting = false;
+  }
+}
+
 client.once(Events.ClientReady, async (c) => {
   log("info", "ready", { user: c.user.tag });
   // Guild commands, not global ones: they apply instantly and only in our server.
@@ -435,6 +504,12 @@ client.once(Events.ClientReady, async (c) => {
   await heartbeat();
   setInterval(() => void heartbeat(), HEARTBEAT_MS);
   setInterval(() => void periodicFlush(), FLUSH_MS);
+  void rotatePresence();
+  setInterval(() => void rotatePresence(), PRESENCE_MS);
+  if (config.reportChannelId) {
+    void weeklyReport();
+    setInterval(() => void weeklyReport(), REPORT_CHECK_MS);
+  }
   // Names and avatars may have changed while the bot was offline.
   try {
     const guild = await c.guilds.fetch(config.guildId);
