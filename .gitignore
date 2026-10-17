@@ -47,3 +47,6 @@ bot/deploy/.env
 
 # every workspace package, not just the root (bot/node_modules was committed by mistake)
 node_modules
+
+# forge visual review output
+.forge/
