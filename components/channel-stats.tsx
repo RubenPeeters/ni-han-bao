@@ -1,3 +1,11 @@
+import {
+  EmptyState,
+  ErrorState,
+  RankList,
+  RankRow,
+  StatCard,
+  StatGrid,
+} from "@/components/stat-ui";
 import { createClient } from "@/lib/supabase/server";
 
 const TOP = 10;
@@ -40,106 +48,106 @@ export async function ChannelStats() {
   ]);
 
   if (busiest.error || heatmap.error) {
-    return <p className="text-sm text-destructive">Could not load channel stats.</p>;
+    return <ErrorState title="Could not load channel stats">Try again in a minute.</ErrorState>;
   }
   return (
-    <div className="flex flex-col gap-6">
+    <StatGrid>
       <BusiestChannels rows={busiest.data} />
       <Heatmap grid={heatmapGrid(heatmap.data)} />
-    </div>
+    </StatGrid>
   );
 }
 
 function BusiestChannels({ rows }: { rows: ChannelRow[] }) {
   const max = rows[0]?.message_count ?? 0;
   return (
-    <section className="card flex flex-col gap-3">
-      <div>
-        <h2 className="text-lg font-semibold">Busiest channels</h2>
-        <p className="text-xs text-muted-foreground">Last {BUSIEST_DAYS} days</p>
-      </div>
+    <StatCard title="Busiest channels" description={`Messages, last ${BUSIEST_DAYS} days`} wide>
       {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No messages counted yet.</p>
+        <EmptyState>No messages counted yet.</EmptyState>
       ) : (
-        <ol className="flex flex-col gap-2">
+        <RankList>
           {rows.map((row, i) => (
-            <li key={row.channel_id} className="flex items-center gap-3 text-sm">
-              <span className="w-5 text-right text-muted-foreground">{i + 1}</span>
-              <span className="w-32 truncate">#{row.name}</span>
-              <span className="flex-1 h-2 rounded bg-foreground/5">
-                <span
-                  className="block h-full rounded"
-                  style={{
-                    width: `${(row.message_count / max) * 100}%`,
-                    backgroundColor: "hsl(var(--chart-2))",
-                  }}
-                />
+            <RankRow key={row.channel_id} rank={i + 1} value={row.message_count.toLocaleString("en-US")}>
+              <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                <span className="truncate">#{row.name}</span>
+                <span className="h-1.5 rounded-full bg-muted" aria-hidden>
+                  <span
+                    className="block h-full rounded-full bg-chart-2"
+                    style={{ width: `${(row.message_count / max) * 100}%` }}
+                  />
+                </span>
               </span>
-              <span className="tabular-nums">{row.message_count.toLocaleString("en-US")}</span>
-            </li>
+            </RankRow>
           ))}
-        </ol>
+        </RankList>
       )}
-    </section>
+    </StatCard>
   );
 }
+
+// Floor of 0.15 so a single message still shows up.
+const heat = (count: number, max: number) =>
+  count ? { backgroundColor: `hsl(var(--chart-2) / ${0.15 + 0.85 * (count / max)})` } : undefined;
 
 function Heatmap({ grid }: { grid: number[][] }) {
   const max = Math.max(...grid.flat());
   return (
-    <section className="card flex flex-col gap-3">
-      <div>
-        <h2 className="text-lg font-semibold">When people talk</h2>
-        <p className="text-xs text-muted-foreground">
-          Messages by weekday and hour, UTC, last {HEATMAP_DAYS} days
-        </p>
-      </div>
+    <StatCard
+      title="When people talk"
+      description={`Messages by weekday and hour, UTC, last ${HEATMAP_DAYS} days`}
+      wide
+      aside={
+        max > 0 && (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground" aria-hidden>
+            Less
+            {[0, 0.25, 0.5, 0.75, 1].map((f) => (
+              <span key={f} className="size-3 rounded-[3px] bg-muted" style={heat(f * max, max)} />
+            ))}
+            More
+          </div>
+        )
+      }
+    >
       {max === 0 ? (
-        <p className="text-sm text-muted-foreground">No messages counted yet.</p>
+        <EmptyState>No messages counted yet.</EmptyState>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="border-separate border-spacing-0.5 text-xs text-muted-foreground">
-            <thead>
-              <tr>
-                <th />
-                {/* One label per three hours, so labels wider than a cell don't stretch columns. */}
-                {HOURS.filter((h) => h % 3 === 0).map((h) => (
-                  <th key={h} scope="colgroup" colSpan={3} className="font-normal text-left">
-                    {String(h).padStart(2, "0")}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {grid.map((row, d) => (
-                <tr key={WEEKDAYS[d]}>
-                  <th scope="row" className="font-normal text-left pr-1">
-                    {WEEKDAYS[d]}
-                  </th>
-                  {row.map((count, h) => {
-                    const label = `${WEEKDAYS[d]} ${String(h).padStart(2, "0")}:00 UTC: ${count.toLocaleString("en-US")} messages`;
-                    return (
-                      <td
-                        key={h}
-                        title={label}
-                        className="size-4 rounded-sm bg-foreground/5"
-                        style={
-                          count
-                            ? // Floor of 0.15 so a single message still shows up.
-                              { backgroundColor: `hsl(var(--chart-2) / ${0.15 + 0.85 * (count / max)})` }
-                            : undefined
-                        }
-                      >
-                        <span className="sr-only">{label}</span>
-                      </td>
-                    );
-                  })}
-                </tr>
+        // Fixed layout with fluid cells: 24 columns fit a 375px screen without scrolling.
+        <table className="w-full table-fixed border-separate border-spacing-0.5 text-xs text-muted-foreground">
+          <caption className="sr-only">Messages per weekday and hour (UTC)</caption>
+          <colgroup>
+            <col className="w-9" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th />
+              {/* One label per three hours, so labels wider than a cell don't stretch columns. */}
+              {HOURS.filter((h) => h % 3 === 0).map((h) => (
+                <th key={h} scope="colgroup" colSpan={3} className="text-left font-normal tabular-nums">
+                  {String(h).padStart(2, "0")}
+                </th>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </tr>
+          </thead>
+          <tbody>
+            {grid.map((row, d) => (
+              <tr key={WEEKDAYS[d]}>
+                <th scope="row" className="pr-1 text-left font-normal">
+                  {WEEKDAYS[d]}
+                </th>
+                {row.map((count, h) => {
+                  const label = `${WEEKDAYS[d]} ${String(h).padStart(2, "0")}:00 UTC: ${count.toLocaleString("en-US")} messages`;
+                  return (
+                    <td key={h} title={label} className="p-0">
+                      <span className="block aspect-square rounded-[3px] bg-muted" style={heat(count, max)} />
+                      <span className="sr-only">{label}</span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
-    </section>
+    </StatCard>
   );
 }
