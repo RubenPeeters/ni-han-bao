@@ -6,9 +6,11 @@
 -- started mid-hour, been down for a while, or counted per day before per hour). So the
 -- backfill counts *every* message before a fixed, day-aligned cutoff into the backfill_*
 -- tables, and backfill_apply() raises each live bucket to at least the history's count for
--- it. A bucket entirely before the cutoff is complete in the history, so the larger of the
--- two is the true count (the live one only wins when messages were deleted since): nothing
--- is double-counted and nothing before the first live count is lost.
+-- it. A bucket entirely before the cutoff is complete in the history, so nothing is
+-- double-counted and nothing before the first live count is lost. It is a lower bound, not
+-- always exact: history cannot see deleted messages, so a bucket loses the ones the live bot
+-- counted and that were deleted before the backfill, unless the live count is still larger
+-- (e.g. 10 pre-bot + 5 live of which 2 deleted: history 13, live 5, applied 13, sent 15).
 
 -- Single row: the cutoff chosen by the first run. Later runs reuse it, so a channel that
 -- only becomes readable later is still counted up to the same moment.

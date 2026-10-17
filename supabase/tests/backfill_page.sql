@@ -48,9 +48,11 @@ end;
 $$;
 
 -- The live bot counted 2 of that day's 5 messages (it started mid-hour), and all 7 of another day's
--- before 2 of them were deleted.
-insert into public.message_counts (user_id, day, count) values ('t1', '2026-10-10', 2), ('t1', '2026-10-11', 7);
-insert into public.backfill_message_counts (user_id, day, count) values ('t1', '2026-10-11', 5);
+-- before 2 of them were deleted. On a third day, 10 pre-bot messages plus 5 live ones of which 2
+-- were deleted: the known undercount, documented in the migration.
+insert into public.message_counts (user_id, day, count)
+values ('t1', '2026-10-10', 2), ('t1', '2026-10-11', 7), ('t1', '2026-10-12', 5);
+insert into public.backfill_message_counts (user_id, day, count) values ('t1', '2026-10-11', 5), ('t1', '2026-10-12', 13);
 select public.backfill_apply();
 -- Applying again (every run does) must change nothing.
 select public.backfill_apply();
@@ -62,6 +64,9 @@ begin
     end if;
     if (select count from public.message_counts where user_id = 't1' and day = '2026-10-11') <> 7 then
         raise exception 'history lowered a live count';
+    end if;
+    if (select count from public.message_counts where user_id = 't1' and day = '2026-10-12') <> 13 then
+        raise exception 'mixed bucket is not the larger of live and history';
     end if;
     if (select count from public.channel_message_counts where channel_id = 'c1') <> 5 then
         raise exception 'history hour was not applied once';

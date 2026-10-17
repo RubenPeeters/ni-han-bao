@@ -20,7 +20,8 @@ export function snowflakeAt(at: Date): string {
 /**
  * Where the backfill stops: the start of a UTC day that ended at least an hour ago. The live
  * bot only flushes a few seconds behind, so it never adds to a bucket before this again,
- * which is what lets backfill_apply() take the larger of the live and history counts.
+ * which is what lets backfill_apply() take the larger of the live and history counts
+ * (never a double count; a lower bound when live-counted messages were deleted since).
  */
 export function backfillCutoff(now: Date): Date {
   return new Date(`${new Date(now.getTime() - 3_600_000).toISOString().slice(0, 10)}T00:00:00Z`);

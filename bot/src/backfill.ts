@@ -1,5 +1,5 @@
 // One-off: counts messages sent before a fixed cutoff, one channel or thread at a time, and
-// raises the live counts to them (the backfill_cursors migration says why that is exact).
+// raises the live counts to them (the backfill_cursors migration says why, and where it undercounts).
 // Run next to the live bot (same env): `pnpm --filter ni-han-bao-bot backfill [--dry-run]`
 // after a build, or `node bot/dist/backfill.js` in the container. Safe to rerun: it resumes
 // from the cursors in backfill_cursors and never counts a page twice.
@@ -68,12 +68,17 @@ async function allThreads(guild: Guild, me: GuildMember): Promise<AnyThreadChann
       : (["public"] as const);
     for (const type of types) {
       let before: Date | undefined;
-      do {
-        const page = await channel.threads.fetchArchived({ type, fetchAll: true, before, limit: 100 }, false);
-        threads.push(...page.threads.values());
-        // shortcut: threads archived in the same millisecond across a page break are skipped; fine for one server.
-        before = page.hasMore ? (page.threads.last()?.archivedAt ?? undefined) : undefined;
-      } while (before);
+      try {
+        do {
+          const page = await channel.threads.fetchArchived({ type, fetchAll: true, before, limit: 100 }, false);
+          threads.push(...page.threads.values());
+          // shortcut: threads archived in the same millisecond across a page break are skipped; fine for one server.
+          before = page.hasMore ? (page.threads.last()?.archivedAt ?? undefined) : undefined;
+        } while (before);
+      } catch (err) {
+        // One unlistable channel must not stop the rest; a rerun lists it again.
+        console.error(`#${channel.name} (${channel.id}): listing ${type} archived threads failed:`, err);
+      }
     }
   }
   return threads;
@@ -99,6 +104,7 @@ async function main(): Promise<void> {
   console.log(`counting messages before ${cutoff.toISOString()}`);
   const cursors = await loadCursors(readable.map((c) => c.id), cutoff);
   let total = 0;
+  let failed = 0;
   // One channel at a time; discord.js waits out rate limits (429s) on its own.
   for (const channel of readable) {
     // Not channelRow(channel): a channel's discord.js parent is its category, a thread's its channel.
@@ -135,12 +141,23 @@ async function main(): Promise<void> {
         ) as boolean;
       },
     };
-    const counted = await backfillChannel(row, cursor, config.guildId, io);
-    total += counted;
-    console.log(`#${channel.name}: ${dryRun ? "would read" : "read"} ${counted} messages`);
+    try {
+      const counted = await backfillChannel(row, cursor, config.guildId, io);
+      total += counted;
+      console.log(`#${channel.name}: ${dryRun ? "would read" : "read"} ${counted} messages`);
+    } catch (err) {
+      // Pages already written stay counted and the cursor stays not-done, so a rerun resumes
+      // here; the other channels still get counted and applied.
+      console.error(`#${channel.name} (${channel.id}): skipped:`, err);
+      failed++;
+    }
   }
   if (!dryRun) must("backfill_apply", await db.rpc("backfill_apply"));
   console.log(`${dryRun ? "would read" : "read"} ${total} messages in total`);
+  if (failed) {
+    console.error(`${failed} channels failed; rerun to retry them`);
+    process.exitCode = 1;
+  }
 }
 
 try {
