@@ -54,3 +54,20 @@ export async function flushUntil(
     await clock.sleep(delay);
   }
 }
+
+/** Work already started (a flush, a handler mid-lookup) that shutdown must wait for. */
+export class InFlight {
+  private readonly running = new Set<Promise<unknown>>();
+
+  track<T>(work: Promise<T>): Promise<T> {
+    this.running.add(work);
+    const done = () => this.running.delete(work);
+    work.then(done, done);
+    return work;
+  }
+
+  /** Resolves once nothing is running, including work started while waiting. */
+  async settle(): Promise<void> {
+    while (this.running.size) await Promise.allSettled([...this.running]);
+  }
+}

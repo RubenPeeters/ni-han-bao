@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ActivityBuffer, flushActivity, type CountBatch } from "./activity.js";
-import { Backoff, flushUntil, type Clock } from "./backoff.js";
+import { Backoff, flushUntil, InFlight, type Clock } from "./backoff.js";
 
 /** Time only moves when the code under test sleeps. */
 function fakeClock(start = 0): Clock & { slept: number[] } {
@@ -109,5 +109,44 @@ describe("flushUntil", () => {
     // The failed batch is resent unchanged, so the counts arrive exactly once.
     expect(sent).toHaveLength(1);
     expect(sent[0].counts).toEqual([{ user_id: "a", day: "2026-10-17", count: 2 }]);
+  });
+
+  it("on shutdown, writes counts buffered while a flush was already in flight", async () => {
+    const buffer = new ActivityBuffer();
+    const at = new Date("2026-10-17T10:00:00Z");
+    buffer.addMessage("a", "c1", at);
+    const sent: CountBatch[] = [];
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const writer = {
+      async upsertMembers() {},
+      async upsertChannels() {},
+      async incrementCounts(batch: CountBatch) {
+        if (!sent.length) await held;
+        sent.push(batch);
+      },
+    };
+    const inFlight = new InFlight();
+    // One flush at a time, like the bot's: a second call gets the one in flight.
+    let flushing: Promise<boolean> | null = null;
+    const flush = () =>
+      (flushing ??= inFlight.track(
+        flushActivity(buffer, writer)
+          .then(
+            () => true,
+            () => false,
+          )
+          .finally(() => (flushing = null)),
+      ));
+    void flush();
+    // Arrives after the running flush drained the buffer, then shutdown starts.
+    buffer.addMessage("b", "c1", at);
+    const shutdown = inFlight.settle().then(() =>
+      flushUntil(flush, 8000, new Backoff(500, 2000), fakeClock()),
+    );
+    release();
+    expect(await shutdown).toBe(true);
+    expect(buffer.isEmpty).toBe(true);
+    expect(sent.map((b) => b.counts[0].user_id)).toEqual(["a", "b"]);
   });
 });

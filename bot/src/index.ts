@@ -4,7 +4,11 @@ import {
   Events,
   GatewayIntentBits,
   MessageFlags,
+  type MessageReaction,
   Partials,
+  type PartialMessageReaction,
+  type PartialUser,
+  type User,
 } from "discord.js";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -16,7 +20,7 @@ import {
   utcDay,
   type MemberRow,
 } from "./activity.js";
-import { Backoff, flushUntil } from "./backoff.js";
+import { Backoff, flushUntil, InFlight } from "./backoff.js";
 import { loadConfig } from "./config.js";
 import { createLogger } from "./log.js";
 import { emojiRow, flushReactions, ReactionBuffer, receivesReaction } from "./reactions.js";
@@ -94,6 +98,8 @@ async function writeHeartbeat(): Promise<void> {
 const activity = new ActivityBuffer();
 
 let flushing: Promise<boolean> | null = null;
+// Flushes and reaction lookups started before shutdown; they may still add or write counts.
+const inFlight = new InFlight();
 
 const reactions = new ReactionBuffer();
 
@@ -161,9 +167,11 @@ async function flushAll(): Promise<boolean> {
 
 // One flush at a time, so shutdown can wait for the one in flight before writing the rest.
 function flush(): Promise<boolean> {
-  flushing ??= flushAll().finally(() => {
+  flushing ??= inFlight.track(
+    flushAll().finally(() => {
       flushing = null;
-    });
+    }),
+  );
   return flushing;
 }
 
@@ -242,7 +250,12 @@ client.on(Events.MessageCreate, (message) => {
 });
 
 // Removals are ignored on purpose (see ReactionBuffer), so there is no MessageReactionRemove.
-client.on(Events.MessageReactionAdd, async (reaction, user) => {
+client.on(Events.MessageReactionAdd, (reaction, user) => void inFlight.track(countReaction(reaction, user)));
+
+async function countReaction(
+  reaction: MessageReaction | PartialMessageReaction,
+  user: User | PartialUser,
+): Promise<void> {
   const { message } = reaction;
   if (user.bot || message.guildId !== config.guildId) return;
   const emoji = emojiRow(reaction.emoji);
@@ -266,7 +279,7 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
   } catch (err) {
     log("error", "reaction_author_lookup_failed", { error: err });
   }
-});
+}
 
 // Renames while the bot is offline are picked up by the channel's next message.
 client.on(Events.ChannelUpdate, (_old, channel) => {
@@ -462,13 +475,15 @@ async function shutdown(code: number): Promise<void> {
   log("info", "shutdown", { code });
   // A write can hang with no timeout of its own; exit before Docker's SIGKILL either way.
   setTimeout(() => {
-    log("error", "shutdown_timeout", { lost: unwritten() });
+    // A hung write holds its drained batch where unwritten() cannot see it, so `lost` is
+    // then a lower bound.
+    log("error", "shutdown_timeout", { flush_in_flight: flushing !== null, lost: unwritten() });
     process.exit(code);
   }, SHUTDOWN_KILL_MS);
-  // Stop new events first, and let a flush in flight finish: it drained the buffers before
-  // anything it missed arrived, so its success alone does not mean everything is written.
+  // Stop new events first, then let work in flight finish: a flush drained the buffers before
+  // anything it missed arrived, and a reaction lookup may still add a count.
   await client.destroy();
-  await flushing;
+  await inFlight.settle();
   // Close open voice sessions now, so the next start does not have to guess when they ended.
   timeline.addVoice(voice.closeAll(new Date()));
   const clock = {
