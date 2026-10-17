@@ -1,7 +1,8 @@
-import { Client, Events, GatewayIntentBits } from "discord.js";
+import { Client, Events, GatewayIntentBits, MessageFlags } from "discord.js";
 import { createClient } from "@supabase/supabase-js";
 import { ActivityBuffer, flushActivity, memberRow, shouldCount } from "./activity.js";
 import { loadConfig } from "./config.js";
+import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 
 const HEARTBEAT_MS = 60_000;
 const FLUSH_MS = 10_000;
@@ -95,8 +96,41 @@ client.on(Events.UserUpdate, (_old, user) => {
   if (member) activity.setMember(memberRow(user, member));
 });
 
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand() || !interaction.inCachedGuild()) return;
+  if (interaction.guildId !== config.guildId) return;
+  const hidden = hiddenFor(interaction.commandName);
+  if (hidden === null) return;
+  try {
+    // Deferred because Discord drops replies sent more than 3 s in, and the write may be slow.
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const reply = await setVisibility(
+      {
+        async setHidden(row, flag) {
+          // Upsert so a member who has never posted still gets a row to carry the flag.
+          const { error } = await db
+            .from("members")
+            .upsert({ ...row, hidden: flag, updated_at: new Date().toISOString() });
+          if (error) throw new Error(`members upsert: ${error.message}`);
+        },
+      },
+      memberRow(interaction.user, interaction.member),
+      hidden,
+    );
+    await interaction.editReply(reply);
+  } catch (err) {
+    console.error(`/${interaction.commandName} failed:`, err);
+  }
+});
+
 client.once(Events.ClientReady, async (c) => {
   console.log(`logged in as ${c.user.tag}`);
+  // Guild commands, not global ones: they apply instantly and only in our server.
+  try {
+    await c.application.commands.set([...VISIBILITY_COMMANDS], config.guildId);
+  } catch (err) {
+    console.error("command registration failed:", err);
+  }
   await heartbeat();
   setInterval(() => void heartbeat(), HEARTBEAT_MS);
   setInterval(() => void flush(), FLUSH_MS);
