@@ -27,7 +27,7 @@ export async function Leaderboard() {
   ]);
 
   if (week.error || allTime.error) {
-    return <p className="text-sm text-red-600">Could not load the leaderboard.</p>;
+    return <p className="text-sm text-destructive">Could not load the leaderboard.</p>;
   }
   return (
     <div className="grid gap-6 sm:grid-cols-2">
@@ -39,18 +39,18 @@ export async function Leaderboard() {
 
 function Board({ title, subtitle, rows }: { title: string; subtitle?: string; rows: Row[] }) {
   return (
-    <section className="rounded-lg border p-5 flex flex-col gap-3">
+    <section className="card flex flex-col gap-3">
       <div>
         <h2 className="text-lg font-semibold">{title}</h2>
-        {subtitle && <p className="text-xs text-foreground/60">{subtitle}</p>}
+        {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
       </div>
       {rows.length === 0 ? (
-        <p className="text-sm text-foreground/60">No messages counted yet.</p>
+        <p className="text-sm text-muted-foreground">No messages counted yet.</p>
       ) : (
         <ol className="flex flex-col gap-2">
           {rows.map((row, i) => (
             <li key={row.user_id} className="flex items-center gap-3 text-sm">
-              <span className="w-5 text-right text-foreground/60">{i + 1}</span>
+              <span className="w-5 text-right text-muted-foreground">{i + 1}</span>
               {row.avatar_url ? (
                 // Discord CDN avatars are already small; next/image would need a remote
                 // pattern and optimisation quota for no visible gain.

@@ -40,7 +40,7 @@ export async function ChannelStats() {
   ]);
 
   if (busiest.error || heatmap.error) {
-    return <p className="text-sm text-red-600">Could not load channel stats.</p>;
+    return <p className="text-sm text-destructive">Could not load channel stats.</p>;
   }
   return (
     <div className="flex flex-col gap-6">
@@ -53,18 +53,18 @@ export async function ChannelStats() {
 function BusiestChannels({ rows }: { rows: ChannelRow[] }) {
   const max = rows[0]?.message_count ?? 0;
   return (
-    <section className="rounded-lg border p-5 flex flex-col gap-3">
+    <section className="card flex flex-col gap-3">
       <div>
         <h2 className="text-lg font-semibold">Busiest channels</h2>
-        <p className="text-xs text-foreground/60">Last {BUSIEST_DAYS} days</p>
+        <p className="text-xs text-muted-foreground">Last {BUSIEST_DAYS} days</p>
       </div>
       {rows.length === 0 ? (
-        <p className="text-sm text-foreground/60">No messages counted yet.</p>
+        <p className="text-sm text-muted-foreground">No messages counted yet.</p>
       ) : (
         <ol className="flex flex-col gap-2">
           {rows.map((row, i) => (
             <li key={row.channel_id} className="flex items-center gap-3 text-sm">
-              <span className="w-5 text-right text-foreground/60">{i + 1}</span>
+              <span className="w-5 text-right text-muted-foreground">{i + 1}</span>
               <span className="w-32 truncate">#{row.name}</span>
               <span className="flex-1 h-2 rounded bg-foreground/5">
                 <span
@@ -87,24 +87,25 @@ function BusiestChannels({ rows }: { rows: ChannelRow[] }) {
 function Heatmap({ grid }: { grid: number[][] }) {
   const max = Math.max(...grid.flat());
   return (
-    <section className="rounded-lg border p-5 flex flex-col gap-3">
+    <section className="card flex flex-col gap-3">
       <div>
         <h2 className="text-lg font-semibold">When people talk</h2>
-        <p className="text-xs text-foreground/60">
+        <p className="text-xs text-muted-foreground">
           Messages by weekday and hour, UTC, last {HEATMAP_DAYS} days
         </p>
       </div>
       {max === 0 ? (
-        <p className="text-sm text-foreground/60">No messages counted yet.</p>
+        <p className="text-sm text-muted-foreground">No messages counted yet.</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="border-separate border-spacing-0.5 text-[10px] text-foreground/60">
+          <table className="border-separate border-spacing-0.5 text-xs text-muted-foreground">
             <thead>
               <tr>
                 <th />
-                {HOURS.map((h) => (
-                  <th key={h} scope="col" className="font-normal w-4">
-                    {h % 3 === 0 ? String(h).padStart(2, "0") : ""}
+                {/* One label per three hours, so labels wider than a cell don't stretch columns. */}
+                {HOURS.filter((h) => h % 3 === 0).map((h) => (
+                  <th key={h} scope="colgroup" colSpan={3} className="font-normal text-left">
+                    {String(h).padStart(2, "0")}
                   </th>
                 ))}
               </tr>

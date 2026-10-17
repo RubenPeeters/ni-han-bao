@@ -25,7 +25,7 @@ export async function EmojiStats() {
   ]);
 
   if (emoji.error || members.error) {
-    return <p className="text-sm text-red-600">Could not load emoji stats.</p>;
+    return <p className="text-sm text-destructive">Could not load emoji stats.</p>;
   }
   return (
     <div className="grid gap-6 sm:grid-cols-2">
@@ -55,20 +55,20 @@ function Emoji({ row }: { row: EmojiRow }) {
 
 function TopEmoji({ rows }: { rows: EmojiRow[] }) {
   return (
-    <section className="rounded-lg border p-5 flex flex-col gap-3">
+    <section className="card flex flex-col gap-3">
       <div>
         <h2 className="text-lg font-semibold">Top emoji</h2>
-        <p className="text-xs text-foreground/60">Reactions added, all time</p>
+        <p className="text-xs text-muted-foreground">Reactions added, all time</p>
       </div>
       {rows.length === 0 ? (
-        <p className="text-sm text-foreground/60">No reactions counted yet.</p>
+        <p className="text-sm text-muted-foreground">No reactions counted yet.</p>
       ) : (
         <ol className="flex flex-col gap-2">
           {rows.map((row, i) => (
             <li key={row.emoji_key} className="flex items-center gap-3 text-sm">
-              <span className="w-5 text-right text-foreground/60">{i + 1}</span>
+              <span className="w-5 text-right text-muted-foreground">{i + 1}</span>
               <Emoji row={row} />
-              <span className="flex-1 truncate text-foreground/60">
+              <span className="flex-1 truncate text-muted-foreground">
                 {row.emoji_id ? `:${row.name ?? "emoji"}:` : ""}
               </span>
               <span className="tabular-nums">{row.reaction_count.toLocaleString("en-US")}</span>
@@ -82,18 +82,18 @@ function TopEmoji({ rows }: { rows: EmojiRow[] }) {
 
 function MostReacted({ rows }: { rows: MemberRow[] }) {
   return (
-    <section className="rounded-lg border p-5 flex flex-col gap-3">
+    <section className="card flex flex-col gap-3">
       <div>
         <h2 className="text-lg font-semibold">Most reacted to</h2>
-        <p className="text-xs text-foreground/60">Reactions on their messages, all time</p>
+        <p className="text-xs text-muted-foreground">Reactions on their messages, all time</p>
       </div>
       {rows.length === 0 ? (
-        <p className="text-sm text-foreground/60">No reactions counted yet.</p>
+        <p className="text-sm text-muted-foreground">No reactions counted yet.</p>
       ) : (
         <ol className="flex flex-col gap-2">
           {rows.map((row, i) => (
             <li key={row.user_id} className="flex items-center gap-3 text-sm">
-              <span className="w-5 text-right text-foreground/60">{i + 1}</span>
+              <span className="w-5 text-right text-muted-foreground">{i + 1}</span>
               {row.avatar_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={row.avatar_url} alt="" width={28} height={28} className="rounded-full" />
