@@ -25,6 +25,9 @@ export default function Home() {
         <Link href="/channels" className="text-sm underline underline-offset-4">
           Where and when is it busy? See the channels →
         </Link>
+        <Link href="/timeline" className="text-sm underline underline-offset-4">
+          How is the server growing, and who hangs out in voice? See the timeline →
+        </Link>
       </div>
     </main>
   );

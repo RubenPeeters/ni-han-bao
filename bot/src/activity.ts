@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { VoiceSecondsRow } from "./voice.js";
 
 export interface MessageInfo {
   guildId: string | null;
@@ -106,11 +107,20 @@ export interface ChannelCountRow {
   count: number;
 }
 
+/** Joins and leaves of the server on one UTC day. */
+export interface MemberFlowRow {
+  day: string;
+  joins: number;
+  leaves: number;
+}
+
 /** Counts sent together under one id, so the database can drop a retry it already applied. */
 export interface CountBatch {
   id: string;
   counts: CountRow[];
   channelCounts: ChannelCountRow[];
+  voiceSeconds: VoiceSecondsRow[];
+  memberFlow: MemberFlowRow[];
 }
 
 export interface Drained {
@@ -118,6 +128,8 @@ export interface Drained {
   channels: ChannelRow[];
   counts: CountRow[];
   channelCounts: ChannelCountRow[];
+  voiceSeconds: VoiceSecondsRow[];
+  memberFlow: MemberFlowRow[];
 }
 
 /**
@@ -127,6 +139,8 @@ export interface Drained {
 export class ActivityBuffer {
   private counts = new Map<string, CountRow>();
   private channelCounts = new Map<string, ChannelCountRow>();
+  private voiceSeconds = new Map<string, VoiceSecondsRow>();
+  private memberFlow = new Map<string, MemberFlowRow>();
   private members = new Map<string, MemberRow>();
   private channels = new Map<string, ChannelRow>();
   /**
@@ -154,6 +168,29 @@ export class ActivityBuffer {
     else this.channelCounts.set(key, { ...c });
   }
 
+  addVoice(v: VoiceSecondsRow): void {
+    const key = `${v.user_id}:${v.day}`;
+    const row = this.voiceSeconds.get(key);
+    if (row) row.seconds += v.seconds;
+    else this.voiceSeconds.set(key, { ...v });
+  }
+
+  addJoin(at: Date): void {
+    this.addFlow({ day: utcDay(at), joins: 1, leaves: 0 });
+  }
+
+  addLeave(at: Date): void {
+    this.addFlow({ day: utcDay(at), joins: 0, leaves: 1 });
+  }
+
+  private addFlow(f: MemberFlowRow): void {
+    const row = this.memberFlow.get(f.day);
+    if (row) {
+      row.joins += f.joins;
+      row.leaves += f.leaves;
+    } else this.memberFlow.set(f.day, { ...f });
+  }
+
   /** Latest snapshot wins: a member is written once per flush however often they change. */
   setMember(member: MemberRow): void {
     this.members.set(member.user_id, member);
@@ -168,6 +205,8 @@ export class ActivityBuffer {
     return (
       this.counts.size === 0 &&
       this.channelCounts.size === 0 &&
+      this.voiceSeconds.size === 0 &&
+      this.memberFlow.size === 0 &&
       this.members.size === 0 &&
       this.channels.size === 0 &&
       this.pending === null
@@ -181,9 +220,13 @@ export class ActivityBuffer {
       channels: [...this.channels.values()],
       counts: [...this.counts.values()],
       channelCounts: [...this.channelCounts.values()],
+      voiceSeconds: [...this.voiceSeconds.values()],
+      memberFlow: [...this.memberFlow.values()],
     };
     this.counts = new Map();
     this.channelCounts = new Map();
+    this.voiceSeconds = new Map();
+    this.memberFlow = new Map();
     this.members = new Map();
     this.channels = new Map();
     return drained;
@@ -193,7 +236,7 @@ export class ActivityBuffer {
    * Put back drained data that was never sent, so it goes out next flush. Counts are added
    * to anything that arrived meanwhile; members only fill gaps, since newer snapshots win.
    */
-  restore({ members, channels, counts, channelCounts }: Drained): void {
+  restore({ members, channels, counts, channelCounts, voiceSeconds, memberFlow }: Drained): void {
     for (const m of members) {
       if (!this.members.has(m.user_id)) this.members.set(m.user_id, m);
     }
@@ -202,6 +245,8 @@ export class ActivityBuffer {
     }
     for (const c of counts) this.addCount(c);
     for (const c of channelCounts) this.addChannelCount(c);
+    for (const v of voiceSeconds) this.addVoice(v);
+    for (const f of memberFlow) this.addFlow(f);
   }
 }
 
@@ -225,7 +270,7 @@ export async function flushActivity(
 ): Promise<void> {
   if (buffer.isEmpty) return;
   const drained = buffer.drain();
-  const { members, channels, counts, channelCounts } = drained;
+  const { members, channels, counts, channelCounts, voiceSeconds, memberFlow } = drained;
   try {
     if (members.length) await writer.upsertMembers(members);
     if (channels.length) await writer.upsertChannels(channels);
@@ -237,8 +282,10 @@ export async function flushActivity(
     buffer.restore(drained);
     throw err;
   }
-  if (!counts.length && !channelCounts.length) return;
-  const batch = { id: newBatchId(), counts, channelCounts };
+  if (!counts.length && !channelCounts.length && !voiceSeconds.length && !memberFlow.length) {
+    return;
+  }
+  const batch = { id: newBatchId(), counts, channelCounts, voiceSeconds, memberFlow };
   try {
     await writer.incrementCounts(batch);
   } catch (err) {

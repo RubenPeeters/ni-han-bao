@@ -16,7 +16,8 @@ const GUILD = "g1";
 const human = { guildId: GUILD, authorIsBot: false, webhookId: null, system: false };
 const alice = { user_id: "a", display_name: "Alice", avatar_url: "https://cdn/a.png" };
 const general = { channel_id: "c1", name: "general" };
-const empty = { members: [], channels: [], counts: [], channelCounts: [] };
+const none = { voiceSeconds: [], memberFlow: [] };
+const empty = { members: [], channels: [], counts: [], channelCounts: [], ...none };
 
 describe("shouldCount", () => {
   it("counts a member message in our guild", () => {
@@ -187,6 +188,51 @@ describe("ActivityBuffer", () => {
     expect(buf.drain()).toEqual(empty);
   });
 
+  it("sums voice time per member per day", () => {
+    const buf = new ActivityBuffer();
+    buf.addVoice({ user_id: "a", day: "2026-10-17", seconds: 10 });
+    buf.addVoice({ user_id: "a", day: "2026-10-17", seconds: 5 });
+    buf.addVoice({ user_id: "a", day: "2026-10-18", seconds: 7 });
+    expect(buf.drain().voiceSeconds).toEqual([
+      { user_id: "a", day: "2026-10-17", seconds: 15 },
+      { user_id: "a", day: "2026-10-18", seconds: 7 },
+    ]);
+  });
+
+  it("counts joins and leaves per UTC day", () => {
+    const buf = new ActivityBuffer();
+    buf.addJoin(new Date("2026-10-17T10:00:00Z"));
+    buf.addJoin(new Date("2026-10-17T23:59:59Z"));
+    buf.addLeave(new Date("2026-10-17T12:00:00Z"));
+    buf.addLeave(new Date("2026-10-18T00:00:00Z"));
+    expect(buf.drain().memberFlow).toEqual([
+      { day: "2026-10-17", joins: 2, leaves: 1 },
+      { day: "2026-10-18", joins: 0, leaves: 1 },
+    ]);
+  });
+
+  it("is not empty with only voice time or joins buffered", () => {
+    const voice = new ActivityBuffer();
+    voice.addVoice({ user_id: "a", day: "2026-10-17", seconds: 1 });
+    expect(voice.isEmpty).toBe(false);
+    const flow = new ActivityBuffer();
+    flow.addLeave(new Date());
+    expect(flow.isEmpty).toBe(false);
+  });
+
+  it("restores voice time and joins on top of newer ones", () => {
+    const buf = new ActivityBuffer();
+    buf.addVoice({ user_id: "a", day: "2026-10-17", seconds: 60 });
+    buf.addJoin(new Date("2026-10-17T10:00:00Z"));
+    const failed = buf.drain();
+    buf.addVoice({ user_id: "a", day: "2026-10-17", seconds: 30 });
+    buf.addLeave(new Date("2026-10-17T11:00:00Z"));
+    buf.restore(failed);
+    const drained = buf.drain();
+    expect(drained.voiceSeconds).toEqual([{ user_id: "a", day: "2026-10-17", seconds: 90 }]);
+    expect(drained.memberFlow).toEqual([{ day: "2026-10-17", joins: 1, leaves: 1 }]);
+  });
+
   it("restores a failed batch on top of newer activity", () => {
     const buf = new ActivityBuffer();
     const day = new Date("2026-10-17T10:00:00Z");
@@ -206,6 +252,7 @@ describe("ActivityBuffer", () => {
       channels: [{ ...general, name: "chat" }],
       counts: [{ user_id: "a", day: "2026-10-17", count: 3 }],
       channelCounts: [{ channel_id: "c1", hour: "2026-10-17T10:00:00.000Z", count: 3 }],
+      ...none,
     });
   });
 });
@@ -265,6 +312,7 @@ describe("flushActivity", () => {
       channels: [general],
       counts: [{ user_id: "a", day: "2026-10-17", count: 1 }],
       channelCounts: [{ channel_id: "c1", hour: "2026-10-17T10:00:00.000Z", count: 1 }],
+      ...none,
     });
   });
 
@@ -278,6 +326,7 @@ describe("flushActivity", () => {
       id: "b1",
       counts: [{ user_id: "a", day: "2026-10-17", count: 1 }],
       channelCounts: [{ channel_id: "c1", hour: "2026-10-17T10:00:00.000Z", count: 1 }],
+      ...none,
     });
     expect(buf.drain()).toEqual(empty);
   });
@@ -317,12 +366,31 @@ describe("flushActivity", () => {
     expect(buf.isEmpty).toBe(true);
   });
 
+  it("sends voice time and joins in the batch, even without messages", async () => {
+    const buf = new ActivityBuffer();
+    buf.setMember(alice);
+    buf.addVoice({ user_id: "a", day: "2026-10-17", seconds: 600 });
+    buf.addJoin(day);
+    const sent: CountBatch[] = [];
+    await flushActivity(buf, writer({ incrementCounts: async (b) => void sent.push(b) }), () => "b1");
+    expect(sent).toEqual([
+      {
+        id: "b1",
+        counts: [],
+        channelCounts: [],
+        voiceSeconds: [{ user_id: "a", day: "2026-10-17", seconds: 600 }],
+        memberFlow: [{ day: "2026-10-17", joins: 1, leaves: 0 }],
+      },
+    ]);
+  });
+
   it("keeps new counts unsent while a pending batch still fails", async () => {
     const buf = new ActivityBuffer();
     buf.pending = {
       id: "b1",
       counts: [{ user_id: "a", day: "2026-10-17", count: 2 }],
       channelCounts: [{ channel_id: "c1", hour: "2026-10-17T10:00:00.000Z", count: 2 }],
+      ...none,
     };
     buf.addMessage("a", "c1", day);
     const sent: string[] = [];
