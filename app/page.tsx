@@ -25,6 +25,9 @@ export default function Home() {
         <Link href="/channels" className="text-sm underline underline-offset-4">
           Where and when is it busy? See the channels →
         </Link>
+        <Link href="/emoji" className="text-sm underline underline-offset-4">
+          What does everyone react with? See the emoji →
+        </Link>
       </div>
     </main>
   );

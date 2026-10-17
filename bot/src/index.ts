@@ -1,7 +1,15 @@
-import { Client, Events, GatewayIntentBits, MessageFlags } from "discord.js";
+import { Client, Events, GatewayIntentBits, MessageFlags, Partials } from "discord.js";
 import { createClient } from "@supabase/supabase-js";
-import { ActivityBuffer, channelRow, flushActivity, memberRow, shouldCount } from "./activity.js";
+import {
+  ActivityBuffer,
+  channelRow,
+  flushActivity,
+  memberRow,
+  shouldCount,
+  type MemberRow,
+} from "./activity.js";
 import { loadConfig } from "./config.js";
+import { emojiRow, flushReactions, ReactionBuffer, receivesReaction } from "./reactions.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 
 const HEARTBEAT_MS = 60_000;
@@ -23,6 +31,8 @@ const client = new Client({
     GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.GuildVoiceStates,
   ],
+  // Without these, reactions on messages sent before the bot (re)started are not emitted.
+  partials: [Partials.Message, Partials.Reaction],
 });
 
 async function heartbeat(): Promise<void> {
@@ -41,15 +51,18 @@ const activity = new ActivityBuffer();
 
 let flushing: Promise<void> | null = null;
 
-// One flush at a time, so shutdown can wait for the one in flight before writing the rest.
-function flush(): Promise<void> {
-  flushing ??= flushActivity(activity, {
-    async upsertMembers(rows) {
-      const { error } = await db
-        .from("members")
-        .upsert(rows.map((r) => ({ ...r, updated_at: new Date().toISOString() })));
-      if (error) throw new Error(`members upsert: ${error.message}`);
-    },
+const reactions = new ReactionBuffer();
+
+async function upsertMembers(rows: MemberRow[]): Promise<void> {
+  const { error } = await db
+    .from("members")
+    .upsert(rows.map((r) => ({ ...r, updated_at: new Date().toISOString() })));
+  if (error) throw new Error(`members upsert: ${error.message}`);
+}
+
+async function flushAll(): Promise<void> {
+  await flushActivity(activity, {
+    upsertMembers,
     async upsertChannels(rows) {
       const { error } = await db
         .from("channels")
@@ -64,9 +77,24 @@ function flush(): Promise<void> {
       });
       if (error) throw new Error(`increment_activity: ${error.message}`);
     },
-  })
-    .catch((err: unknown) => console.error("activity flush failed:", err))
-    .finally(() => {
+  }).catch((err: unknown) => console.error("activity flush failed:", err));
+  await flushReactions(reactions, {
+    upsertMembers,
+    async incrementReactions(batch) {
+      const { error } = await db.rpc("increment_reactions", {
+        batch: batch.id,
+        emojis: batch.emojis,
+        emoji_counts: batch.emojiCounts,
+        received_counts: batch.receivedCounts,
+      });
+      if (error) throw new Error(`increment_reactions: ${error.message}`);
+    },
+  }).catch((err: unknown) => console.error("reaction flush failed:", err));
+}
+
+// One flush at a time, so shutdown can wait for the one in flight before writing the rest.
+function flush(): Promise<void> {
+  flushing ??= flushAll().finally(() => {
       flushing = null;
     });
   return flushing;
@@ -93,6 +121,33 @@ client.on(Events.MessageCreate, (message) => {
   activity.addMessage(message.author.id, row.channel_id, message.createdAt);
   activity.setMember(memberRow(message.author, message.member));
   activity.setChannel(row);
+});
+
+// Removals are ignored on purpose (see ReactionBuffer), so there is no MessageReactionRemove.
+client.on(Events.MessageReactionAdd, async (reaction, user) => {
+  const { message } = reaction;
+  if (user.bot || message.guildId !== config.guildId) return;
+  const emoji = emojiRow(reaction.emoji);
+  if (!emoji) return;
+  const at = new Date();
+  reactions.addEmoji(emoji, at);
+  try {
+    // A partial message has no author yet. Fetching it is fine: without the MessageContent
+    // intent its text comes back empty, and only the author is read from it.
+    const full = message.partial ? await message.fetch() : message;
+    const author = {
+      id: full.author.id,
+      guildId: full.guildId,
+      authorIsBot: full.author.bot,
+      webhookId: full.webhookId,
+      system: full.system,
+    };
+    if (receivesReaction(author, user.id, config.guildId)) {
+      reactions.addReceived(memberRow(full.author, full.member), at);
+    }
+  } catch (err) {
+    console.error("reaction author lookup failed:", err);
+  }
 });
 
 // Renames while the bot is offline are picked up by the channel's next message.
