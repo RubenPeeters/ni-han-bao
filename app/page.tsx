@@ -1,6 +1,7 @@
 import { BotStatus } from "@/components/bot-status";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { hasEnvVars } from "@/lib/utils";
+import Link from "next/link";
 import { Suspense } from "react";
 
 export default function Home() {
@@ -18,6 +19,9 @@ export default function Home() {
         ) : (
           <p className="text-sm">Supabase env vars are not set.</p>
         )}
+        <Link href="/leaderboard" className="text-sm underline underline-offset-4">
+          Who talks the most? See the leaderboard →
+        </Link>
       </div>
     </main>
   );
