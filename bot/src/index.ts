@@ -185,20 +185,16 @@ function totals(
   };
 }
 
-/** Failed batches; whatever else failed is back in the buffers and goes with the next flush. */
-const retrying = () =>
-  totals(
-    activity.pending?.counts ?? [],
-    reactions.pending?.emojiCounts ?? [],
-    timeline.pending?.flow ?? [],
-    timeline.pending?.voice ?? [],
-  );
-
-/** Empties the buffers, so only call this on the way out. */
+/** Everything not yet written: buffered counts plus failed batches. */
 function unwritten() {
+  // Drain and put straight back: restore into the emptied maps is exact, and nothing
+  // can run between the two calls.
   const a = activity.drain();
   const r = reactions.drain();
   const t = timeline.drain();
+  activity.restore(a);
+  reactions.restore(r);
+  timeline.restore(t);
   return totals(
     [...a.counts, ...(activity.pending?.counts ?? [])],
     [...r.emojiCounts, ...(reactions.pending?.emojiCounts ?? [])],
@@ -219,7 +215,7 @@ async function periodicFlush(): Promise<void> {
     return;
   }
   const delay = flushBackoff.fail(Date.now());
-  log("warn", "flush_retry", { attempt: flushBackoff.failures, retry_in_ms: delay, ...retrying() });
+  log("warn", "flush_retry", { attempt: flushBackoff.failures, retry_in_ms: delay, ...unwritten() });
 }
 
 client.on(Events.MessageCreate, (message) => {
@@ -469,19 +465,21 @@ async function shutdown(code: number): Promise<void> {
     log("error", "shutdown_timeout", { lost: unwritten() });
     process.exit(code);
   }, SHUTDOWN_KILL_MS);
+  // Stop new events first, and let a flush in flight finish: it drained the buffers before
+  // anything it missed arrived, so its success alone does not mean everything is written.
+  await client.destroy();
+  await flushing;
   // Close open voice sessions now, so the next start does not have to guess when they ended.
   timeline.addVoice(voice.closeAll(new Date()));
   const clock = {
     now: Date.now,
     sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
   };
-  // The first flush waits for one already in flight; later ones write what is left.
   const ok = await flushUntil(flush, deadline, new Backoff(500, 2000), clock, (attempt, delay) =>
-    log("warn", "flush_retry", { attempt, retry_in_ms: delay, ...retrying() }),
+    log("warn", "flush_retry", { attempt, retry_in_ms: delay, ...unwritten() }),
   );
   if (ok) log("info", "flushed");
   else log("error", "flush_lost", { lost: unwritten() });
-  await client.destroy();
   process.exit(code);
 }
 
