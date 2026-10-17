@@ -40,3 +40,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# bot
+bot/dist
+bot/deploy/.env
+
+# every workspace package, not just the root (bot/node_modules was committed by mistake)
+node_modules
