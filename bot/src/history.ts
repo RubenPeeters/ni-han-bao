@@ -18,15 +18,12 @@ export function snowflakeAt(at: Date): string {
 }
 
 /**
- * When live counting began, from the oldest stored counts. Per-day counts may predate the
- * per-hour ones (they shipped first), so the hour is only trusted on that same first day.
- * Messages earlier on that day than the cutoff were never counted and are lost either way.
- * No counts yet means live counting starts now.
+ * Where the backfill stops: the start of a UTC day that ended at least an hour ago. The live
+ * bot only flushes a few seconds behind, so it never adds to a bucket before this again,
+ * which is what lets backfill_apply() take the larger of the live and history counts.
  */
-export function firstLiveCount(firstDay: string | null, firstHour: string | null, now: Date): Date {
-  if (!firstDay) return firstHour ? new Date(firstHour) : now;
-  const hour = firstHour ? new Date(firstHour) : null;
-  return hour && hour.toISOString().slice(0, 10) === firstDay ? hour : new Date(`${firstDay}T00:00:00Z`);
+export function backfillCutoff(now: Date): Date {
+  return new Date(`${new Date(now.getTime() - 3_600_000).toISOString().slice(0, 10)}T00:00:00Z`);
 }
 
 export interface HistoryMessage extends MessageInfo {
@@ -36,6 +33,8 @@ export interface HistoryMessage extends MessageInfo {
 }
 
 export interface Cursor {
+  /** The channel or thread being read; its counts go to the `channel` passed alongside. */
+  channelId: string;
   beforeId: string;
   done: boolean;
 }
@@ -70,7 +69,7 @@ export async function backfillChannel(
   io: HistoryIo,
   pageSize = PAGE_SIZE,
 ): Promise<number> {
-  let { beforeId, done } = cursor;
+  let { channelId, beforeId, done } = cursor;
   let counted = 0;
   while (!done) {
     const page = await io.fetchBefore(beforeId, pageSize);
@@ -86,7 +85,7 @@ export async function backfillChannel(
     }
     const { members, counts, channelCounts } = buffer.drain();
     const applied = await io.writePage({
-      channelId: channel.channel_id,
+      channelId,
       beforeId,
       nextBeforeId,
       done,

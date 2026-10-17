@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   backfillChannel,
-  firstLiveCount,
+  backfillCutoff,
   snowflakeAt,
   type Cursor,
   type HistoryIo,
@@ -13,7 +13,6 @@ const GUILD = "g1";
 const general = { channel_id: "c1", name: "general" };
 const alice = { user_id: "a", display_name: "Alice", avatar_url: null };
 const bob = { user_id: "b", display_name: "Bob", avatar_url: null };
-const cutoff = new Date("2026-10-10T12:00:00Z");
 
 function message(id: number, author = alice, extra: Partial<HistoryMessage> = {}): HistoryMessage {
   return {
@@ -71,39 +70,41 @@ describe("snowflakeAt", () => {
   });
 });
 
-describe("firstLiveCount", () => {
-  const now = new Date("2026-10-17T00:00:00Z");
-
-  it("uses the first hour when it falls on the first day", () => {
-    expect(firstLiveCount("2026-10-10", "2026-10-10T12:00:00+00:00", now)).toEqual(cutoff);
+describe("backfillCutoff", () => {
+  it("is the start of today once today is an hour old", () => {
+    expect(backfillCutoff(new Date("2026-10-17T12:45:00Z"))).toEqual(new Date("2026-10-17T00:00:00Z"));
   });
 
-  it("falls back to the start of the first day when hourly counts began later", () => {
-    expect(firstLiveCount("2026-10-08", "2026-10-10T12:00:00+00:00", now)).toEqual(
-      new Date("2026-10-08T00:00:00Z"),
-    );
-    expect(firstLiveCount("2026-10-08", null, now)).toEqual(new Date("2026-10-08T00:00:00Z"));
-  });
-
-  it("is now when nothing was counted yet", () => {
-    expect(firstLiveCount(null, null, now)).toEqual(now);
+  it("is the start of yesterday just after midnight, while the live bot may still flush yesterday", () => {
+    expect(backfillCutoff(new Date("2026-10-17T00:30:00Z"))).toEqual(new Date("2026-10-16T00:00:00Z"));
   });
 });
 
 describe("backfillChannel", () => {
-  const start = (): Cursor => ({ beforeId: "1000", done: false });
+  const start = (): Cursor => ({ channelId: "c1", beforeId: "1000", done: false });
 
   it("counts every message before the cursor, page by page", async () => {
     const ch = fakeChannel(history, start());
     expect(await backfillChannel(general, start(), GUILD, ch.io, 10)).toBe(25);
     expect(ch.total()).toBe(25);
     expect([...ch.hours.values()].reduce((n, c) => n + c, 0)).toBe(25);
-    expect(ch.stored).toEqual({ beforeId: "1", done: true });
+    expect(ch.stored).toEqual({ channelId: "c1", beforeId: "1", done: true });
   });
 
   it("skips messages at or after the cursor", async () => {
-    const ch = fakeChannel(history, { beforeId: "11", done: false });
-    expect(await backfillChannel(general, { beforeId: "11", done: false }, GUILD, ch.io, 10)).toBe(10);
+    const ch = fakeChannel(history, { channelId: "c1", beforeId: "11", done: false });
+    expect(await backfillChannel(general, { channelId: "c1", beforeId: "11", done: false }, GUILD, ch.io, 10)).toBe(10);
+  });
+
+  it("moves a thread's own cursor but counts toward its parent channel", async () => {
+    const pages: Page[] = [];
+    const io: HistoryIo = {
+      fetchBefore: async () => [message(1)],
+      writePage: async (page) => (pages.push(page), true),
+    };
+    await backfillChannel(general, { channelId: "t1", beforeId: "1000", done: false }, GUILD, io, 10);
+    expect(pages.map((p) => p.channelId)).toEqual(["t1"]);
+    expect(pages[0].channelCounts.map((c) => c.channel_id)).toEqual(["c1"]);
   });
 
   it("does not count bots, webhooks or system messages", async () => {
@@ -121,7 +122,7 @@ describe("backfillChannel", () => {
   it("finishes an empty channel", async () => {
     const ch = fakeChannel([], start());
     expect(await backfillChannel(general, start(), GUILD, ch.io, 10)).toBe(0);
-    expect(ch.stored).toEqual({ beforeId: "1000", done: true });
+    expect(ch.stored).toEqual({ channelId: "c1", beforeId: "1000", done: true });
   });
 
   it("finishes when the last page is exactly full", async () => {
