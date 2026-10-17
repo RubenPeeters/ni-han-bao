@@ -5,5 +5,6 @@ install:
 check: install
 	pnpm lint
 	pnpm build
+	node scripts/check-public-pages.mjs
 	pnpm --filter ni-han-bao-bot typecheck
 	pnpm --filter ni-han-bao-bot test
