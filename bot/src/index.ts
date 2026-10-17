@@ -6,10 +6,12 @@ import {
   flushActivity,
   memberRow,
   shouldCount,
+  utcDay,
   type MemberRow,
 } from "./activity.js";
 import { loadConfig } from "./config.js";
 import { emojiRow, flushReactions, ReactionBuffer, receivesReaction } from "./reactions.js";
+import { flushTimeline, TimelineBuffer, VoiceSessions } from "./timeline.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 
 const HEARTBEAT_MS = 60_000;
@@ -45,6 +47,13 @@ async function heartbeat(): Promise<void> {
     last_seen: new Date().toISOString(),
   });
   if (error) console.error("heartbeat failed:", error.message);
+  // Rewritten every heartbeat, so each day keeps the last count seen that day.
+  const snapshot = await db.from("member_count_snapshots").upsert({
+    day: utcDay(new Date()),
+    member_count: guild.memberCount,
+    updated_at: new Date().toISOString(),
+  });
+  if (snapshot.error) console.error("member count snapshot failed:", snapshot.error.message);
 }
 
 const activity = new ActivityBuffer();
@@ -52,6 +61,9 @@ const activity = new ActivityBuffer();
 let flushing: Promise<void> | null = null;
 
 const reactions = new ReactionBuffer();
+
+const timeline = new TimelineBuffer();
+const voice = new VoiceSessions();
 
 async function upsertMembers(rows: MemberRow[]): Promise<void> {
   const { error } = await db
@@ -90,6 +102,19 @@ async function flushAll(): Promise<void> {
       if (error) throw new Error(`increment_reactions: ${error.message}`);
     },
   }).catch((err: unknown) => console.error("reaction flush failed:", err));
+  // Count open voice sessions up to now, so a crash loses at most one flush interval.
+  timeline.addVoice(voice.collect(new Date()));
+  await flushTimeline(timeline, {
+    upsertMembers,
+    async incrementTimeline(batch) {
+      const { error } = await db.rpc("increment_timeline", {
+        batch: batch.id,
+        flow: batch.flow,
+        voice: batch.voice,
+      });
+      if (error) throw new Error(`increment_timeline: ${error.message}`);
+    },
+  }).catch((err: unknown) => console.error("timeline flush failed:", err));
 }
 
 // One flush at a time, so shutdown can wait for the one in flight before writing the rest.
@@ -172,6 +197,29 @@ client.on(Events.UserUpdate, (_old, user) => {
   if (member) activity.setMember(memberRow(user, member));
 });
 
+// Bots count here, unlike everywhere else: the member count the timeline shows is
+// Discord's, which includes them, and joins minus leaves should add up to it.
+client.on(Events.GuildMemberAdd, (member) => {
+  if (member.guild.id === config.guildId) timeline.addJoin(new Date());
+});
+
+client.on(Events.GuildMemberRemove, (member) => {
+  if (member.guild.id === config.guildId) timeline.addLeave(new Date());
+});
+
+client.on(Events.VoiceStateUpdate, (_old, state) => {
+  if (state.guild.id !== config.guildId) return;
+  if (state.channelId === null) {
+    // No member check on a leave: an uncached member must still close their session, and
+    // a bot never has one to close.
+    timeline.addVoice(voice.update(state.id, false, new Date()));
+    return;
+  }
+  if (!state.member || state.member.user.bot) return;
+  timeline.setMember(memberRow(state.member.user, state.member));
+  voice.update(state.id, true, new Date());
+});
+
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand() || !interaction.inCachedGuild()) return;
   if (interaction.guildId !== config.guildId) return;
@@ -216,12 +264,20 @@ client.once(Events.ClientReady, async (c) => {
     for (const member of (await guild.members.fetch()).values()) {
       if (!member.user.bot) activity.setMember(memberRow(member.user, member));
     }
+    // Whoever was in voice before the bot started is counted from now on.
+    const inVoice = [...guild.voiceStates.cache.values()].flatMap((s) =>
+      s.channelId !== null && s.member && !s.member.user.bot ? [s.member] : [],
+    );
+    for (const m of inVoice) timeline.setMember(memberRow(m.user, m));
+    timeline.addVoice(voice.sync(inVoice.map((m) => m.id), new Date()));
   } catch (err) {
     console.error("member sync failed:", err);
   }
 });
 
 const shutdown = () => {
+  // Close open voice sessions now, so the next start does not have to guess when they ended.
+  timeline.addVoice(voice.closeAll(new Date()));
   // The first call waits for any flush already in flight, the second writes what is left.
   void flush()
     .then(() => flush())
