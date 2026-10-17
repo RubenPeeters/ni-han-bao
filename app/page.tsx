@@ -28,6 +28,9 @@ export default function Home() {
         <Link href="/emoji" className="text-sm underline underline-offset-4">
           What does everyone react with? See the emoji →
         </Link>
+        <Link href="/timeline" className="text-sm underline underline-offset-4">
+          How is the server growing, and who hangs out in voice? See the timeline →
+        </Link>
       </div>
     </main>
   );

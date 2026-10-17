@@ -15,7 +15,12 @@ describe("loadConfig", () => {
       guildId: "g",
       supabaseUrl: "https://x.supabase.co",
       supabaseSecretKey: "s",
+      siteUrl: null,
     });
+  });
+
+  it("reads the optional site url", () => {
+    expect(loadConfig({ ...full, SITE_URL: "https://x.example" }).siteUrl).toBe("https://x.example");
   });
 
   it("names every missing variable", () => {

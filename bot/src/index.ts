@@ -1,4 +1,11 @@
-import { Client, Events, GatewayIntentBits, MessageFlags, Partials } from "discord.js";
+import {
+  type ChatInputCommandInteraction,
+  Client,
+  Events,
+  GatewayIntentBits,
+  MessageFlags,
+  Partials,
+} from "discord.js";
 import { createClient } from "@supabase/supabase-js";
 import {
   ActivityBuffer,
@@ -6,10 +13,23 @@ import {
   flushActivity,
   memberRow,
   shouldCount,
+  utcDay,
   type MemberRow,
 } from "./activity.js";
 import { loadConfig } from "./config.js";
 import { emojiRow, flushReactions, ReactionBuffer, receivesReaction } from "./reactions.js";
+import {
+  CHANNEL_DAYS,
+  channelEmbed,
+  leaderboardEmbed,
+  meEmbed,
+  rankOf,
+  STATS_COMMANDS,
+  sumSince,
+  utcWeekStart,
+  type Period,
+} from "./stats.js";
+import { flushTimeline, TimelineBuffer, VoiceSessions } from "./timeline.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 
 const HEARTBEAT_MS = 60_000;
@@ -45,6 +65,13 @@ async function heartbeat(): Promise<void> {
     last_seen: new Date().toISOString(),
   });
   if (error) console.error("heartbeat failed:", error.message);
+  // Rewritten every heartbeat, so each day keeps the last count seen that day.
+  const snapshot = await db.from("member_count_snapshots").upsert({
+    day: utcDay(new Date()),
+    member_count: guild.memberCount,
+    updated_at: new Date().toISOString(),
+  });
+  if (snapshot.error) console.error("member count snapshot failed:", snapshot.error.message);
 }
 
 const activity = new ActivityBuffer();
@@ -52,6 +79,9 @@ const activity = new ActivityBuffer();
 let flushing: Promise<void> | null = null;
 
 const reactions = new ReactionBuffer();
+
+const timeline = new TimelineBuffer();
+const voice = new VoiceSessions();
 
 async function upsertMembers(rows: MemberRow[]): Promise<void> {
   const { error } = await db
@@ -90,6 +120,19 @@ async function flushAll(): Promise<void> {
       if (error) throw new Error(`increment_reactions: ${error.message}`);
     },
   }).catch((err: unknown) => console.error("reaction flush failed:", err));
+  // Count open voice sessions up to now, so a crash loses at most one flush interval.
+  timeline.addVoice(voice.collect(new Date()));
+  await flushTimeline(timeline, {
+    upsertMembers,
+    async incrementTimeline(batch) {
+      const { error } = await db.rpc("increment_timeline", {
+        batch: batch.id,
+        flow: batch.flow,
+        voice: batch.voice,
+      });
+      if (error) throw new Error(`increment_timeline: ${error.message}`);
+    },
+  }).catch((err: unknown) => console.error("timeline flush failed:", err));
 }
 
 // One flush at a time, so shutdown can wait for the one in flight before writing the rest.
@@ -172,9 +215,103 @@ client.on(Events.UserUpdate, (_old, user) => {
   if (member) activity.setMember(memberRow(user, member));
 });
 
+// Bots count here, unlike everywhere else: the member count the timeline shows is
+// Discord's, which includes them, and joins minus leaves should add up to it.
+client.on(Events.GuildMemberAdd, (member) => {
+  if (member.guild.id === config.guildId) timeline.addJoin(new Date());
+});
+
+client.on(Events.GuildMemberRemove, (member) => {
+  if (member.guild.id === config.guildId) timeline.addLeave(new Date());
+});
+
+client.on(Events.VoiceStateUpdate, (_old, state) => {
+  if (state.guild.id !== config.guildId) return;
+  if (state.channelId === null) {
+    // No member check on a leave: an uncached member must still close their session, and
+    // a bot never has one to close.
+    timeline.addVoice(voice.update(state.id, false, new Date()));
+    return;
+  }
+  if (!state.member || state.member.user.bot) return;
+  timeline.setMember(memberRow(state.member.user, state.member));
+  voice.update(state.id, true, new Date());
+});
+
+// shortcut: rank needs every member's total, fetched via leaderboard() up to this many rows
+// (and PostgREST's max-rows, 1000 by default); add a rank function if the server outgrows it.
+const RANK_TOP = 1000;
+
+async function leaderboard(since: string | null, top: number) {
+  const { data, error } = await db.rpc("leaderboard", { since, top });
+  if (error) throw new Error(`leaderboard: ${error.message}`);
+  return data as { user_id: string; display_name: string; message_count: number }[];
+}
+
+// Reads only, from the tables and functions the website uses. The secret key bypasses RLS,
+// so hidden members are filtered by leaderboard() itself, and /me can read the caller's own rows.
+async function statsReply(interaction: ChatInputCommandInteraction<"cached">) {
+  const weekStart = utcWeekStart(new Date());
+  if (interaction.commandName === "leaderboard") {
+    const period: Period = interaction.options.getString("period") === "all" ? "all" : "week";
+    const rows = await leaderboard(period === "week" ? weekStart : null, 10);
+    return { embeds: [leaderboardEmbed(period, rows, weekStart, config.siteUrl)] };
+  }
+  if (interaction.commandName === "me") {
+    const userId = interaction.user.id;
+    const [counts, received, member, week, allTime] = await Promise.all([
+      db.from("message_counts").select("day, count").eq("user_id", userId),
+      db.from("reactions_received").select("day, count").eq("user_id", userId),
+      db.from("members").select("hidden").eq("user_id", userId).maybeSingle(),
+      leaderboard(weekStart, RANK_TOP),
+      leaderboard(null, RANK_TOP),
+    ]);
+    for (const r of [counts, received, member]) if (r.error) throw new Error(`/me: ${r.error.message}`);
+    const weekCount = sumSince(counts.data ?? [], weekStart);
+    const allTimeCount = sumSince(counts.data ?? [], null);
+    const stats = {
+      displayName: memberRow(interaction.user, interaction.member).display_name,
+      week: weekCount,
+      allTime: allTimeCount,
+      weekRank: rankOf(week, userId, weekCount),
+      allTimeRank: rankOf(allTime, userId, allTimeCount),
+      reactionsReceived: sumSince(received.data ?? [], null),
+      hidden: member.data?.hidden ?? false,
+    };
+    return { embeds: [meEmbed(stats, config.siteUrl)] };
+  }
+  const picked = interaction.options.getChannel("channel") ?? interaction.channel;
+  // Thread messages are counted toward their parent channel (see channelRow).
+  const target = picked?.isThread() ? (picked.parent ?? picked) : picked;
+  if (!target) return { content: "Pick a channel to look at." };
+  const { data, error } = await db
+    .from("channel_message_counts")
+    .select("hour, count")
+    .eq("channel_id", target.id)
+    .gte("hour", new Date(Date.now() - CHANNEL_DAYS * 24 * 60 * 60_000).toISOString());
+  if (error) throw new Error(`channel_message_counts: ${error.message}`);
+  return { embeds: [channelEmbed(target.name, data, config.siteUrl)] };
+}
+
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isChatInputCommand() || !interaction.inCachedGuild()) return;
   if (interaction.guildId !== config.guildId) return;
+  if (STATS_COMMANDS.some((c) => c.name === interaction.commandName)) {
+    try {
+      // /me is ephemeral: a hidden member's own stats must not show up for everyone.
+      await interaction.deferReply(
+        interaction.commandName === "me" ? { flags: MessageFlags.Ephemeral } : {},
+      );
+      const reply = await statsReply(interaction).catch((err: unknown) => {
+        console.error(`/${interaction.commandName} failed:`, err);
+        return "Could not load the stats. Please try again later.";
+      });
+      await interaction.editReply(reply);
+    } catch (err) {
+      console.error(`/${interaction.commandName} failed:`, err);
+    }
+    return;
+  }
   const hidden = hiddenFor(interaction.commandName);
   if (hidden === null) return;
   try {
@@ -203,7 +340,7 @@ client.once(Events.ClientReady, async (c) => {
   console.log(`logged in as ${c.user.tag}`);
   // Guild commands, not global ones: they apply instantly and only in our server.
   try {
-    await c.application.commands.set([...VISIBILITY_COMMANDS], config.guildId);
+    await c.application.commands.set([...VISIBILITY_COMMANDS, ...STATS_COMMANDS], config.guildId);
   } catch (err) {
     console.error("command registration failed:", err);
   }
@@ -216,12 +353,20 @@ client.once(Events.ClientReady, async (c) => {
     for (const member of (await guild.members.fetch()).values()) {
       if (!member.user.bot) activity.setMember(memberRow(member.user, member));
     }
+    // Whoever was in voice before the bot started is counted from now on.
+    const inVoice = [...guild.voiceStates.cache.values()].flatMap((s) =>
+      s.channelId !== null && s.member && !s.member.user.bot ? [s.member] : [],
+    );
+    for (const m of inVoice) timeline.setMember(memberRow(m.user, m));
+    timeline.addVoice(voice.sync(inVoice.map((m) => m.id), new Date()));
   } catch (err) {
     console.error("member sync failed:", err);
   }
 });
 
 const shutdown = () => {
+  // Close open voice sessions now, so the next start does not have to guess when they ended.
+  timeline.addVoice(voice.closeAll(new Date()));
   // The first call waits for any flush already in flight, the second writes what is left.
   void flush()
     .then(() => flush())
