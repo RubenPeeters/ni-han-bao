@@ -1,5 +1,7 @@
 [Unit]
 Description=Deploy ni-han-bao bot from origin/main
+# Skip quietly until the first release puts the bot code on main.
+ConditionPathExists=/opt/ni-han-bao/bot/deploy/update.sh
 
 [Service]
 Type=oneshot
