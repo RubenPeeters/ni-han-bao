@@ -5,3 +5,5 @@ install:
 check: install
 	pnpm lint
 	pnpm build
+	pnpm --filter ni-han-bao-bot typecheck
+	pnpm --filter ni-han-bao-bot test
