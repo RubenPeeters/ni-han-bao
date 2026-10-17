@@ -1,9 +1,9 @@
 [Unit]
 Description=Deploy ni-han-bao bot from origin/main
-# Skip quietly until the first release puts the bot code on main.
-ConditionPathExists=/opt/ni-han-bao/bot/deploy/update.sh
 
 [Service]
 Type=oneshot
 User=deploy
-ExecStart=/opt/ni-han-bao/bot/deploy/update.sh
+# update.sh lives in the repo, so the very first run has to pull main itself. Before the
+# first release main has no bot/ yet: then this exits 0 instead of failing every 5 minutes.
+ExecStart=/bin/sh -c 'cd /opt/ni-han-bao && if [ ! -x bot/deploy/update.sh ]; then git fetch -q origin main && git reset -q --hard origin/main; fi; [ -x bot/deploy/update.sh ] || exit 0; exec bot/deploy/update.sh'
