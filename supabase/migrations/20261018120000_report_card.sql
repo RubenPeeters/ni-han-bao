@@ -1,8 +1,8 @@
 -- Weekly report card the bot posts in Discord.
 -- Same convention as bot_status: RLS on, anon may only SELECT, only the bot writes.
 
--- Weeks whose report card was posted. The bot claims a week by inserting its row before
--- posting, so a restart (or a second bot) never posts the same week twice.
+-- Weeks whose report card was posted, written after the send. The bot also checks the
+-- report channel itself, so a crash between sending and writing this row posts nothing twice.
 create table if not exists public.report_cards (
     week date primary key,  -- Monday of the reported UTC week
     posted_at timestamptz not null default now()

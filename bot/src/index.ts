@@ -26,7 +26,7 @@ import { loadConfig } from "./config.js";
 import { createLogger } from "./log.js";
 import { nextPresence, PRESENCE_PHRASES } from "./presence.js";
 import { emojiRow, flushReactions, ReactionBuffer, receivesReaction } from "./reactions.js";
-import { addDays, dueReportWeek, reportEmbed, type ReportData } from "./report.js";
+import { addDays, dueReportWeek, isReportFor, reportEmbed, type ReportData } from "./report.js";
 import {
   CHANNEL_DAYS,
   channelEmbed,
@@ -448,7 +448,7 @@ async function rotatePresence(): Promise<void> {
     });
     if (!next) return;
     presenceIndex = next.next;
-    client.user?.setActivity({ type: ActivityType.Custom, name: next.text, state: next.text });
+    await client.user?.setActivity({ type: ActivityType.Custom, name: next.text, state: next.text });
   } catch (err) {
     log("warn", "presence_failed", { error: err });
   }
@@ -464,26 +464,30 @@ async function weeklyReport(): Promise<void> {
   if (!channelId || week === null || week === reportedWeek || reporting) return;
   reporting = true;
   try {
-    // Claim the week before posting: after a restart, or with a second bot running, the
-    // insert hits the primary key and nobody posts it again.
-    const claim = await db.from("report_cards").insert({ week });
-    if (claim.error?.code === "23505") {
+    const recorded = await db.from("report_cards").select("week").eq("week", week).maybeSingle();
+    if (recorded.error) throw new Error(`report_cards select: ${recorded.error.message}`);
+    if (recorded.data) {
       reportedWeek = week;
       return;
     }
-    if (claim.error) throw new Error(`report_cards insert: ${claim.error.message}`);
-    try {
+    const channel = await client.channels.fetch(channelId);
+    if (!channel?.isSendable()) throw new Error("REPORT_CHANNEL_ID is not a channel the bot can post in");
+    // The channel, not the table, decides whether the week went out: a send whose response
+    // was lost, or a crash before the row below was written, must not post it twice.
+    // shortcut: only the last 100 messages are searched, enough for the one-day posting window.
+    const recent = await channel.messages.fetch({ limit: 100 });
+    if (!recent.some((m) => m.author.id === client.user?.id && isReportFor(m.embeds, week))) {
       const { data, error } = await db.rpc("report_card", { since: week, until: addDays(week, 7) });
       if (error) throw new Error(`report_card: ${error.message}`);
-      const channel = await client.channels.fetch(channelId);
-      if (!channel?.isSendable()) throw new Error("REPORT_CHANNEL_ID is not a channel the bot can post in");
-      await channel.send({ embeds: [reportEmbed(week, data as ReportData, config.siteUrl)] });
-    } catch (err) {
-      // Release the claim so the next check retries.
-      const release = await db.from("report_cards").delete().eq("week", week);
-      if (release.error) log("error", "report_release_failed", { week, error: release.error.message });
-      throw err;
+      // The nonce makes Discord drop a second send of the same week from a concurrent bot.
+      await channel.send({
+        embeds: [reportEmbed(week, data as ReportData, config.siteUrl)],
+        nonce: `report-${week}`,
+        enforceNonce: true,
+      });
     }
+    const record = await db.from("report_cards").upsert({ week }, { ignoreDuplicates: true });
+    if (record.error) throw new Error(`report_cards upsert: ${record.error.message}`);
     reportedWeek = week;
     log("info", "report_posted", { week });
   } catch (err) {

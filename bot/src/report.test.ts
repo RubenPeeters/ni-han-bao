@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, dueReportWeek, reportEmbed, reportSlot, type ReportData } from "./report.js";
+import { addDays, dueReportWeek, isReportFor, reportEmbed, reportSlot, type ReportData } from "./report.js";
 
 describe("reportSlot", () => {
   it.each([
@@ -89,5 +89,15 @@ describe("reportEmbed", () => {
       null,
     );
     expect(embed.fields![2].value).toBe("😂 1 time");
+  });
+});
+
+describe("isReportFor", () => {
+  const empty: ReportData = { top_talkers: [], busiest_channel: null, top_emoji: null, joins: 0, leaves: 0 };
+  it("finds the posted report card of that week only", () => {
+    const embeds = [reportEmbed("2026-10-12", empty, null)];
+    expect(isReportFor(embeds, "2026-10-12")).toBe(true);
+    expect(isReportFor(embeds, "2026-10-05")).toBe(false);
+    expect(isReportFor([{ title: null }], "2026-10-12")).toBe(false);
   });
 });

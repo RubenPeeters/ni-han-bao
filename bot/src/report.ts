@@ -93,6 +93,13 @@ function growthText(joins: number, leaves: number): string {
   return `${sign}${n(net)} (${n(joins)} joined, ${n(leaves)} left)\n${quip}`;
 }
 
+const reportTitle = (week: string) => `Weekly report card: week of ${week}`;
+
+/** Whether `embeds` (of a message the bot posted) are the report card for `week`. */
+export function isReportFor(embeds: readonly { title?: string | null }[], week: string): boolean {
+  return embeds.some((e) => e.title === reportTitle(week));
+}
+
 /** Last week's report card, in the voice of a mildly disappointed dad. Teases the server, never a member. */
 export function reportEmbed(week: string, data: ReportData, siteUrl: string | null): APIEmbed {
   const medals = ["🥇", "🥈", "🥉"];
@@ -111,7 +118,7 @@ export function reportEmbed(week: string, data: ReportData, siteUrl: string | nu
     ? "Report card's in. Sit down, we need to talk."
     : "Report card's in. There isn't much on it.";
   return {
-    title: `Weekly report card: week of ${week}`,
+    title: reportTitle(week),
     ...(siteUrl && { url: siteUrl }),
     description: intro,
     fields: [
