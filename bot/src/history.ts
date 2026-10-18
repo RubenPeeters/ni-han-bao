@@ -23,8 +23,8 @@ export function snowflakeAt(at: Date): string {
  * The id that splits live counting from the backfill: the live bot counts messages at or
  * after it, the backfill those before it, so the two never overlap. Stored once per server
  * (backfill_state) by whichever of the two runs first.
- * With nothing counted yet it is the start of the next hour, so the live bot's first hour is
- * whole and every earlier message is left to the backfill.
+ * With nothing counted yet it is now, so a server the bot just joined is counted from its
+ * next message; the backfill adds the earlier part of that hour to the same rows.
  * A bot that counted before this boundary existed has no record of when it started: the
  * boundary is then the start of the first hour it counted (or of the first day, when member
  * counts are older than every channel count, from before channel counts existed).
@@ -37,7 +37,7 @@ export function backfillBefore(firstLiveDay: string | null, firstLiveHour: strin
     return snowflakeAt(new Date(`${firstLiveDay}T00:00:00.000Z`));
   }
   if (hour) return snowflakeAt(new Date(utcHour(hour)));
-  return snowflakeAt(new Date(Date.parse(utcHour(now)) + 3_600_000));
+  return snowflakeAt(now);
 }
 
 /** Whether the live bot counts message `id`: older ones are the backfill's. */

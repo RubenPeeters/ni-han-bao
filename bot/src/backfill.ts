@@ -19,6 +19,8 @@ import { backfillChannel, loadBeforeId, must, snowflakeTime, type Cursor, type H
 
 const dryRun = process.argv.includes("--dry-run");
 const config = loadConfig();
+if (!config.guildId) throw new Error("missing environment variable: DISCORD_GUILD_ID (the server to backfill)");
+const guildId = config.guildId;
 const db = createClient(config.supabaseUrl, config.supabaseSecretKey, {
   auth: { persistSession: false },
 });
@@ -32,7 +34,7 @@ async function loadCursors(channelIds: string[], beforeId: string): Promise<Map<
   if (!dryRun) {
     const { error } = await db
       .from("backfill_cursors")
-      .upsert(channelIds.map((channel_id) => ({ guild_id: config.guildId, channel_id, before_id: beforeId })), {
+      .upsert(channelIds.map((channel_id) => ({ guild_id: guildId, channel_id, before_id: beforeId })), {
         ignoreDuplicates: true,
       });
     if (error) throw new Error(`backfill_cursors upsert: ${error.message}`);
@@ -46,7 +48,7 @@ async function loadCursors(channelIds: string[], beforeId: string): Promise<Map<
       await db
         .from("backfill_cursors")
         .select("channel_id, before_id, done")
-        .eq("guild_id", config.guildId)
+        .eq("guild_id", guildId)
         .order("channel_id")
         .range(from, from + PAGE - 1),
     );
@@ -86,13 +88,16 @@ async function allThreads(guild: Guild, me: GuildMember): Promise<AnyThreadChann
 async function insertMissing(table: "members" | "channels", rows: (MemberRow | ChannelRow)[]): Promise<void> {
   const { error } = await db
     .from(table)
-    .upsert(rows.map((r) => ({ ...r, guild_id: config.guildId })), { ignoreDuplicates: true });
+    .upsert(rows.map((r) => ({ ...r, guild_id: guildId })), {
+      onConflict: table === "members" ? "guild_id,user_id" : "guild_id,channel_id",
+      ignoreDuplicates: true,
+    });
   if (error) throw new Error(`${table} upsert: ${error.message}`);
 }
 
 async function main(): Promise<void> {
   await client.login(config.discordToken);
-  const guild = await client.guilds.fetch(config.guildId);
+  const guild = await client.guilds.fetch(guildId);
   await guild.members.fetch();
   const me = await guild.members.fetchMe();
   const channels = [...(await guild.channels.fetch()).values()].flatMap((c) =>
@@ -101,7 +106,7 @@ async function main(): Promise<void> {
   const readable = [...channels, ...(await allThreads(guild, me))].filter((c) =>
     c.permissionsFor(me).has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory]),
   );
-  const beforeId = await loadBeforeId(db, config.guildId, !dryRun);
+  const beforeId = await loadBeforeId(db, guildId, !dryRun);
   // Messages sent between now and a future boundary would be missed: neither side counts them.
   const liveFrom = snowflakeTime(beforeId);
   if (liveFrom > new Date()) {
@@ -140,7 +145,7 @@ async function main(): Promise<void> {
         return must(
           "backfill_page",
           await db.rpc("backfill_page", {
-            guild: config.guildId,
+            guild: guildId,
             channel: channel.id,
             before: page.beforeId,
             next_before: page.nextBeforeId,
@@ -152,7 +157,7 @@ async function main(): Promise<void> {
       },
     };
     try {
-      const counted = await backfillChannel(row, cursor, config.guildId, io);
+      const counted = await backfillChannel(row, cursor, guildId, io);
       total += counted;
       const into = row.channel_id === channel.id ? "" : ` (into #${row.name})`;
       console.log(`#${channel.name}${into}: ${dryRun ? "would add" : "added"} ${counted} messages`);
