@@ -3,6 +3,7 @@ import { Geist } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import Link from "next/link";
 import { Suspense } from "react";
+import { AuthButton } from "@/components/auth-button";
 import { BotStatusDot } from "@/components/bot-status";
 import { SiteNav } from "@/components/site-nav";
 import { ThemeSwitcher } from "@/components/theme-switcher";
@@ -48,7 +49,8 @@ export default function RootLayout({
                 >
                   ni han bao
                 </Link>
-                <div className="sm:order-last sm:ml-auto">
+                <div className="flex min-w-0 items-center gap-2 sm:order-last sm:ml-auto">
+                  <AuthButton />
                   <ThemeSwitcher />
                 </div>
               </div>
