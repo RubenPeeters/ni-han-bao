@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { keyedQueue, membershipDiff, READ_PAGE, syncMembers, WRITE_CHUNK, type MembershipStore } from "./membership.js";
+import {
+  keyedQueue,
+  MEMBER_FETCH_TRIES,
+  memberFetchRetryMs,
+  membershipDiff,
+  READ_PAGE,
+  syncMembers,
+  WRITE_CHUNK,
+  type MembershipStore,
+} from "./membership.js";
 
 describe("membershipDiff", () => {
   it("adds newcomers and removes leavers, keeping who stayed", () => {
@@ -83,5 +92,31 @@ describe("keyedQueue", () => {
     await expect(failed).rejects.toThrow("down");
     await Promise.all([other, next]);
     expect(order).toEqual(["h", "g"]);
+  });
+});
+
+describe("memberFetchRetryMs", () => {
+  // The shape discord.js's GatewayRateLimitError has.
+  const limited = (retry_after: number) =>
+    Object.assign(new Error(`Request with opcode 8 was rate limited. Retry after ${retry_after} seconds.`), {
+      name: "GatewayRateLimitError",
+      data: { opcode: 8, retry_after },
+    });
+
+  it("waits the retry_after Discord gives, doubling per further try", () => {
+    expect([1, 2, 3].map((attempt) => memberFetchRetryMs(limited(28.593), attempt))).toEqual([
+      28_593, 57_186, 114_372,
+    ]);
+  });
+
+  it("gives up after the last try", () => {
+    expect(memberFetchRetryMs(limited(1), MEMBER_FETCH_TRIES - 1)).not.toBeNull();
+    expect(memberFetchRetryMs(limited(1), MEMBER_FETCH_TRIES)).toBeNull();
+  });
+
+  it("does not retry other errors", () => {
+    expect(memberFetchRetryMs(new Error("Members didn't arrive in time."), 1)).toBeNull();
+    expect(memberFetchRetryMs(Object.assign(new Error("x"), { name: "GatewayRateLimitError" }), 1)).toBeNull();
+    expect(memberFetchRetryMs(undefined, 1)).toBeNull();
   });
 });

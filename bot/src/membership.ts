@@ -55,3 +55,20 @@ export function keyedQueue(): <T>(key: string, task: () => Promise<T>) => Promis
     return run;
   };
 }
+
+/** Tries of a full member fetch before the sync gives up until the next restart. */
+export const MEMBER_FETCH_TRIES = 5;
+
+/**
+ * How long to wait before retrying a full member fetch that failed on its `attempt`-th try,
+ * or null to give up. Only Discord's gateway rate limit (opcode 8) is retried: it says when
+ * to come back, and each further try waits twice as long in case others share the limit.
+ */
+export function memberFetchRetryMs(err: unknown, attempt: number, tries = MEMBER_FETCH_TRIES): number | null {
+  if (attempt >= tries) return null;
+  // Matched by shape: GatewayRateLimitError lives in @discordjs/util, not a direct dependency.
+  const e = err as { name?: unknown; data?: { retry_after?: unknown } } | null;
+  const retryAfter = e?.data?.retry_after;
+  if (e?.name !== "GatewayRateLimitError" || typeof retryAfter !== "number") return null;
+  return Math.ceil(retryAfter * 1000) * 2 ** (attempt - 1);
+}
