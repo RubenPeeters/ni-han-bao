@@ -53,6 +53,7 @@ import {
 } from "./stats.js";
 import { backfillGuild } from "./server-history.js";
 import { flushServers, Server, type ServerWriter } from "./servers.js";
+import { canRemove, newStore, STORE_COMMAND, storeChoices, storeLabel, storeList, type Store } from "./stores.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
@@ -574,6 +575,15 @@ async function statsReply(interaction: ChatInputCommandInteraction<"cached">) {
 }
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  if (interaction.isAutocomplete() && interaction.inCachedGuild() && interaction.commandName === STORE_COMMAND.name) {
+    await tracked(
+      "command",
+      guildStores(interaction.guildId)
+        .then((stores) => interaction.respond(storeChoices(stores, interaction.options.getFocused())))
+        .catch((err: unknown) => log("error", "autocomplete_failed", { command: STORE_COMMAND.name, error: err })),
+    );
+    return;
+  }
   if (!interaction.isChatInputCommand() || !interaction.inCachedGuild()) return;
   if (STATS_COMMANDS.some((c) => c.name === interaction.commandName)) {
     try {
@@ -601,6 +611,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
   if (interaction.commandName === RECAP_COMMAND.name) {
     await tracked("command", recapCommand(interaction));
+    return;
+  }
+  if (interaction.commandName === STORE_COMMAND.name) {
+    await tracked("command", storeCommand(interaction));
     return;
   }
   const hidden = hiddenFor(interaction.commandName);
@@ -704,6 +718,81 @@ async function setupCommand(interaction: ChatInputCommandInteraction<"cached">):
   settings.set(guildId, next);
   if (change && typeof change === "object") log("info", "setup_changed", { guild: guildId, ...change });
   await interaction.editReply(reply);
+}
+
+async function guildStores(guildId: string): Promise<Store[]> {
+  const { data, error } = await db
+    .from("stores")
+    .select("id, game, name, city, url, added_by")
+    .eq("guild_id", guildId)
+    .order("name");
+  if (error) throw new Error(`stores select: ${error.message}`);
+  return data;
+}
+
+/** /store: add, list and remove the server's stores, and mark your regulars. */
+async function storeCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  const sub = interaction.options.getSubcommand();
+  // Only the list is for everyone; the rest answers just the caller.
+  await interaction.deferReply(sub === "list" ? {} : { flags: MessageFlags.Ephemeral });
+  const guildId = interaction.guildId;
+  const userId = interaction.user.id;
+  let reply: string;
+  try {
+    if (sub === "list") {
+      reply = storeList(await guildStores(guildId), config.siteUrl, guildId);
+    } else if (sub === "add") {
+      const row = newStore({
+        name: interaction.options.getString("name", true),
+        city: interaction.options.getString("city", true),
+        link: interaction.options.getString("link"),
+        game: interaction.options.getString("game"),
+      });
+      if (typeof row === "string") {
+        reply = row;
+      } else {
+        const { error } = await db.from("stores").insert({ ...row, guild_id: guildId, added_by: userId });
+        if (error?.code === "23505") reply = `${storeLabel(row)} is already on the list.`;
+        else if (error) throw new Error(`stores insert: ${error.message}`);
+        else reply = `Added ${storeLabel(row)}. Mark it as yours with /store mine.`;
+      }
+    } else {
+      // Autocomplete only suggests; a typed id may belong to another server, hence the guild filter.
+      const store = (await guildStores(guildId)).find((s) => s.id === interaction.options.getInteger("store", true));
+      if (!store) {
+        reply = "That store is not on this server's list. Pick one from the suggestions.";
+      } else if (sub === "remove") {
+        if (!canRemove(store, userId, interaction.memberPermissions.has(PermissionFlagsBits.ManageGuild))) {
+          reply = "Only the member who added it, or someone with Manage Server, can remove it.";
+        } else {
+          const { error } = await db.from("stores").delete().eq("guild_id", guildId).eq("id", store.id);
+          if (error) throw new Error(`stores delete: ${error.message}`);
+          reply = `Removed ${storeLabel(store)}.`;
+        }
+      } else {
+        // A toggle, so the same command undoes it.
+        const { data, error } = await db
+          .from("store_regulars")
+          .delete()
+          .eq("store_id", store.id)
+          .eq("user_id", userId)
+          .select("store_id");
+        if (error) throw new Error(`store_regulars delete: ${error.message}`);
+        if (data.length > 0) {
+          reply = `${storeLabel(store)} is no longer one of your regulars.`;
+        } else {
+          const added = await db.from("store_regulars").insert({ guild_id: guildId, store_id: store.id, user_id: userId });
+          if (added.error) throw new Error(`store_regulars insert: ${added.error.message}`);
+          reply = `${storeLabel(store)} is now one of your regulars. Use /store mine again to undo.`;
+        }
+      }
+    }
+  } catch (err) {
+    log("error", "command_failed", { command: STORE_COMMAND.name, error: err });
+    reply = "Something went wrong, nothing was changed. Please try again later.";
+  }
+  // Store names are typed by members: no @everyone or role pings from them.
+  await interaction.editReply({ content: reply, allowedMentions: { parse: [] } });
 }
 
 let presenceIndex = 0;
@@ -934,6 +1023,7 @@ async function startServer(guild: Guild): Promise<void> {
       ...STATS_COMMANDS,
       SETUP_COMMAND,
       RECAP_COMMAND,
+      STORE_COMMAND,
     ]);
   } catch (err) {
     log("error", "command_registration_failed", { guild: guild.id, error: err });
