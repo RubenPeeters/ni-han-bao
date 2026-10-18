@@ -1,4 +1,5 @@
 import { Leaderboard } from "@/components/leaderboard";
+import { HistoryProgress } from "@/components/history-progress";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
 import { memberGuild } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
@@ -25,5 +26,11 @@ export default function LeaderboardPage({ params }: PageProps<"/s/[guildId]/lead
 }
 
 async function LeaderboardForMember({ params }: { params: Promise<{ guildId: string }> }) {
-  return <Leaderboard guild={await memberGuild(params)} />;
+  const guild = await memberGuild(params);
+  return (
+    <>
+      <HistoryProgress guild={guild} />
+      <Leaderboard guild={guild} />
+    </>
+  );
 }

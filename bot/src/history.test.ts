@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backfillBefore, backfillChannel, countsLive, snowflakeAt, snowflakeTime, type Cursor, type HistoryIo, type HistoryMessage, type Page } from "./history.js";
+import { backfillBefore, backfillChannel, backfillProgress, countsLive, snowflakeAt, snowflakeTime, type Cursor, type HistoryIo, type HistoryMessage, type Page } from "./history.js";
 
 const GUILD = "g1";
 const CHANNEL = { channel_id: "c1", name: "general" };
@@ -142,5 +142,23 @@ describe("countsLive", () => {
 
   it("splits at the time snowflakeTime reads back", () => {
     expect(snowflakeTime(boundary)).toEqual(new Date("2026-10-18T10:00:00Z"));
+  });
+});
+
+describe("backfillProgress", () => {
+  it("counts finished channels and reports the oldest cursor as the date reached", () => {
+    const old = snowflakeAt(new Date("2024-03-01T12:00:00Z"));
+    const boundary = snowflakeAt(new Date("2026-10-18T10:00:00Z"));
+    expect(
+      backfillProgress([
+        { beforeId: old, done: true },
+        { beforeId: boundary, done: false },
+        { beforeId: snowflakeAt(new Date("2025-01-01T00:00:00Z")), done: false },
+      ]),
+    ).toEqual({ channels_total: 3, channels_done: 1, oldest_at: "2024-03-01T12:00:00.000Z" });
+  });
+
+  it("has no date for a server without readable channels", () => {
+    expect(backfillProgress([])).toEqual({ channels_total: 0, channels_done: 0, oldest_at: null });
   });
 });

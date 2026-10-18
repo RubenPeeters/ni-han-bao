@@ -81,6 +81,19 @@ export async function loadBeforeId(db: SupabaseClient, guildId: string, store = 
   return must("backfill_state", await state())[0].before_id;
 }
 
+/** What backfill_state shows the site: channels done of total, and how far back it got. */
+export function backfillProgress(cursors: Cursor[]) {
+  const oldest = cursors.reduce<bigint | null>((min, c) => {
+    const id = BigInt(c.beforeId);
+    return min === null || id < min ? id : min;
+  }, null);
+  return {
+    channels_total: cursors.length,
+    channels_done: cursors.filter((c) => c.done).length,
+    oldest_at: oldest === null ? null : snowflakeTime(oldest.toString()).toISOString(),
+  };
+}
+
 export interface HistoryMessage extends MessageInfo {
   id: string;
   createdAt: Date;

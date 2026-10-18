@@ -44,6 +44,7 @@ import {
   utcWeekStart,
   type Period,
 } from "./stats.js";
+import { backfillGuild } from "./server-history.js";
 import { flushServers, Server, type ServerWriter } from "./servers.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 
@@ -664,9 +665,28 @@ async function weeklyReport(): Promise<void> {
   }
 }
 
+// One server at a time, so a single backfill shares Discord's rate limits with live work.
+let backfills = Promise.resolve();
+
+/** Counts a server's history behind the others in the queue; live counting goes on meanwhile. */
+function queueBackfill(guildId: string): void {
+  backfills = backfills.then(() => tracked("backfill", backfillServer(guildId)));
+}
+
+async function backfillServer(guildId: string): Promise<void> {
+  const guild = client.guilds.cache.get(guildId);
+  // Left the server while it waited in the queue.
+  if (!guild || stopping) return;
+  const { data, error } = await db.from("backfill_state").select("done_at").eq("guild_id", guildId).maybeSingle();
+  if (error) throw new Error(`backfill_state select: ${error.message}`);
+  if (data?.done_at) return;
+  // A failed channel leaves the server not done; the next start resumes it.
+  await backfillGuild(db, guild, { log, stopped: () => stopping || !client.guilds.cache.has(guildId) });
+}
+
 /**
  * Starts counting in one server: on ready for each server the bot is in, and on GuildCreate
- * for one it joins, so a new server needs no restart.
+ * for one it joins, so a new server needs no restart. Then queues its history backfill.
  */
 async function startServer(guild: Guild): Promise<void> {
   // Guild commands, not global ones: they apply instantly.
@@ -703,6 +723,8 @@ async function startServer(guild: Guild): Promise<void> {
   } catch (err) {
     log("error", "member_sync_failed", { guild: guild.id, error: err });
   }
+  // After the member sync: the backfill takes authors' names from the member cache.
+  queueBackfill(guild.id);
 }
 
 client.once(Events.ClientReady, async (c) => {
