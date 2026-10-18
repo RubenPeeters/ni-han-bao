@@ -94,6 +94,14 @@ export function backfillProgress(cursors: Cursor[]) {
   };
 }
 
+/**
+ * A server is done only when nothing failed, thread listing included, and every channel
+ * reached its first message: a channel left early (a concurrent run moved its cursor) is not.
+ */
+export function backfillComplete(failures: number, cursors: Cursor[]): boolean {
+  return failures === 0 && cursors.every((c) => c.done);
+}
+
 export interface HistoryMessage extends MessageInfo {
   id: string;
   createdAt: Date;

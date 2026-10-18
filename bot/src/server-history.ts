@@ -8,6 +8,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { channelRow, memberRow, type ChannelRow, type MemberRow } from "./activity.js";
 import {
   backfillChannel,
+  backfillComplete,
   backfillProgress,
   loadBeforeId,
   must,
@@ -60,8 +61,16 @@ async function loadCursors(
   }
 }
 
-/** Active plus archived threads: the live bot counts their messages toward the parent. */
-async function allThreads(guild: Guild, me: GuildMember, options: BackfillOptions): Promise<AnyThreadChannel[]> {
+/**
+ * Active plus archived threads: the live bot counts their messages toward the parent.
+ * `failed` counts listings that threw: their threads are missing, so the server is not done.
+ */
+async function allThreads(
+  guild: Guild,
+  me: GuildMember,
+  options: BackfillOptions,
+): Promise<{ threads: AnyThreadChannel[]; failed: number }> {
+  let failed = 0;
   const threads = [...(await guild.channels.fetchActiveThreads(false)).threads.values()];
   for (const channel of guild.channels.cache.values()) {
     if (!("threads" in channel) || !channel.permissionsFor(me).has(PermissionFlagsBits.ReadMessageHistory)) continue;
@@ -81,10 +90,11 @@ async function allThreads(guild: Guild, me: GuildMember, options: BackfillOption
       } catch (err) {
         // One unlistable channel must not stop the rest; a rerun lists it again.
         options.log("error", "backfill_thread_list_failed", { guild: guild.id, channel: channel.id, type, error: err });
+        failed++;
       }
     }
   }
-  return threads;
+  return { threads, failed };
 }
 
 /** Existing rows are left alone: the live bot keeps names current, and members carry the opt-out. */
@@ -105,7 +115,7 @@ async function insertMissing(
 
 /**
  * Backfills one server whose member cache is filled (authors get their server nickname and
- * avatar). Returns whether every readable channel is done; the server is then marked done
+ * avatar). Returns whether every readable channel is done and every thread list was read; the server is then marked done
  * in backfill_state. One channel at a time; discord.js waits out rate limits (429s) on its own.
  */
 export async function backfillGuild(db: SupabaseClient, guild: Guild, options: BackfillOptions): Promise<boolean> {
@@ -115,7 +125,8 @@ export async function backfillGuild(db: SupabaseClient, guild: Guild, options: B
   const channels = [...(await guild.channels.fetch()).values()].flatMap((c) =>
     c && c.isTextBased() && !c.isThread() ? [c] : [],
   );
-  const readable = [...channels, ...(await allThreads(guild, me, options))].filter((c) =>
+  const threads = await allThreads(guild, me, options);
+  const readable = [...channels, ...threads.threads].filter((c) =>
     c.permissionsFor(me).has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory]),
   );
   const beforeId = await loadBeforeId(db, guildId, !dryRun);
@@ -138,7 +149,7 @@ export async function backfillGuild(db: SupabaseClient, guild: Guild, options: B
   await saveProgress(false);
 
   let total = 0;
-  let failed = 0;
+  let failed = threads.failed;
   for (const channel of readable) {
     if (stopped()) return false;
     const cursor = cursors.get(channel.id)!;
@@ -194,8 +205,8 @@ export async function backfillGuild(db: SupabaseClient, guild: Guild, options: B
     }
     await saveProgress(false);
   }
-  const done = failed === 0;
+  const done = backfillComplete(failed, [...cursors.values()]);
   await saveProgress(done);
-  log(done ? "info" : "warn", "backfill_finished", { guild: guildId, counted: total, failed_channels: failed, dry_run: dryRun });
+  log(done ? "info" : "warn", "backfill_finished", { guild: guildId, counted: total, failures: failed, dry_run: dryRun });
   return done;
 }

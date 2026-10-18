@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backfillBefore, backfillChannel, backfillProgress, countsLive, snowflakeAt, snowflakeTime, type Cursor, type HistoryIo, type HistoryMessage, type Page } from "./history.js";
+import { backfillBefore, backfillChannel, backfillComplete, backfillProgress, countsLive, snowflakeAt, snowflakeTime, type Cursor, type HistoryIo, type HistoryMessage, type Page } from "./history.js";
 
 const GUILD = "g1";
 const CHANNEL = { channel_id: "c1", name: "general" };
@@ -160,5 +160,20 @@ describe("backfillProgress", () => {
 
   it("has no date for a server without readable channels", () => {
     expect(backfillProgress([])).toEqual({ channels_total: 0, channels_done: 0, oldest_at: null });
+  });
+});
+
+describe("backfillComplete", () => {
+  const done = { beforeId: "1", done: true };
+  it("is done when nothing failed and every channel finished", () => {
+    expect(backfillComplete(0, [done, done])).toBe(true);
+  });
+
+  it("stays retryable after a failed thread listing or channel", () => {
+    expect(backfillComplete(1, [done])).toBe(false);
+  });
+
+  it("stays retryable when a channel stopped before its first message", () => {
+    expect(backfillComplete(0, [done, { beforeId: "5", done: false }])).toBe(false);
   });
 });
