@@ -12,7 +12,7 @@ import { createClient } from "@/lib/supabase/server";
 
 const TOP = 10;
 
-interface EmojiRow {
+export interface EmojiRow {
   emoji_key: string;
   emoji_id: string | null;
   name: string | null;
@@ -45,7 +45,7 @@ export async function EmojiStats() {
   );
 }
 
-function Emoji({ row }: { row: EmojiRow }) {
+export function Emoji({ row }: { row: EmojiRow }) {
   if (!row.emoji_id) {
     return <span className="flex size-7 shrink-0 items-center justify-center text-2xl">{row.name}</span>;
   }
