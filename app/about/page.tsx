@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 export const metadata = {
   title: "About & privacy · ni han bao",
-  description: "What the bot counts, who can see it, and how to opt out.",
+  description: "What the bot counts, who can see it, and how to opt out or delete your data.",
 };
 
 const REPO = "https://github.com/RubenPeeters/ni-han-bao";
@@ -26,7 +26,7 @@ export default function AboutPage() {
     <>
       <PageHeader
         title="About & privacy"
-        description="What the bot counts, who can see it, and how to opt out."
+        description="What the bot counts, who can see it, and how to opt out or delete your data."
       />
       <Section title="What the bot counts">
         <ul className="flex list-disc flex-col gap-1 pl-5">
@@ -56,12 +56,22 @@ export default function AboutPage() {
           it.
         </p>
       </Section>
-      <Section title="Hiding yourself">
+      <Section title="Hiding or deleting your data">
         <p>
           Type <Cmd>/hide-me</Cmd> in a server to disappear from that server&apos;s lists and
           charts on the website. <Cmd>/show-me</Cmd> brings you back. It applies per server, so
           run it in each server you want to hide from. Your messages still count towards the
           server&apos;s totals, without your name.
+        </p>
+        <p>
+          To have your data deleted instead, type <Cmd>/forget-me</Cmd> in any server and
+          confirm. It deletes everything the bot stored about you, in every server: your
+          message, reaction and voice counts, your name and avatar, your server memberships and
+          your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
+          their counts, without anything that points to you. The bot then stops counting you,
+          keeping only a scrambled (hashed) copy of your Discord id to recognise you by. Until
+          you type <Cmd>/show-me</Cmd>, which starts counting you again, you also cannot open
+          your servers&apos; pages here.
         </p>
         <p>
           To remove the bot from a server, a server admin can kick it like any member (or via

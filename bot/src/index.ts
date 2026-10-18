@@ -1,5 +1,8 @@
 import {
+  ActionRowBuilder,
   ActivityType,
+  ButtonBuilder,
+  ButtonStyle,
   type ChatInputCommandInteraction,
   Client,
   type Collection,
@@ -15,6 +18,7 @@ import {
   type User,
 } from "discord.js";
 import { createClient } from "@supabase/supabase-js";
+import { FORGET_CANCEL_ID, FORGET_COMMAND, FORGET_CONFIRM_ID, FORGET_PROMPT, forgetMe } from "./forget.js";
 import { channelRow, memberRow, shouldCount, utcDay, type MemberRow } from "./activity.js";
 import { Backoff, flushUntil, InFlight } from "./backoff.js";
 import { loadConfig } from "./config.js";
@@ -541,6 +545,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
     return;
   }
+  if (interaction.commandName === FORGET_COMMAND.name) {
+    await tracked("command", forgetCommand(interaction));
+    return;
+  }
   const hidden = hiddenFor(interaction.commandName);
   if (hidden === null) return;
   try {
@@ -549,6 +557,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const reply = await setVisibility(
       {
         async setHidden(row, flag) {
+          if (!flag) {
+            const remembered = await db.rpc("remember_user", { member: row.user_id });
+            if (remembered.error) throw new Error(`remember_user: ${remembered.error.message}`);
+            // Back on the website now, rather than at the next restart's membership sync.
+            for (const guild of client.guilds.cache.values()) {
+              if (guild.members.cache.has(row.user_id)) {
+                await membership(guild.id, () => addMembers(guild.id, [row.user_id]));
+              }
+            }
+          }
           // Upsert so a member who has never posted still gets a row to carry the flag.
           const { error } = await db.from("members").upsert(
             { ...row, guild_id: interaction.guildId, hidden: flag, updated_at: new Date().toISOString() },
@@ -565,6 +583,40 @@ client.on(Events.InteractionCreate, async (interaction) => {
     log("error", "command_failed", { command: interaction.commandName, error: err });
   }
 });
+
+const FORGET_CONFIRM_MS = 60_000;
+
+/** Asks for confirmation with buttons only the caller sees, then forgets them everywhere. */
+async function forgetCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(FORGET_CONFIRM_ID).setLabel("Delete my data").setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(FORGET_CANCEL_ID).setLabel("Cancel").setStyle(ButtonStyle.Secondary),
+  );
+  const response = await interaction.reply({
+    content: FORGET_PROMPT,
+    components: [buttons],
+    flags: MessageFlags.Ephemeral,
+    withResponse: true,
+  });
+  const click = await response.resource?.message
+    ?.awaitMessageComponent({ filter: (i) => i.user.id === interaction.user.id, time: FORGET_CONFIRM_MS })
+    // Timed out: same as Cancel.
+    .catch(() => null);
+  const confirmed = click?.customId === FORGET_CONFIRM_ID;
+  if (click) await click.deferUpdate();
+  const reply = await forgetMe(
+    {
+      async forget(userId) {
+        const { error } = await db.rpc("forget_user", { member: userId });
+        if (error) throw new Error(`forget_user: ${error.message}`);
+      },
+    },
+    interaction.user.id,
+    confirmed,
+  );
+  if (confirmed) log("info", "user_forgotten", {});
+  await interaction.editReply({ content: reply, components: [] });
+}
 
 let presenceIndex = 0;
 
@@ -691,7 +743,7 @@ async function backfillServer(guildId: string): Promise<void> {
 async function startServer(guild: Guild): Promise<void> {
   // Guild commands, not global ones: they apply instantly.
   try {
-    await guild.commands.set([...VISIBILITY_COMMANDS, ...STATS_COMMANDS]);
+    await guild.commands.set([...VISIBILITY_COMMANDS, FORGET_COMMAND, ...STATS_COMMANDS]);
   } catch (err) {
     log("error", "command_registration_failed", { guild: guild.id, error: err });
   }
