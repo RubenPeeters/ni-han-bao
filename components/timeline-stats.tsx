@@ -6,8 +6,8 @@ import {
   StatCard,
   StatGrid,
 } from "@/components/stat-ui";
-import { GUILD_ID } from "@/lib/guild";
-import { createClient } from "@/lib/supabase/server";
+import { createPublicClient } from "@/lib/supabase/public";
+import { cacheLife } from "next/cache";
 
 const TOP = 10;
 const DAY_MS = 24 * 60 * 60_000;
@@ -61,22 +61,24 @@ const shortDate = (day: string) =>
     timeZone: "UTC",
   });
 
-export async function TimelineStats() {
-  const supabase = await createClient();
+export async function TimelineStats({ guild }: { guild: string }) {
+  "use cache";
+  cacheLife("stats");
+  const supabase = createPublicClient();
   const now = Date.now();
   const monthStart = `${isoDay(now).slice(0, 7)}-01`;
   const [snapshots, flow, voice] = await Promise.all([
     supabase
       .from("member_count_snapshots")
       .select("day, member_count")
-      .eq("guild_id", GUILD_ID)
+      .eq("guild_id", guild)
       .gte("day", isoDay(now - HISTORY_DAYS * DAY_MS))
       .order("day"),
     supabase.rpc("weekly_member_flow", {
       since: weekStart(now - (WEEKS - 1) * 7 * DAY_MS),
-      guild: GUILD_ID,
+      guild,
     }),
-    supabase.rpc("top_voice_members", { since: monthStart, top: TOP, guild: GUILD_ID }),
+    supabase.rpc("top_voice_members", { since: monthStart, top: TOP, guild }),
   ]);
 
   if (snapshots.error || flow.error || voice.error) {
