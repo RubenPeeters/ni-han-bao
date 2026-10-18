@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addMonths, dueRecapMonth, isRecapFor, lastMonth, recapMessage, recapSlot, recapUrls } from "./recap.js";
+import { addMonths, dueRecapMonth, isRecapFor, lastMonth, recapMessage, recapNonce, recapSlot, recapUrls } from "./recap.js";
 
 describe("addMonths", () => {
   it("crosses years both ways", () => {
@@ -39,5 +39,15 @@ describe("recap message", () => {
     expect(msg.embeds[0].image?.url).toBe("attachment://recap-2026-09.png");
     expect(isRecapFor(msg.embeds, "2026-09-01")).toBe(true);
     expect(isRecapFor(msg.embeds, "2026-08-01")).toBe(false);
+  });
+});
+
+describe("recapNonce", () => {
+  it("differs per guild and month and fits Discord's 25 characters", () => {
+    const nonce = recapNonce("12345678901234567890", "2026-09-01");
+    expect(nonce).toBe("123456789012345678902609");
+    expect(nonce.length).toBeLessThanOrEqual(25);
+    expect(recapNonce("12345678901234567891", "2026-09-01")).not.toBe(nonce);
+    expect(recapNonce("12345678901234567890", "2026-10-01")).not.toBe(nonce);
   });
 });

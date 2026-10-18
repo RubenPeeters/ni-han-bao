@@ -28,7 +28,7 @@ import { loadConfig } from "./config.js";
 import { countsLive, loadBeforeId } from "./history.js";
 import { createLogger } from "./log.js";
 import { keyedQueue, memberFetchRetryMs, syncMembers } from "./membership.js";
-import { dueRecapMonth, isRecapFor, lastMonth, RECAP_COMMAND, recapMessage, recapSlot, recapUrls } from "./recap.js";
+import { dueRecapMonth, isRecapFor, lastMonth, RECAP_COMMAND, recapMessage, recapNonce, recapSlot, recapUrls } from "./recap.js";
 import { nextPresence, PRESENCE_PHRASES } from "./presence.js";
 import { emojiRow, receivesReaction } from "./reactions.js";
 import {
@@ -883,7 +883,7 @@ async function monthlyRecap(guild: string): Promise<void> {
       (m) => m.author.id === client.user?.id && isRecapFor(m.embeds, month),
     );
     if (!posted) {
-      await channel.send({ ...(await recapCard(guild, month)), nonce: `recap-${month}`, enforceNonce: true });
+      await channel.send({ ...(await recapCard(guild, month)), nonce: recapNonce(guild, month), enforceNonce: true });
     }
     const record = await db
       .from("monthly_recaps")

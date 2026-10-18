@@ -48,3 +48,9 @@ export function recapMessage(month: string, image: Buffer, pageUrl: string) {
   const embed: APIEmbed = { title: recapTitle(month), url: pageUrl, image: { url: `attachment://${name}` } };
   return { embeds: [embed], files: [{ attachment: image, name }] };
 }
+
+/**
+ * The send's nonce. Discord dedupes nonces per author across all servers, so it carries the
+ * guild; YYMM keeps a 20-digit snowflake within the 25-character limit.
+ */
+export const recapNonce = (guild: string, month: string) => `${guild}${month.slice(2, 4)}${month.slice(5, 7)}`;
