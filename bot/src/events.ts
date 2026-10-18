@@ -79,6 +79,26 @@ export function matchStore<S extends Pick<Store, "id" | "name">>(stores: S[], lo
   );
 }
 
+export const SUBSCRIBER_PAGE = 100;
+
+/** Every Interested member of a Discord event, by user id, a page of 100 at a time (Discord's maximum). */
+export async function allSubscriberIds(page: (after: string) => Promise<string[]>): Promise<string[]> {
+  const ids: string[] = [];
+  // With `after`, Discord sorts by user id ascending, so the last id is where the next page starts.
+  for (let after = "0"; ; ) {
+    const batch = await page(after);
+    ids.push(...batch);
+    if (batch.length < SUBSCRIBER_PAGE) return ids;
+    after = batch[batch.length - 1];
+  }
+}
+
+/** The Interested attendees recorded for an event who are no longer Interested on Discord. */
+export const unticked = (recorded: string[], interested: string[]) => {
+  const now = new Set(interested);
+  return recorded.filter((id) => !now.has(id));
+};
+
 /** What upcoming_events() returns; hidden members are already left out of `going`. */
 export interface UpcomingEvent {
   id: number;

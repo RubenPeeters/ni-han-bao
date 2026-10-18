@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventChoices, eventLabel, eventsField, goingEventId, goingId, goingText, matchStore, parseWhen, type UpcomingEvent } from "./events.js";
+import { allSubscriberIds, eventChoices, eventLabel, eventsField, goingEventId, goingId, goingText, matchStore, parseWhen, unticked, type UpcomingEvent } from "./events.js";
 
 const now = new Date("2026-10-18T12:00:00Z");
 const event = (id: number, extra: Partial<UpcomingEvent> = {}): UpcomingEvent => ({
@@ -83,5 +83,30 @@ describe("eventsField", () => {
   it("stays under Discord's 1024 characters per field", () => {
     const many = Array.from({ length: 25 }, (_, i) => event(i, { going: ["Somebody with a long name"] }));
     expect(eventsField(many, "UTC").length).toBeLessThanOrEqual(1024);
+  });
+});
+
+describe("allSubscriberIds", () => {
+  it("pages past the first 100 and stops on a short page", async () => {
+    const all = Array.from({ length: 230 }, (_, i) => String(1000 + i));
+    const asked: string[] = [];
+    const ids = await allSubscriberIds(async (after) => {
+      asked.push(after);
+      return all.filter((id) => BigInt(id) > BigInt(after)).slice(0, 100);
+    });
+    expect(ids).toEqual(all);
+    expect(asked).toEqual(["0", "1099", "1199"]);
+  });
+  it("asks once more after a full last page", async () => {
+    const all = Array.from({ length: 100 }, (_, i) => String(1000 + i));
+    const ids = await allSubscriberIds(async (after) => all.filter((id) => BigInt(id) > BigInt(after)));
+    expect(ids).toEqual(all);
+  });
+});
+
+describe("unticked", () => {
+  it("drops who unticked Interested while the bot was offline, keeps the rest", () => {
+    expect(unticked(["1", "2", "3"], ["3", "1", "4"])).toEqual(["2"]);
+    expect(unticked(["1"], [])).toEqual(["1"]);
   });
 });

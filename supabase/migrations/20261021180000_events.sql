@@ -29,6 +29,9 @@ create table if not exists public.event_attendees (
     guild_id text not null,
     event_id bigint not null references public.events (id) on delete cascade,
     user_id text not null,
+    -- Only from a Discord Interested click: the startup sync may drop it once the member unticked.
+    -- /event going and the Going button set it false, so the sync never drops what they said.
+    from_discord boolean not null default false,
     created_at timestamptz not null default now(),
     primary key (event_id, user_id)
 );
@@ -61,8 +64,7 @@ as $$
     left join public.members m on m.guild_id = a.guild_id and m.user_id = a.user_id and not m.hidden
     where e.guild_id = guild and e.starts_at >= now() and (until is null or e.starts_at < until)
     group by e.id, s.id
-    order by e.starts_at
-    limit 25;
+    order by e.starts_at;
 $$;
 
 grant execute on function public.upcoming_events(text, timestamptz) to authenticated, service_role;

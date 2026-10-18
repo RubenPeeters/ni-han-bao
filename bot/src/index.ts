@@ -27,13 +27,16 @@ import { FORGET_CANCEL_ID, FORGET_COMMAND, FORGET_CONFIRM_ID, FORGET_PROMPT, for
 import { channelRow, memberRow, shouldCount, type MemberRow } from "./activity.js";
 import {
   EVENT_COMMAND,
+  allSubscriberIds,
   eventChoices,
+  SUBSCRIBER_PAGE,
   goingEventId,
   goingId,
   goingText,
   eventLabel,
   matchStore,
   parseWhen,
+  unticked,
   type UpcomingEvent,
 } from "./events.js";
 import { Backoff, flushUntil, InFlight } from "./backoff.js";
@@ -606,7 +609,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const focused = interaction.options.getFocused(true);
     const choices =
       focused.name === "event"
-        ? upcomingEvents(interaction.guildId).then((events) =>
+        ? eventsGoing(interaction.guildId, interaction.user.id).then((events) =>
             eventChoices(events, focused.value, settingsFor(interaction.guildId).timezone),
           )
         : guildStores(interaction.guildId).then((stores) => storeChoices(stores, focused.value));
@@ -845,8 +848,30 @@ async function upcomingEvents(guildId: string, until: Date | null = null): Promi
   return data as UpcomingEvent[];
 }
 
-/** Marks members as going; their members row is what gives the site and the report a name to show. */
-async function markGoing(guild: Guild, eventId: number, userIds: string[]): Promise<void> {
+/** The upcoming events a member is going to, for /event not-going; one member's are few, so all of them. */
+async function eventsGoing(guildId: string, userId: string): Promise<UpcomingEvent[]> {
+  const { data, error } = await db
+    .from("event_attendees")
+    .select("events!inner(id, name, starts_at, url, stores(name, city))")
+    .eq("guild_id", guildId)
+    .eq("user_id", userId)
+    .gte("events.starts_at", new Date().toISOString());
+  if (error) throw new Error(`event_attendees select: ${error.message}`);
+  return data
+    .map(({ events }) => {
+      const e = events as unknown as Omit<UpcomingEvent, "store_name" | "store_city" | "going"> & {
+        stores: { name: string; city: string } | null;
+      };
+      return { ...e, store_name: e.stores?.name ?? null, store_city: e.stores?.city ?? null, going: [] };
+    })
+    .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+}
+
+/**
+ * Marks members as going; their members row is what gives the site and the report a name to show.
+ * `fromDiscord` is for Interested clicks: it never overrides what a member said with the bot.
+ */
+async function markGoing(guild: Guild, eventId: number, userIds: string[], fromDiscord = false): Promise<void> {
   // The member cache is complete (see UserUpdate): a miss is someone no longer in the server.
   const members = userIds.flatMap((id) => {
     const member = guild.members.cache.get(id);
@@ -857,8 +882,8 @@ async function markGoing(guild: Guild, eventId: number, userIds: string[]): Prom
   const { error } = await db
     .from("event_attendees")
     .upsert(
-      members.map((m) => ({ guild_id: guild.id, event_id: eventId, user_id: m.id })),
-      { onConflict: "event_id,user_id", ignoreDuplicates: true },
+      members.map((m) => ({ guild_id: guild.id, event_id: eventId, user_id: m.id, from_discord: fromDiscord })),
+      { onConflict: "event_id,user_id", ignoreDuplicates: fromDiscord },
     );
   if (error) throw new Error(`event_attendees upsert: ${error.message}`);
 }
@@ -1049,10 +1074,20 @@ async function syncScheduledEvents(guild: Guild): Promise<void> {
   for (const event of events.values()) {
     const id = await saveScheduledEvent(event);
     if (id === null) continue;
-    // shortcut: only the first 100 Interested (one page) are read here; later clicks arrive as
-    // events. An untick while the bot was offline is not seen; page and diff if that matters.
-    const subscribers = await event.fetchSubscribers({ limit: 100 });
-    await markGoing(guild, id, [...subscribers.values()].map((s) => s.user.id));
+    const interested = await allSubscriberIds(async (after) => {
+      const page = await event.fetchSubscribers({ limit: SUBSCRIBER_PAGE, after });
+      return [...page.keys()];
+    });
+    await markGoing(guild, id, interested, true);
+    // Unticks while the bot was offline. shortcut: an Interested click landing between the fetch
+    // above and this delete is lost until the next start; lock per event if that ever shows up.
+    const recorded = await db.from("event_attendees").select("user_id").eq("event_id", id).eq("from_discord", true);
+    if (recorded.error) throw new Error(`event_attendees select: ${recorded.error.message}`);
+    const stale = unticked(recorded.data.map((r) => r.user_id as string), interested);
+    if (stale.length) {
+      const removed = await db.from("event_attendees").delete().eq("event_id", id).eq("from_discord", true).in("user_id", stale);
+      if (removed.error) throw new Error(`event_attendees delete: ${removed.error.message}`);
+    }
   }
   let gone = db
     .from("events")
@@ -1077,7 +1112,7 @@ client.on(Events.GuildScheduledEventUserAdd, (event, user) =>
     (async () => {
       const full = event.partial ? await event.fetch() : event;
       const id = await saveScheduledEvent(full);
-      if (id !== null && full.guild) await markGoing(full.guild, id, [user.id]);
+      if (id !== null && full.guild) await markGoing(full.guild, id, [user.id], true);
     })(),
   ),
 );
@@ -1089,7 +1124,13 @@ client.on(Events.GuildScheduledEventUserRemove, (event, user) =>
       const { data, error } = await db.from("events").select("id").eq("discord_event_id", event.id).maybeSingle();
       if (error) throw new Error(`events select: ${error.message}`);
       if (!data) return;
-      const removed = await db.from("event_attendees").delete().eq("event_id", data.id).eq("user_id", user.id);
+      // A going said with the bot stays: undoing that is /event not-going.
+      const removed = await db
+        .from("event_attendees")
+        .delete()
+        .eq("event_id", data.id)
+        .eq("user_id", user.id)
+        .eq("from_discord", true);
       if (removed.error) throw new Error(`event_attendees delete: ${removed.error.message}`);
     })(),
   ),
