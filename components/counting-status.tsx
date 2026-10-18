@@ -2,11 +2,10 @@ import { countingSince, historyPercent, warmingUp } from "@/lib/history";
 import { createClient } from "@/lib/supabase/server";
 
 const day = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-const dayMonth = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 
 /**
  * Shown on a new server: since when the bot counts (#71) and how far it has read back into
- * older messages (#70). Gone once the first week is over and the history is done.
+ * older messages (#70). The start date stays after that: it explains a quiet server's empty charts.
  */
 export async function CountingStatus({ guild }: { guild: string }) {
   const supabase = await createClient();
@@ -18,15 +17,12 @@ export async function CountingStatus({ guild }: { guild: string }) {
   // No row, or a failed read: say nothing rather than block the stats below.
   if (!data) return null;
   const since = countingSince(data.before_id);
-  const warming = warmingUp(since, new Date());
-  if (!warming && data.done_at) return null;
   return (
     <div role="status" className="flex flex-col gap-1 text-sm text-muted-foreground">
-      {warming && (
-        <p>
-          Warming up: counting since {dayMonth.format(since)}. Member counts and joins fill in over the first week.
-        </p>
-      )}
+      <p>
+        Counting since {day.format(since)}.
+        {warmingUp(since, new Date()) && <> Warming up: member counts and joins fill in over the first week.</>}
+      </p>
       {!data.done_at && (
         <p>
           Counting history: {historyPercent(data.channels_done, data.channels_total)}%
