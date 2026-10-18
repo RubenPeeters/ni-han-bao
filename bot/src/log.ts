@@ -17,9 +17,9 @@ export function formatLog(
   return JSON.stringify(line);
 }
 
-/** Logs to stdout, the only stream `docker logs` needs; `guild` is added to every line. */
-export function createLogger(guild: string) {
+/** Logs to stdout, the only stream `docker logs` needs. */
+export function createLogger() {
   return (level: Level, event: string, fields: Record<string, unknown> = {}): void => {
-    console.log(formatLog(level, event, { guild, ...fields }, new Date()));
+    console.log(formatLog(level, event, fields, new Date()));
   };
 }
