@@ -28,6 +28,7 @@ begin
         insert into public.member_flow (guild_id, day, joins, leaves) values (g, '2026-01-01', 1, 0);
         insert into public.voice_seconds (guild_id, user_id, day, seconds) values (g, 'rls-user', '2026-01-01', 60);
         insert into public.report_cards (guild_id, week) values (g, '2025-12-29');
+        insert into public.welcomed_guilds (guild_id) values (g);
         insert into public.backfill_state (guild_id, before_id) values (g, '1');
         insert into public.backfill_cursors (guild_id, channel_id, before_id) values (g, 'c', '1');
         insert into public.member_channel_counts (guild_id, user_id, channel_id, day, count)
