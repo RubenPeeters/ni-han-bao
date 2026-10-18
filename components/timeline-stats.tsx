@@ -6,7 +6,10 @@ import {
   StatCard,
   StatGrid,
 } from "@/components/stat-ui";
+import { guildTimeZone } from "@/lib/guild";
+import { countingSince, WARMUP_DAYS, warmingUp } from "@/lib/history";
 import { createClient } from "@/lib/supabase/server";
+import { localDay } from "@/lib/time";
 
 const TOP = 10;
 const DAY_MS = 24 * 60 * 60_000;
@@ -62,9 +65,11 @@ const shortDate = (day: string) =>
 
 export async function TimelineStats({ guild }: { guild: string }) {
   const supabase = await createClient();
-  const now = Date.now();
+  const timeZone = await guildTimeZone(guild);
+  // Today on the server's calendar, as midnight UTC: the bot stores these days as its local days.
+  const now = Date.parse(localDay(new Date(), timeZone));
   const monthStart = `${isoDay(now).slice(0, 7)}-01`;
-  const [snapshots, flow, voice] = await Promise.all([
+  const [snapshots, flow, voice, state] = await Promise.all([
     supabase
       .from("member_count_snapshots")
       .select("day, member_count")
@@ -76,21 +81,25 @@ export async function TimelineStats({ guild }: { guild: string }) {
       guild,
     }),
     supabase.rpc("top_voice_members", { since: monthStart, top: TOP, guild }),
+    supabase.from("backfill_state").select("before_id").eq("guild_id", guild).maybeSingle(),
   ]);
+  // Member counts and joins are only counted live, never backfilled, so their first days
+  // would chart as a sudden start. A failed read of the state just shows the charts.
+  const warming = !!state.data && warmingUp(countingSince(state.data.before_id), new Date());
 
   if (snapshots.error || flow.error || voice.error) {
     return <ErrorState title="Could not load the timeline">Try again in a minute.</ErrorState>;
   }
   return (
     <StatGrid>
-      <MemberCount rows={snapshots.data} />
-      <JoinsLeaves rows={weeklyFlow(flow.data, now)} />
-      <TopVoice rows={voice.data} />
+      <MemberCount rows={snapshots.data} warming={warming} timeZone={timeZone} />
+      <JoinsLeaves rows={weeklyFlow(flow.data, now)} warming={warming} timeZone={timeZone} />
+      <TopVoice rows={voice.data} timeZone={timeZone} />
     </StatGrid>
   );
 }
 
-function MemberCount({ rows }: { rows: SnapshotRow[] }) {
+function MemberCount({ rows, warming, timeZone }: { rows: SnapshotRow[]; warming: boolean; timeZone: string }) {
   // The SVG stretches to its box (preserveAspectRatio="none") and H matches its CSS height,
   // so y() is in pixels and the HTML axis labels line up; labels inside a scaled SVG
   // would shrink to unreadable on a phone.
@@ -111,13 +120,15 @@ function MemberCount({ rows }: { rows: SnapshotRow[] }) {
   return (
     <StatCard
       title="Members"
-      description={`Member count per day, UTC, last ${HISTORY_DAYS} days${
+      description={`Member count per day, ${timeZone}, last ${HISTORY_DAYS} days${
         last ? ` · now ${last.member_count.toLocaleString("en-US")}` : ""
       }`}
       wide
     >
-      {!first || !last ? (
-        <EmptyState>No member counts recorded yet.</EmptyState>
+      {warming ? (
+        <WarmingUp />
+      ) : !first || !last ? (
+        <EmptyState>The member count per day appears here once the bot has recorded one.</EmptyState>
       ) : (
         <>
           <div className="flex gap-2 text-xs tabular-nums text-muted-foreground">
@@ -201,7 +212,7 @@ function MemberCount({ rows }: { rows: SnapshotRow[] }) {
   );
 }
 
-function JoinsLeaves({ rows }: { rows: WeekRow[] }) {
+function JoinsLeaves({ rows, warming, timeZone }: { rows: WeekRow[]; warming: boolean; timeZone: string }) {
   const max = Math.max(...rows.flatMap((r) => [r.joins, r.leaves]));
   const bar = (n: number, color: string) => (
     <span
@@ -212,7 +223,7 @@ function JoinsLeaves({ rows }: { rows: WeekRow[] }) {
   return (
     <StatCard
       title="Joins vs leaves"
-      description={`Per week (from Monday, UTC), last ${WEEKS} weeks`}
+      description={`Per week (from Monday, ${timeZone}), last ${WEEKS} weeks`}
       wide
       aside={
         <ul className="flex gap-3 text-xs text-muted-foreground">
@@ -225,8 +236,10 @@ function JoinsLeaves({ rows }: { rows: WeekRow[] }) {
         </ul>
       }
     >
-      {max === 0 ? (
-        <EmptyState>No joins or leaves recorded yet.</EmptyState>
+      {warming ? (
+        <WarmingUp />
+      ) : max === 0 ? (
+        <EmptyState>Weekly joins and leaves appear here once someone joins or leaves.</EmptyState>
       ) : (
         <>
           <div className="flex flex-col gap-1" aria-hidden>
@@ -278,11 +291,15 @@ function JoinsLeaves({ rows }: { rows: WeekRow[] }) {
   );
 }
 
-function TopVoice({ rows }: { rows: VoiceRow[] }) {
+function WarmingUp() {
+  return <EmptyState>Warming up: this chart appears after {WARMUP_DAYS} days of counting.</EmptyState>;
+}
+
+function TopVoice({ rows, timeZone }: { rows: VoiceRow[]; timeZone: string }) {
   return (
-    <StatCard title="Top voice members" description="Time in voice channels this month (UTC)" wide>
+    <StatCard title="Top voice members" description={`Time in voice channels this month (${timeZone})`} wide>
       {rows.length === 0 ? (
-        <EmptyState>No voice time recorded this month yet.</EmptyState>
+        <EmptyState>The top voice members this month appear here once someone joins voice.</EmptyState>
       ) : (
         <RankList>
           {rows.map((row, i) => (

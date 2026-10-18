@@ -1,3 +1,4 @@
+import { CountingStatus } from "@/components/counting-status";
 import { Emoji, type EmojiRow } from "@/components/emoji-stats";
 import {
   EmptyState,
@@ -8,7 +9,9 @@ import {
   StatCard,
   StatGrid,
 } from "@/components/stat-ui";
+import { guildTimeZone } from "@/lib/guild";
 import { createClient } from "@/lib/supabase/server";
+import { localDay } from "@/lib/time";
 import { weeklyCounts } from "@/lib/weeks";
 import { notFound } from "next/navigation";
 
@@ -33,7 +36,9 @@ const shortDate = (day: string) =>
 /** One member of `guild`; the caller has checked the visitor is a member of it. */
 export async function MemberStats({ guild, member }: { guild: string; member: string }) {
   const supabase = await createClient();
-  const now = new Date();
+  const timeZone = await guildTimeZone(guild);
+  // Today on the server's calendar, as midnight UTC: the days below are its local days.
+  const now = new Date(localDay(new Date(), timeZone));
   const [profile, days, channels, emoji] = await Promise.all([
     // RLS already leaves hidden members out; the filter keeps that true without it.
     supabase
@@ -61,8 +66,9 @@ export async function MemberStats({ guild, member }: { guild: string; member: st
   return (
     <>
       <PageHeader title={profile.data.display_name} description="Their activity in this server." />
+      <CountingStatus guild={guild} />
       <StatGrid>
-        <Activity rows={weeklyCounts(days.data, now, WEEKS)} />
+        <Activity rows={weeklyCounts(days.data, now, WEEKS)} timeZone={timeZone} />
         <TopChannels rows={channels.data} />
         <TopEmoji rows={emoji.data} />
       </StatGrid>
@@ -70,12 +76,12 @@ export async function MemberStats({ guild, member }: { guild: string; member: st
   );
 }
 
-function Activity({ rows }: { rows: { week: string; count: number }[] }) {
+function Activity({ rows, timeZone }: { rows: { week: string; count: number }[]; timeZone: string }) {
   const max = Math.max(...rows.map((r) => r.count));
   return (
-    <StatCard title="Activity" description={`Messages per week (from Monday, UTC), last ${WEEKS} weeks`} wide>
+    <StatCard title="Activity" description={`Messages per week (from Monday, ${timeZone}), last ${WEEKS} weeks`} wide>
       {max === 0 ? (
-        <EmptyState>No messages in the last {WEEKS} weeks.</EmptyState>
+        <EmptyState>Their messages per week appear here once they send one.</EmptyState>
       ) : (
         <>
           <div className="flex flex-col gap-1" aria-hidden>
@@ -125,7 +131,7 @@ function TopChannels({ rows }: { rows: ChannelRow[] }) {
   return (
     <StatCard title="Top channels" description="Messages, all time">
       {rows.length === 0 ? (
-        <EmptyState>No messages counted yet.</EmptyState>
+        <EmptyState>The channels they talk in most appear here once they send messages.</EmptyState>
       ) : (
         <RankList>
           {rows.map((row, i) => (
@@ -143,7 +149,7 @@ function TopEmoji({ rows }: { rows: EmojiRow[] }) {
   return (
     <StatCard title="Top emoji" description="Reactions they added, all time">
       {rows.length === 0 ? (
-        <EmptyState>No reactions counted yet.</EmptyState>
+        <EmptyState>The emoji they react with most appear here once they react.</EmptyState>
       ) : (
         <RankList>
           {rows.map((row, i) => (

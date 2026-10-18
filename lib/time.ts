@@ -21,3 +21,14 @@ export function formatRelative(date: Date, now: Date = new Date()): string {
 
 // The server is in Belgium; tooltips show its wall-clock time.
 export const formatExact = (date: Date) => exact.format(date);
+
+// en-CA formats a date as YYYY-MM-DD.
+/** The day (YYYY-MM-DD) in `timeZone` (the server's, from /setup) at `now`; the bot stores counts on these days. */
+export const localDay = (now: Date, timeZone: string) => new Intl.DateTimeFormat("en-CA", { timeZone }).format(now);
+
+/** Monday (YYYY-MM-DD) of the week in `timeZone` containing `now`. */
+export function weekStart(now: Date, timeZone: string): string {
+  const today = Date.parse(localDay(now, timeZone));
+  const daysSinceMonday = (new Date(today).getUTCDay() + 6) % 7;
+  return new Date(today - daysSinceMonday * 86_400_000).toISOString().slice(0, 10);
+}

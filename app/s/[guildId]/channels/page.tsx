@@ -1,4 +1,5 @@
 import { ChannelStats } from "@/components/channel-stats";
+import { CountingStatus } from "@/components/counting-status";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
 import { memberGuild } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
@@ -25,5 +26,11 @@ export default function ChannelsPage({ params }: PageProps<"/s/[guildId]/channel
 }
 
 async function ChannelStatsForMember({ params }: { params: Promise<{ guildId: string }> }) {
-  return <ChannelStats guild={await memberGuild(params)} />;
+  const guild = await memberGuild(params);
+  return (
+    <>
+      <CountingStatus guild={guild} />
+      <ChannelStats guild={guild} />
+    </>
+  );
 }

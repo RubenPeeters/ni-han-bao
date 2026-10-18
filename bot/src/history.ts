@@ -81,6 +81,27 @@ export async function loadBeforeId(db: SupabaseClient, guildId: string, store = 
   return must("backfill_state", await state())[0].before_id;
 }
 
+/** What backfill_state shows the site: channels done of total, and how far back it got. */
+export function backfillProgress(cursors: Cursor[]) {
+  const oldest = cursors.reduce<bigint | null>((min, c) => {
+    const id = BigInt(c.beforeId);
+    return min === null || id < min ? id : min;
+  }, null);
+  return {
+    channels_total: cursors.length,
+    channels_done: cursors.filter((c) => c.done).length,
+    oldest_at: oldest === null ? null : snowflakeTime(oldest.toString()).toISOString(),
+  };
+}
+
+/**
+ * A server is done only when nothing failed, thread listing included, and every channel
+ * reached its first message: a channel left early (a concurrent run moved its cursor) is not.
+ */
+export function backfillComplete(failures: number, cursors: Cursor[]): boolean {
+  return failures === 0 && cursors.every((c) => c.done);
+}
+
 export interface HistoryMessage extends MessageInfo {
   id: string;
   createdAt: Date;
@@ -123,6 +144,7 @@ export async function backfillChannel(
   guildId: string,
   io: HistoryIo,
   pageSize = HISTORY_PAGE_SIZE,
+  timeZone = "UTC",
 ): Promise<number> {
   let { beforeId, done } = cursor;
   let total = 0;
@@ -130,7 +152,7 @@ export async function backfillChannel(
     const messages = await io.fetchBefore(beforeId, pageSize);
     const nextBeforeId = messages.reduce((min, m) => (BigInt(m.id) < BigInt(min) ? m.id : min), beforeId);
     done = messages.length < pageSize;
-    const buffer = new ActivityBuffer();
+    const buffer = new ActivityBuffer(() => timeZone);
     let counted = 0;
     for (const m of messages) {
       if (!shouldCount(m, guildId)) continue;

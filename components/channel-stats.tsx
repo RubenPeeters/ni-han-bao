@@ -6,6 +6,7 @@ import {
   StatCard,
   StatGrid,
 } from "@/components/stat-ui";
+import { guildTimeZone } from "@/lib/guild";
 import { createClient } from "@/lib/supabase/server";
 
 const TOP = 10;
@@ -24,12 +25,12 @@ interface ChannelRow {
 }
 
 interface HeatmapCell {
-  weekday: number; // 1 = Monday ... 7 = Sunday (ISO, UTC)
+  weekday: number; // 1 = Monday ... 7 = Sunday (ISO, in the server's time zone)
   hour: number;
   message_count: number;
 }
 
-/** 7 x 24 counts (weekday rows from Monday, hour columns from 00 UTC), zeros filled in. */
+/** 7 x 24 counts (weekday rows from Monday, hour columns from 00 local time), zeros filled in. */
 function heatmapGrid(cells: HeatmapCell[]): number[][] {
   const grid = WEEKDAYS.map(() => HOURS.map(() => 0));
   for (const c of cells) grid[c.weekday - 1][c.hour] = c.message_count;
@@ -39,6 +40,7 @@ function heatmapGrid(cells: HeatmapCell[]): number[][] {
 export async function ChannelStats({ guild }: { guild: string }) {
   const supabase = await createClient();
   const now = Date.now();
+  const timeZone = await guildTimeZone(guild);
   const [busiest, heatmap] = await Promise.all([
     supabase.rpc("busiest_channels", {
       since: new Date(now - BUSIEST_DAYS * DAY_MS).toISOString(),
@@ -48,6 +50,7 @@ export async function ChannelStats({ guild }: { guild: string }) {
     supabase.rpc("channel_heatmap", {
       since: new Date(now - HEATMAP_DAYS * DAY_MS).toISOString(),
       guild,
+      tz: timeZone,
     }),
   ]);
 
@@ -57,7 +60,7 @@ export async function ChannelStats({ guild }: { guild: string }) {
   return (
     <StatGrid>
       <BusiestChannels rows={busiest.data} />
-      <Heatmap grid={heatmapGrid(heatmap.data)} />
+      <Heatmap grid={heatmapGrid(heatmap.data)} timeZone={timeZone} />
     </StatGrid>
   );
 }
@@ -67,7 +70,7 @@ function BusiestChannels({ rows }: { rows: ChannelRow[] }) {
   return (
     <StatCard title="Busiest channels" description={`Messages, last ${BUSIEST_DAYS} days`} wide>
       {rows.length === 0 ? (
-        <EmptyState>No messages counted yet.</EmptyState>
+        <EmptyState>The busiest channels appear here once people send messages.</EmptyState>
       ) : (
         <RankList>
           {rows.map((row, i) => (
@@ -93,12 +96,12 @@ function BusiestChannels({ rows }: { rows: ChannelRow[] }) {
 const heat = (count: number, max: number) =>
   count ? { backgroundColor: `hsl(var(--chart-2) / ${0.15 + 0.85 * (count / max)})` } : undefined;
 
-function Heatmap({ grid }: { grid: number[][] }) {
+function Heatmap({ grid, timeZone }: { grid: number[][]; timeZone: string }) {
   const max = Math.max(...grid.flat());
   return (
     <StatCard
       title="When people talk"
-      description={`Messages by weekday and hour, UTC, last ${HEATMAP_DAYS} days`}
+      description={`Messages by weekday and hour, ${timeZone} time, last ${HEATMAP_DAYS} days`}
       wide
       aside={
         max > 0 && (
@@ -113,11 +116,11 @@ function Heatmap({ grid }: { grid: number[][] }) {
       }
     >
       {max === 0 ? (
-        <EmptyState>No messages counted yet.</EmptyState>
+        <EmptyState>The busiest hours of the week appear here once people send messages.</EmptyState>
       ) : (
         // Fixed layout with fluid cells: 24 columns fit a 375px screen without scrolling.
         <table className="w-full table-fixed border-separate border-spacing-0.5 text-xs text-muted-foreground">
-          <caption className="sr-only">Messages per weekday and hour (UTC)</caption>
+          <caption className="sr-only">Messages per weekday and hour ({timeZone} time)</caption>
           <colgroup>
             <col className="w-9" />
           </colgroup>
@@ -139,7 +142,7 @@ function Heatmap({ grid }: { grid: number[][] }) {
                   {WEEKDAYS[d]}
                 </th>
                 {row.map((count, h) => {
-                  const label = `${WEEKDAYS[d]} ${String(h).padStart(2, "0")}:00 UTC: ${count.toLocaleString("en-US")} messages`;
+                  const label = `${WEEKDAYS[d]} ${String(h).padStart(2, "0")}:00 ${timeZone}: ${count.toLocaleString("en-US")} messages`;
                   return (
                     <td key={h} title={label} className="p-0">
                       <span className="block aspect-square rounded-[3px] bg-muted" style={heat(count, max)} />

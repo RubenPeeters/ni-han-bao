@@ -1,56 +1,22 @@
 import type { APIEmbed } from "discord.js";
-import { utcWeekStart } from "./stats.js";
+import { fromWallClock, weekStart } from "./zone.js";
 
-const TIME_ZONE = "Europe/Brussels";
 const REPORT_HOUR = 9; // Monday, local time
 const DAY_MS = 24 * 60 * 60_000;
 // A bot that was down on Monday still posts, but a report a day late is stale news.
 const LATE_LIMIT_MS = DAY_MS;
 
-const brussels = new Intl.DateTimeFormat("en-US", {
-  timeZone: TIME_ZONE,
-  year: "numeric",
-  month: "numeric",
-  day: "numeric",
-  hour: "numeric",
-  minute: "numeric",
-  second: "numeric",
-  hourCycle: "h23",
-});
-
-/** Brussels wall-clock time at `at`, as if it were UTC. */
-function wallClock(at: number): number {
-  const p = Object.fromEntries(brussels.formatToParts(at).map((x) => [x.type, Number(x.value)]));
-  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+/** Monday 09:00 in `timeZone` of the (local) week containing `now`, as a UTC instant. */
+export function reportSlot(now: Date, timeZone: string): Date {
+  return new Date(fromWallClock(Date.parse(weekStart(now, timeZone)) + REPORT_HOUR * 60 * 60_000, timeZone));
 }
 
-/** UTC instant of a Brussels wall-clock time. Only for times outside the DST gap (02:00-03:00). */
-function fromWallClock(wall: number): number {
-  const guess = wall - (wallClock(wall) - wall);
-  // The offset at the guess may differ from the one at `wall` near a DST switch; one more step settles it.
-  return wall - (wallClock(guess) - guess);
-}
-
-/** Monday 09:00 Brussels time of the (Brussels) week containing `now`, as a UTC instant. */
-export function reportSlot(now: Date): Date {
-  const wall = new Date(wallClock(now.getTime()));
-  const daysSinceMonday = (wall.getUTCDay() + 6) % 7;
-  const monday = Date.UTC(
-    wall.getUTCFullYear(),
-    wall.getUTCMonth(),
-    wall.getUTCDate() - daysSinceMonday,
-    REPORT_HOUR,
-  );
-  return new Date(fromWallClock(monday));
-}
-
-/** Monday (YYYY-MM-DD, UTC week) of the week whose report card is due at `now`, or null. */
-export function dueReportWeek(now: Date): string | null {
-  const slot = reportSlot(now).getTime();
+/** Monday (YYYY-MM-DD, local week) of the week whose report card is due at `now`, or null. */
+export function dueReportWeek(now: Date, timeZone: string): string | null {
+  const slot = reportSlot(now, timeZone).getTime();
   const late = now.getTime() - slot;
   if (late < 0 || late >= LATE_LIMIT_MS) return null;
-  // The slot is Monday morning in UTC too, so the week before it is complete.
-  return utcWeekStart(new Date(slot - 7 * DAY_MS));
+  return addDays(weekStart(new Date(slot), timeZone), -7);
 }
 
 /** The day `days` after a YYYY-MM-DD day. */
@@ -124,7 +90,7 @@ export async function postedSince<M extends { id: string; createdTimestamp: numb
 }
 
 /** Last week's report card, in the voice of a mildly disappointed dad. Teases the server, never a member. */
-export function reportEmbed(week: string, data: ReportData, siteUrl: string | null): APIEmbed {
+export function reportEmbed(week: string, data: ReportData, siteUrl: string | null, timeZone: string): APIEmbed {
   const medals = ["🥇", "🥈", "🥉"];
   const talkers = data.top_talkers.length
     ? data.top_talkers
@@ -150,6 +116,6 @@ export function reportEmbed(week: string, data: ReportData, siteUrl: string | nu
       { name: "Top emoji", value: emoji, inline: true },
       { name: "Member growth", value: growthText(data.joins, data.leaves) },
     ],
-    footer: { text: `Monday ${week} to Sunday ${addDays(week, 6)} (UTC)` },
+    footer: { text: `Monday ${week} to Sunday ${addDays(week, 6)} (${timeZone})` },
   };
 }

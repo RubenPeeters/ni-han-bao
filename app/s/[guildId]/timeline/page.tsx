@@ -1,4 +1,5 @@
 import { TimelineStats } from "@/components/timeline-stats";
+import { CountingStatus } from "@/components/counting-status";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
 import { memberGuild } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
@@ -25,5 +26,11 @@ export default function TimelinePage({ params }: PageProps<"/s/[guildId]/timelin
 }
 
 async function TimelineStatsForMember({ params }: { params: Promise<{ guildId: string }> }) {
-  return <TimelineStats guild={await memberGuild(params)} />;
+  const guild = await memberGuild(params);
+  return (
+    <>
+      <CountingStatus guild={guild} />
+      <TimelineStats guild={guild} />
+    </>
+  );
 }

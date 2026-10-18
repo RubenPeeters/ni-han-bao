@@ -6,7 +6,9 @@ import {
   StatCard,
   StatGrid,
 } from "@/components/stat-ui";
+import { guildTimeZone } from "@/lib/guild";
 import { createClient } from "@/lib/supabase/server";
+import { weekStart } from "@/lib/time";
 
 const TOP = 10;
 
@@ -17,7 +19,7 @@ interface Row {
   message_count: number;
 }
 
-/** Monday 00:00 UTC of the week containing `now`, as YYYY-MM-DD. */
+/** Monday 00:00 UTC of the week containing `now`, as YYYY-MM-DD; for totals over all servers. */
 export function utcWeekStart(now: Date): string {
   const daysSinceMonday = (now.getUTCDay() + 6) % 7;
   const monday = new Date(
@@ -28,9 +30,10 @@ export function utcWeekStart(now: Date): string {
 
 export async function Leaderboard({ guild }: { guild: string }) {
   const supabase = await createClient();
-  const weekStart = utcWeekStart(new Date());
+  const timeZone = await guildTimeZone(guild);
+  const monday = weekStart(new Date(), timeZone);
   const [week, allTime] = await Promise.all([
-    supabase.rpc("leaderboard", { since: weekStart, top: TOP, guild }),
+    supabase.rpc("leaderboard", { since: monday, top: TOP, guild }),
     supabase.rpc("leaderboard", { top: TOP, guild }),
   ]);
 
@@ -39,7 +42,7 @@ export async function Leaderboard({ guild }: { guild: string }) {
   }
   return (
     <StatGrid>
-      <Board guild={guild} title="This week" description={`Since Monday ${weekStart} (UTC)`} rows={week.data} />
+      <Board guild={guild} title="This week" description={`Since Monday ${monday} (${timeZone})`} rows={week.data} />
       <Board guild={guild} title="All time" description="Every message since the bot joined" rows={allTime.data} />
     </StatGrid>
   );
@@ -59,7 +62,7 @@ function Board({
   return (
     <StatCard title={title} description={description}>
       {rows.length === 0 ? (
-        <EmptyState>No messages counted yet.</EmptyState>
+        <EmptyState>The top talkers appear here once people send messages.</EmptyState>
       ) : (
         <RankList>
           {rows.map((row, i) => (

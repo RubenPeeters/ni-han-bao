@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { localDay } from "./zone.js";
 
 export interface MessageInfo {
   guildId: string | null;
@@ -12,11 +13,6 @@ export function shouldCount(message: MessageInfo, guildId: string): boolean {
   return (
     message.guildId === guildId && !message.authorIsBot && !message.webhookId && !message.system
   );
-}
-
-/** UTC calendar day as YYYY-MM-DD (a Postgres `date` literal). */
-export function utcDay(at: Date): string {
-  return at.toISOString().slice(0, 10);
 }
 
 /** Start of the UTC hour as an ISO timestamp (a Postgres `timestamptz` literal). */
@@ -145,10 +141,14 @@ export class ActivityBuffer {
    */
   pending: CountBatch | null = null;
 
+  /** `timeZone`: the server's, read per message, so its days are local days (see zone.ts). */
+  constructor(private readonly timeZone: () => string = () => "UTC") {}
+
   addMessage(userId: string, channelId: string, at: Date): void {
-    this.addCount({ user_id: userId, day: utcDay(at), count: 1 });
+    const day = localDay(at, this.timeZone());
+    this.addCount({ user_id: userId, day, count: 1 });
     this.addChannelCount({ channel_id: channelId, hour: utcHour(at), count: 1 });
-    this.addMemberChannelCount({ user_id: userId, channel_id: channelId, day: utcDay(at), count: 1 });
+    this.addMemberChannelCount({ user_id: userId, channel_id: channelId, day, count: 1 });
   }
 
   private addCount(c: CountRow): void {

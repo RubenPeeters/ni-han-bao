@@ -6,8 +6,6 @@ export interface Config {
   supabaseSecretKey: string;
   /** Website base URL for links in command replies; null leaves the links out. */
   siteUrl: string | null;
-  /** Channel for the weekly report card; null turns the report off. */
-  reportChannelId: string | null;
 }
 
 const REQUIRED = {
@@ -27,6 +25,5 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     // Optional so a box without it keeps counting; only the reply links go missing.
     guildId: env.DISCORD_GUILD_ID || null,
     siteUrl: env.SITE_URL || null,
-    reportChannelId: env.REPORT_CHANNEL_ID || null,
   } as unknown as Config;
 }

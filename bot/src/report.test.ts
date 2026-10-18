@@ -25,7 +25,15 @@ describe("reportSlot", () => {
     ["2026-10-25T12:00:00Z", "2026-10-19T07:00:00.000Z"],
     ["2026-10-26T10:00:00Z", "2026-10-26T08:00:00.000Z"],
   ])("%s -> %s", (now, slot) => {
-    expect(reportSlot(new Date(now)).toISOString()).toBe(slot);
+    expect(reportSlot(new Date(now), "Europe/Brussels").toISOString()).toBe(slot);
+  });
+
+  it("follows the server's time zone", () => {
+    expect(reportSlot(new Date("2026-10-14T12:00:00Z"), "UTC").toISOString()).toBe("2026-10-12T09:00:00.000Z");
+    // Monday 09:00 in New York (EDT, UTC-4).
+    expect(reportSlot(new Date("2026-10-14T12:00:00Z"), "America/New_York").toISOString()).toBe(
+      "2026-10-12T13:00:00.000Z",
+    );
   });
 });
 
@@ -41,7 +49,12 @@ describe("dueReportWeek", () => {
     ["2026-10-26T07:30:00Z", null], // 08:30 Brussels
     ["2027-01-04T08:00:00Z", "2026-12-28"], // across a year
   ])("%s -> %s", (now, week) => {
-    expect(dueReportWeek(new Date(now))).toBe(week);
+    expect(dueReportWeek(new Date(now), "Europe/Brussels")).toBe(week);
+  });
+
+  it("names the local week, not the UTC one", () => {
+    // Monday 09:00 in Auckland (NZDT, UTC+13) is still Sunday in UTC.
+    expect(dueReportWeek(new Date("2026-10-18T20:00:00Z"), "Pacific/Auckland")).toBe("2026-10-12");
   });
 });
 
@@ -63,10 +76,10 @@ const full: ReportData = {
 
 describe("reportEmbed", () => {
   it("shows every stat", () => {
-    const embed = reportEmbed("2026-10-12", full, "https://nihanbao.example");
+    const embed = reportEmbed("2026-10-12", full, "https://nihanbao.example", "Europe/Brussels");
     expect(embed.title).toBe("Weekly report card: week of 2026-10-12");
     expect(embed.url).toBe("https://nihanbao.example");
-    expect(embed.footer?.text).toBe("Monday 2026-10-12 to Sunday 2026-10-18 (UTC)");
+    expect(embed.footer?.text).toBe("Monday 2026-10-12 to Sunday 2026-10-18 (Europe/Brussels)");
     const [talkers, channel, emoji, growth] = embed.fields!.map((f) => f.value);
     expect(talkers).toBe("🥇 Alice: 1,200 messages\n🥈 Bob: 30 messages\n🥉 Cleo: 1 message");
     expect(channel).toBe("#general: 900 messages");
@@ -79,6 +92,7 @@ describe("reportEmbed", () => {
       "2026-10-12",
       { top_talkers: [], busiest_channel: null, top_emoji: null, joins: 0, leaves: 1 },
       null,
+      "UTC",
     );
     expect(embed.url).toBeUndefined();
     const [talkers, channel, emoji, growth] = embed.fields!.map((f) => f.value);
@@ -96,6 +110,7 @@ describe("reportEmbed", () => {
         top_emoji: { emoji_key: "😂", emoji_id: null, name: "😂", animated: false, reaction_count: 1 },
       },
       null,
+      "UTC",
     );
     expect(embed.fields![2].value).toBe("😂 1 time");
   });
@@ -104,7 +119,7 @@ describe("reportEmbed", () => {
 describe("isReportFor", () => {
   const empty: ReportData = { top_talkers: [], busiest_channel: null, top_emoji: null, joins: 0, leaves: 0 };
   it("finds the posted report card of that week only", () => {
-    const embeds = [reportEmbed("2026-10-12", empty, null)];
+    const embeds = [reportEmbed("2026-10-12", empty, null, "UTC")];
     expect(isReportFor(embeds, "2026-10-12")).toBe(true);
     expect(isReportFor(embeds, "2026-10-05")).toBe(false);
     expect(isReportFor([{ title: null }], "2026-10-12")).toBe(false);

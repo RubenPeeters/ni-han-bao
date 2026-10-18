@@ -1,7 +1,8 @@
 -- Proves per-server data is readable only by members of that server (#45): anon reads zero
 -- rows from every table with a guild_id, and a logged-in user reads rows of their own
--- servers only. Needs a database, so it is not part of `make check`. Run against a local
--- Supabase or the dev project (never production); everything is rolled back:
+-- servers only; then that /forget-me deletes and keeps out a user (#72). Needs a database,
+-- so it is not part of `make check`. Run against a local Supabase or the dev project
+-- (never production); everything is rolled back:
 --   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/check-rls.sql
 begin;
 
@@ -30,6 +31,8 @@ begin
         insert into public.report_cards (guild_id, week) values (g, '2025-12-29');
         insert into public.backfill_state (guild_id, before_id) values (g, '1');
         insert into public.backfill_cursors (guild_id, channel_id, before_id) values (g, 'c', '1');
+        insert into public.welcome_messages (guild_id, channel_id) values (g, 'c');
+        insert into public.guild_settings (guild_id, report_channel_id) values (g, 'c');
         insert into public.member_channel_counts (guild_id, user_id, channel_id, day, count)
         values (g, 'rls-user', 'c', '2026-01-01', 1);
         insert into public.member_emoji_counts (guild_id, user_id, emoji_key, day, count)
@@ -72,6 +75,33 @@ begin
         if other <> 0 then raise exception 'a member reads % rows of other servers from %', other, t; end if;
     end loop;
     if (select count(*) from public.my_guilds()) <> 1 then raise exception 'my_guilds() is not just mine'; end if;
+end $$;
+
+-- /forget-me (#72): no row about the user is left anywhere, and none can be written again
+-- until remember_user().
+reset role;
+do $$
+declare t text; n bigint;
+begin
+    perform public.forget_user('rls-user');
+    for t in
+        select c.relname::text from pg_catalog.pg_attribute a
+        join pg_catalog.pg_class c on c.oid = a.attrelid
+        join pg_catalog.pg_namespace s on s.oid = c.relnamespace
+        where s.nspname = 'public' and c.relkind = 'r' and a.attname = 'user_id' and not a.attisdropped
+    loop
+        execute format('select count(*) from public.%I where user_id = ''rls-user''', t) into n;
+        if n <> 0 then raise exception 'forget_user() leaves % rows in %', n, t; end if;
+    end loop;
+    insert into public.members (guild_id, user_id, display_name) values ('rls-mine', 'rls-user', 'x');
+    if exists (select from public.members where user_id = 'rls-user') then
+        raise exception 'a forgotten user is written again';
+    end if;
+    perform public.remember_user('rls-user');
+    insert into public.members (guild_id, user_id, display_name) values ('rls-mine', 'rls-user', 'x');
+    if not exists (select from public.members where user_id = 'rls-user') then
+        raise exception 'remember_user() does not let the user back in';
+    end if;
 end $$;
 
 \echo 'check-rls: ok'

@@ -18,6 +18,14 @@ export async function memberGuild(params: Promise<{ guildId: string }>) {
   return guildId;
 }
 
+/** The server's time zone from /setup timezone; UTC until someone sets one. Call after memberGuild(). */
+export async function guildTimeZone(guildId: string): Promise<string> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("guild_settings").select("timezone").eq("guild_id", guildId).maybeSingle();
+  if (error) throw new Error(`guild_settings failed: ${error.message}`);
+  return data?.timezone ?? "UTC";
+}
+
 /** GET handler for an old single-server URL; logged-out visitors land on the picker's login. */
 export function redirectToServer(page: string) {
   return async (request: NextRequest) => {

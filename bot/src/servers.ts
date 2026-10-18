@@ -4,16 +4,25 @@ import { flushTimeline, TimelineBuffer, VoiceSessions, type TimelineWriter } fro
 
 /** Everything counted in one server between flushes, kept apart from every other server. */
 export class Server {
-  readonly activity = new ActivityBuffer();
-  readonly reactions = new ReactionBuffer();
-  readonly timeline = new TimelineBuffer();
-  readonly voice = new VoiceSessions();
+  readonly activity: ActivityBuffer;
+  readonly reactions: ReactionBuffer;
+  readonly timeline: TimelineBuffer;
+  readonly voice: VoiceSessions;
 
-  /** `liveFrom`: the server's backfill boundary (see countsLive in history.ts). */
+  /**
+   * `liveFrom`: the server's backfill boundary (see countsLive in history.ts). `timeZone`:
+   * its current /setup time zone, which the days of its counts are in.
+   */
   constructor(
     readonly id: string,
     readonly liveFrom: string,
-  ) {}
+    timeZone: () => string = () => "UTC",
+  ) {
+    this.activity = new ActivityBuffer(timeZone);
+    this.reactions = new ReactionBuffer(timeZone);
+    this.timeline = new TimelineBuffer(timeZone);
+    this.voice = new VoiceSessions(timeZone);
+  }
 }
 
 export type ServerWriter = ActivityWriter & ReactionWriter & TimelineWriter;

@@ -15,7 +15,6 @@ describe("loadConfig", () => {
       supabaseUrl: "https://x.supabase.co",
       supabaseSecretKey: "s",
       siteUrl: null,
-      reportChannelId: null,
     });
   });
 
@@ -25,10 +24,6 @@ describe("loadConfig", () => {
 
   it("reads the optional guild id", () => {
     expect(loadConfig({ ...full, DISCORD_GUILD_ID: "g" }).guildId).toBe("g");
-  });
-
-  it("reads the optional report channel", () => {
-    expect(loadConfig({ ...full, REPORT_CHANNEL_ID: "123" }).reportChannelId).toBe("123");
   });
 
   it("names every missing variable", () => {
