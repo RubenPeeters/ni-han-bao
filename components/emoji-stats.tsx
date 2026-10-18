@@ -7,8 +7,7 @@ import {
   StatCard,
   StatGrid,
 } from "@/components/stat-ui";
-import { createPublicClient } from "@/lib/supabase/public";
-import { cacheLife } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
 
 const TOP = 10;
 
@@ -28,9 +27,7 @@ interface MemberRow {
 }
 
 export async function EmojiStats({ guild }: { guild: string }) {
-  "use cache";
-  cacheLife("stats");
-  const supabase = createPublicClient();
+  const supabase = await createClient();
   const [emoji, members] = await Promise.all([
     supabase.rpc("top_emoji", { top: TOP, guild }),
     supabase.rpc("most_reacted_members", { top: TOP, guild }),

@@ -54,7 +54,10 @@ export default function RootLayout({
                   <ThemeSwitcher />
                 </div>
               </div>
-              <SiteNav />
+              {/* Server pages know their guildId only at request time; same height, so no jump. */}
+              <Suspense fallback={<div className="h-8" />}>
+                <SiteNav />
+              </Suspense>
             </header>
             <main className="flex flex-1 flex-col gap-8">{children}</main>
             <footer className="flex flex-wrap items-center justify-between gap-2 border-t pt-4 text-xs text-muted-foreground">

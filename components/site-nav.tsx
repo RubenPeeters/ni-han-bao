@@ -2,22 +2,28 @@
 
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 
-const LINKS = [
-  { href: "/", label: "Home" },
-  { href: "/leaderboard", label: "Leaderboard" },
-  { href: "/channels", label: "Channels" },
-  { href: "/emoji", label: "Emoji" },
-  { href: "/timeline", label: "Timeline" },
+const SERVER_PAGES = [
+  { page: "leaderboard", label: "Leaderboard" },
+  { page: "channels", label: "Channels" },
+  { page: "emoji", label: "Emoji" },
+  { page: "timeline", label: "Timeline" },
 ];
 
 export function SiteNav() {
   const pathname = usePathname();
+  // Stat pages exist per server, so their links only show inside one.
+  const { guildId } = useParams<{ guildId?: string }>();
+  const links = [
+    { href: "/", label: "Home" },
+    { href: "/s", label: "Servers" },
+    ...(guildId ? SERVER_PAGES.map(({ page, label }) => ({ href: `/s/${guildId}/${page}`, label })) : []),
+  ];
   return (
     <nav aria-label="Main">
       <ul className="flex flex-wrap gap-1">
-        {LINKS.map(({ href, label }) => {
+        {links.map(({ href, label }) => {
           const current = pathname === href;
           return (
             <li key={href}>

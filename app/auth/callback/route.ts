@@ -10,6 +10,6 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) console.error("auth callback: code exchange failed", error.message);
   }
-  // Always the home page, never a URL from the query string, so this cannot be an open redirect.
-  return NextResponse.redirect(`${origin}/`);
+  // Always the server picker, never a URL from the query string, so this cannot be an open redirect.
+  return NextResponse.redirect(`${origin}/s`);
 }

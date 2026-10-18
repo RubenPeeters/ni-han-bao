@@ -1,4 +1,4 @@
-import { GUILD_ID } from "@/lib/guild";
+import { utcWeekStart } from "@/components/leaderboard";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 import { Bot } from "lucide-react";
@@ -8,14 +8,22 @@ import { RelativeTime } from "./relative-time";
 // The bot writes a heartbeat every minute; older than this means it is down.
 const STALE_AFTER_MS = 5 * 60_000;
 
+export interface Totals {
+  servers: number;
+  members: number;
+  messages_since: number;
+  active_since: number;
+  bot_last_seen: string | null;
+  bot_avatar_url: string | null;
+}
+
 // The hero, the home stats and the footer dot render in the same request; query once.
+// public_totals(): the logged-out page must keep working once part 5 closes the tables to anon.
 export const loadStatus = cache(async () => {
   const supabase = await createClient();
   return supabase
-    .from("bot_status")
-    .select("member_count, avatar_url, last_seen")
-    .eq("guild_id", GUILD_ID)
-    .maybeSingle();
+    .rpc("public_totals", { since: utcWeekStart(new Date()) })
+    .single<Totals>();
 });
 
 const isOnline = (lastSeen: Date) => Date.now() - lastSeen.getTime() < STALE_AFTER_MS;
@@ -37,7 +45,7 @@ export function BotAvatar({ url }: { url: string | null }) {
 
 export async function HeroAvatar() {
   const { data } = await loadStatus();
-  return <BotAvatar url={data?.avatar_url ?? null} />;
+  return <BotAvatar url={data?.bot_avatar_url ?? null} />;
 }
 
 export function StatusPill({ tone, children }: { tone: "online" | "offline" | "unknown"; children: ReactNode }) {
@@ -65,8 +73,8 @@ export function StatusPill({ tone, children }: { tone: "online" | "offline" | "u
 export async function HeroStatus() {
   const { data, error } = await loadStatus();
   if (error) return <StatusPill tone="unknown">Status unavailable</StatusPill>;
-  if (!data) return <StatusPill tone="unknown">Not seen yet</StatusPill>;
-  const lastSeen = new Date(data.last_seen);
+  if (!data?.bot_last_seen) return <StatusPill tone="unknown">Not seen yet</StatusPill>;
+  const lastSeen = new Date(data.bot_last_seen);
   return isOnline(lastSeen) ? (
     <StatusPill tone="online">Online</StatusPill>
   ) : (
@@ -80,7 +88,7 @@ export async function HeroStatus() {
 
 export async function BotStatusDot() {
   const { data } = await loadStatus();
-  const online = data ? isOnline(new Date(data.last_seen)) : null;
+  const online = data?.bot_last_seen ? isOnline(new Date(data.bot_last_seen)) : null;
   const label = online === null ? "Bot status unknown" : `Bot ${online ? "online" : "offline"}`;
   const color =
     online === null ? "bg-muted-foreground" : online ? "bg-success" : "bg-destructive";
