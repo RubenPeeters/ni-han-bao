@@ -8,7 +8,7 @@ begin;
 
 -- Two servers; the test user is a member of the first only. Ids no real row can have.
 do $$
-declare g text;
+declare g text; s bigint;
 begin
     insert into auth.users (id) values ('00000000-0000-4000-8000-000000000045');
     insert into auth.identities (provider_id, user_id, identity_data, provider)
@@ -38,6 +38,8 @@ begin
         values (g, 'rls-user', 'c', '2026-01-01', 1);
         insert into public.member_emoji_counts (guild_id, user_id, emoji_key, day, count)
         values (g, 'rls-user', 'e', '2026-01-01', 1);
+        insert into public.stores (guild_id, name, city, added_by) values (g, 's', 'c', 'rls-user') returning id into s;
+        insert into public.store_regulars (guild_id, store_id, user_id) values (g, s, 'rls-user');
     end loop;
     insert into public.guild_members (guild_id, user_id) values ('rls-mine', 'rls-user');
     -- anon cannot read keys itself, so hand it one for the recap checks below.
@@ -109,6 +111,9 @@ begin
         execute format('select count(*) from public.%I where user_id = ''rls-user''', t) into n;
         if n <> 0 then raise exception 'forget_user() leaves % rows in %', n, t; end if;
     end loop;
+    if exists (select from public.stores where added_by = 'rls-user') then
+        raise exception 'forget_user() leaves the user on the stores they added';
+    end if;
     insert into public.members (guild_id, user_id, display_name) values ('rls-mine', 'rls-user', 'x');
     if exists (select from public.members where user_id = 'rls-user') then
         raise exception 'a forgotten user is written again';

@@ -9,6 +9,7 @@ const SERVER_PAGES = [
   { page: "channels", label: "Channels" },
   { page: "emoji", label: "Emoji" },
   { page: "timeline", label: "Timeline" },
+  { page: "stores", label: "Where we play" },
 ];
 
 export function SiteNav() {
