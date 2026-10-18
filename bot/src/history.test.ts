@@ -117,9 +117,10 @@ describe("backfillBefore", () => {
     expect(backfillBefore("2026-10-17", "2026-10-17T13:00:00+00:00", now)).toBe(snowflakeAt(new Date("2026-10-17T13:00:00Z")));
   });
 
-  it("starts at the next hour when nothing was counted live yet, so the first live hour is whole", () => {
-    expect(backfillBefore(null, null, now)).toBe(snowflakeAt(new Date("2026-10-18T10:00:00Z")));
-    expect(backfillBefore(null, null, new Date("2026-12-31T23:59:59.999Z"))).toBe(snowflakeAt(new Date("2027-01-01T00:00:00Z")));
+  it("starts now when nothing was counted live yet, so a server joined mid-hour counts its next message", () => {
+    const boundary = backfillBefore(null, null, now);
+    expect(boundary).toBe(snowflakeAt(now));
+    expect(countsLive(snowflakeAt(new Date("2026-10-18T09:41:01.000Z")), boundary)).toBe(true);
   });
 
   it("starts at the first live day when member counts are older than any channel count", () => {

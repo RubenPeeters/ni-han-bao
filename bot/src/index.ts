@@ -751,8 +751,8 @@ process.on("uncaughtException", (error) => fatal("uncaught_exception", error));
 
 // Every stored boundary, before login, so no message in a server counted before is missed
 // while startServer gets to it. A server without one has never been counted: its boundary is
-// then the next hour (see backfillBefore), so nothing before startServer stores it counts
-// live anyway. Throws (and Docker retries) when the database is unreachable.
+// then the moment startServer stores it (see backfillBefore), and earlier messages are the
+// backfill's. Throws (and Docker retries) when the database is unreachable.
 // shortcut: PostgREST returns at most 1000 rows; beyond that many servers, page this.
 const { data: boundaries, error: boundariesError } = await db.from("backfill_state").select("guild_id, before_id");
 if (boundariesError) throw new Error(`backfill_state: ${boundariesError.message}`);
