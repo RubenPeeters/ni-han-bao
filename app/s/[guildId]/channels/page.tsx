@@ -1,5 +1,5 @@
 import { ChannelStats } from "@/components/channel-stats";
-import { HistoryProgress } from "@/components/history-progress";
+import { CountingStatus } from "@/components/counting-status";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
 import { memberGuild } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
@@ -29,7 +29,7 @@ async function ChannelStatsForMember({ params }: { params: Promise<{ guildId: st
   const guild = await memberGuild(params);
   return (
     <>
-      <HistoryProgress guild={guild} />
+      <CountingStatus guild={guild} />
       <ChannelStats guild={guild} />
     </>
   );

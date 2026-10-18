@@ -59,7 +59,7 @@ function Board({
   return (
     <StatCard title={title} description={description}>
       {rows.length === 0 ? (
-        <EmptyState>No messages counted yet.</EmptyState>
+        <EmptyState>The top talkers appear here once people send messages.</EmptyState>
       ) : (
         <RankList>
           {rows.map((row, i) => (

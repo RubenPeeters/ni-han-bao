@@ -68,7 +68,7 @@ function TopEmoji({ rows }: { rows: EmojiRow[] }) {
   return (
     <StatCard title="Top emoji" description="Reactions added, all time">
       {rows.length === 0 ? (
-        <EmptyState>No reactions counted yet.</EmptyState>
+        <EmptyState>The most used emoji appear here once people react to messages.</EmptyState>
       ) : (
         <RankList>
           {rows.map((row, i) => (
@@ -89,7 +89,7 @@ function MostReacted({ rows }: { rows: MemberRow[] }) {
   return (
     <StatCard title="Most reacted to" description="Reactions on their messages, all time">
       {rows.length === 0 ? (
-        <EmptyState>No reactions counted yet.</EmptyState>
+        <EmptyState>The members whose messages get the most reactions appear here.</EmptyState>
       ) : (
         <RankList>
           {rows.map((row, i) => (
