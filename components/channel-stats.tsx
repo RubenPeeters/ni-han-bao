@@ -96,7 +96,7 @@ function BusiestChannels({ rows }: { rows: ChannelRow[] }) {
 const heat = (count: number, max: number) =>
   count ? { backgroundColor: `hsl(var(--chart-2) / ${0.15 + 0.85 * (count / max)})` } : undefined;
 
-function Heatmap({ grid, timeZone }: { grid: number[][]; timeZone: string }) {
+export function Heatmap({ grid, timeZone }: { grid: number[][]; timeZone: string }) {
   const max = Math.max(...grid.flat());
   return (
     <StatCard

@@ -14,7 +14,7 @@ if (functions["/_middleware"]) {
   process.exit(1);
 }
 
-const PAGES = ["/", "/s", "/about"];
+const PAGES = ["/", "/s", "/about", "/terms"];
 const LEGACY = ["/leaderboard", "/channels", "/emoji", "/timeline"];
 const port = 3999;
 const base = `http://localhost:${port}`;
@@ -56,6 +56,11 @@ try {
   const previewOk = png?.status === 200 && png.headers.get("content-type") === "image/png";
   if (!previewOk) failed = true;
   console.log(`${previewOk ? "ok  " : "FAIL"} og:image ${image} -> ${png?.status}`);
+  // Landing page (#73): the Add to Discord button installs the bot with its permissions.
+  const home = await (await fetch(base)).text();
+  const installOk = /href="https:\/\/discord\.com\/oauth2\/authorize\?client_id=\d+&amp;permissions=117760&amp;scope=bot\+applications\.commands"/.test(home);
+  if (!installOk) failed = true;
+  console.log(`${installOk ? "ok  " : "FAIL"} / has the Add to Discord install link`);
   // Unknown paths get the styled not-found page (#58), not Next's default one.
   const res = await fetch(`${base}/no-such-page`, { redirect: "manual" });
   const ok = res.status === 404 && (await res.text()).includes("Page not found");

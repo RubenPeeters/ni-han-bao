@@ -28,6 +28,7 @@ import { loadConfig } from "./config.js";
 import { countsLive, loadBeforeId } from "./history.js";
 import { createLogger } from "./log.js";
 import { keyedQueue, memberFetchRetryMs, syncMembers } from "./membership.js";
+import { dueRecapMonth, isRecapFor, lastMonth, RECAP_COMMAND, recapMessage, recapNonce, recapSlot, recapUrls } from "./recap.js";
 import { nextPresence, PRESENCE_PHRASES } from "./presence.js";
 import { emojiRow, receivesReaction } from "./reactions.js";
 import {
@@ -598,6 +599,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     await tracked("command", setupCommand(interaction));
     return;
   }
+  if (interaction.commandName === RECAP_COMMAND.name) {
+    await tracked("command", recapCommand(interaction));
+    return;
+  }
   const hidden = hiddenFor(interaction.commandName);
   if (hidden === null) return;
   try {
@@ -802,6 +807,97 @@ async function weeklyReport(guild: string): Promise<void> {
   }
 }
 
+const RECAP_FETCH_MS = 30_000;
+
+/** The month's card, drawn by the site with the month's key (made once per server and month). */
+async function recapCard(guild: string, month: string) {
+  if (!config.siteUrl) throw new Error("SITE_URL is not set: the site draws the recap card");
+  const made = await db
+    .from("monthly_recaps")
+    .upsert({ guild_id: guild, month }, { onConflict: "guild_id,month", ignoreDuplicates: true });
+  if (made.error) throw new Error(`monthly_recaps upsert: ${made.error.message}`);
+  const { data, error } = await db
+    .from("monthly_recaps")
+    .select("key")
+    .eq("guild_id", guild)
+    .eq("month", month)
+    .single();
+  if (error) throw new Error(`monthly_recaps select: ${error.message}`);
+  const urls = recapUrls(config.siteUrl, guild, month, data.key);
+  const res = await fetch(urls.image, { signal: AbortSignal.timeout(RECAP_FETCH_MS) });
+  if (!res.ok || res.headers.get("content-type") !== "image/png") {
+    throw new Error(`recap card: HTTP ${res.status} ${res.headers.get("content-type")}`);
+  }
+  return recapMessage(month, Buffer.from(await res.arrayBuffer()), urls.page);
+}
+
+/** /recap: last month's card, posted in the channel for everyone. */
+async function recapCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  // Deferred because Discord drops replies sent more than 3 s in, and drawing the card is slower.
+  await interaction.deferReply();
+  const month = lastMonth(new Date(), settingsFor(interaction.guildId).timezone);
+  try {
+    await interaction.editReply(await recapCard(interaction.guildId, month));
+  } catch (err) {
+    log("error", "command_failed", { command: RECAP_COMMAND.name, error: err });
+    await interaction.editReply("Could not make the recap. Please try again later.");
+  }
+}
+
+// Month last seen posted per server, as reportedWeek does for the weekly report.
+const recappedMonth = new Map<string, string>();
+const recapping = new Set<string>();
+
+function monthlyRecaps(): void {
+  for (const guild of client.guilds.cache.values()) void monthlyRecap(guild.id);
+}
+
+/** On the 1st, last month's card in the report channel; posted once, like the weekly report. */
+async function monthlyRecap(guild: string): Promise<void> {
+  const { report_channel_id: channelId, timezone } = settingsFor(guild);
+  const month = dueRecapMonth(new Date(), timezone);
+  if (!channelId || month === null || month === recappedMonth.get(guild) || recapping.has(guild)) return;
+  recapping.add(guild);
+  try {
+    const channel = await client.channels.fetch(channelId);
+    if (!channel?.isSendable() || channel.isDMBased() || channel.guildId !== guild) {
+      throw new Error("the report channel is not a channel of this server the bot can post in");
+    }
+    const recorded = await db
+      .from("monthly_recaps")
+      .select("posted_at")
+      .eq("guild_id", guild)
+      .eq("month", month)
+      .maybeSingle();
+    if (recorded.error) throw new Error(`monthly_recaps select: ${recorded.error.message}`);
+    if (recorded.data?.posted_at) {
+      recappedMonth.set(guild, month);
+      return;
+    }
+    // As in weeklyReport: the channel decides whether it went out, so a lost response does not post twice.
+    const posted = await postedSince(
+      async (before) => [
+        ...(await channel.messages.fetch(before ? { limit: PAGE_SIZE, before } : { limit: PAGE_SIZE })).values(),
+      ],
+      recapSlot(new Date(), timezone).getTime() - 60_000,
+      (m) => m.author.id === client.user?.id && isRecapFor(m.embeds, month),
+    );
+    if (!posted) {
+      await channel.send({ ...(await recapCard(guild, month)), nonce: recapNonce(guild, month), enforceNonce: true });
+    }
+    const record = await db
+      .from("monthly_recaps")
+      .upsert({ guild_id: guild, month, posted_at: new Date().toISOString() }, { onConflict: "guild_id,month" });
+    if (record.error) throw new Error(`monthly_recaps upsert: ${record.error.message}`);
+    recappedMonth.set(guild, month);
+    log("info", "recap_posted", { guild, month });
+  } catch (err) {
+    log("error", "recap_failed", { guild, month, error: err });
+  } finally {
+    recapping.delete(guild);
+  }
+}
+
 // One server at a time, so a single backfill shares Discord's rate limits with live work.
 let backfills = Promise.resolve();
 
@@ -832,7 +928,13 @@ async function backfillServer(guildId: string): Promise<void> {
 async function startServer(guild: Guild): Promise<void> {
   // Guild commands, not global ones: they apply instantly.
   try {
-    await guild.commands.set([...VISIBILITY_COMMANDS, FORGET_COMMAND, ...STATS_COMMANDS, SETUP_COMMAND]);
+    await guild.commands.set([
+      ...VISIBILITY_COMMANDS,
+      FORGET_COMMAND,
+      ...STATS_COMMANDS,
+      SETUP_COMMAND,
+      RECAP_COMMAND,
+    ]);
   } catch (err) {
     log("error", "command_registration_failed", { guild: guild.id, error: err });
   }
@@ -877,6 +979,8 @@ client.once(Events.ClientReady, async (c) => {
   setInterval(() => void rotatePresence(), PRESENCE_MS);
   weeklyReports();
   setInterval(weeklyReports, REPORT_CHECK_MS);
+  monthlyRecaps();
+  setInterval(monthlyRecaps, REPORT_CHECK_MS);
   for (const guild of c.guilds.cache.values()) await startServer(guild);
 });
 
