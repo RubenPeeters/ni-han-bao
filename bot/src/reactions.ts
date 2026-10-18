@@ -46,6 +46,13 @@ export interface EmojiCountRow {
   count: number;
 }
 
+export interface MemberEmojiCountRow {
+  user_id: string;
+  emoji_key: string;
+  day: string;
+  count: number;
+}
+
 export interface ReceivedCountRow {
   user_id: string;
   day: string;
@@ -58,6 +65,7 @@ export interface ReactionBatch {
   emojis: EmojiRow[];
   emojiCounts: EmojiCountRow[];
   receivedCounts: ReceivedCountRow[];
+  memberEmojiCounts: MemberEmojiCountRow[];
 }
 
 export interface DrainedReactions {
@@ -65,6 +73,7 @@ export interface DrainedReactions {
   emojis: EmojiRow[];
   emojiCounts: EmojiCountRow[];
   receivedCounts: ReceivedCountRow[];
+  memberEmojiCounts: MemberEmojiCountRow[];
 }
 
 /**
@@ -77,12 +86,17 @@ export class ReactionBuffer {
   private emojis = new Map<string, EmojiRow>();
   private emojiCounts = new Map<string, EmojiCountRow>();
   private receivedCounts = new Map<string, ReceivedCountRow>();
+  private memberEmojiCounts = new Map<string, MemberEmojiCountRow>();
   /** A batch whose write failed; resent unchanged under the same id, as in ActivityBuffer. */
   pending: ReactionBatch | null = null;
 
-  addEmoji(emoji: EmojiRow, at: Date): void {
+  /** `reactor` (null when not a known member) is written before the count, which references it. */
+  addEmoji(emoji: EmojiRow, at: Date, reactor: MemberRow | null): void {
     this.emojis.set(emoji.emoji_key, emoji);
     this.addEmojiCount({ emoji_key: emoji.emoji_key, day: utcDay(at), count: 1 });
+    if (!reactor) return;
+    this.members.set(reactor.user_id, reactor);
+    this.addMemberEmojiCount({ user_id: reactor.user_id, emoji_key: emoji.emoji_key, day: utcDay(at), count: 1 });
   }
 
   /** `author` is written before the count, which references it. */
@@ -98,6 +112,13 @@ export class ReactionBuffer {
     else this.emojiCounts.set(key, { ...c });
   }
 
+  private addMemberEmojiCount(c: MemberEmojiCountRow): void {
+    const key = `${c.user_id}:${c.emoji_key}:${c.day}`;
+    const row = this.memberEmojiCounts.get(key);
+    if (row) row.count += c.count;
+    else this.memberEmojiCounts.set(key, { ...c });
+  }
+
   private addReceivedCount(c: ReceivedCountRow): void {
     const key = `${c.user_id}:${c.day}`;
     const row = this.receivedCounts.get(key);
@@ -111,6 +132,7 @@ export class ReactionBuffer {
       this.emojis.size === 0 &&
       this.emojiCounts.size === 0 &&
       this.receivedCounts.size === 0 &&
+      this.memberEmojiCounts.size === 0 &&
       this.pending === null
     );
   }
@@ -121,16 +143,18 @@ export class ReactionBuffer {
       emojis: [...this.emojis.values()],
       emojiCounts: [...this.emojiCounts.values()],
       receivedCounts: [...this.receivedCounts.values()],
+      memberEmojiCounts: [...this.memberEmojiCounts.values()],
     };
     this.members = new Map();
     this.emojis = new Map();
     this.emojiCounts = new Map();
     this.receivedCounts = new Map();
+    this.memberEmojiCounts = new Map();
     return drained;
   }
 
   /** Put back drained data that was never sent; newer snapshots win, counts add up. */
-  restore({ members, emojis, emojiCounts, receivedCounts }: DrainedReactions): void {
+  restore({ members, emojis, emojiCounts, receivedCounts, memberEmojiCounts }: DrainedReactions): void {
     for (const m of members) {
       if (!this.members.has(m.user_id)) this.members.set(m.user_id, m);
     }
@@ -139,6 +163,7 @@ export class ReactionBuffer {
     }
     for (const c of emojiCounts) this.addEmojiCount(c);
     for (const c of receivedCounts) this.addReceivedCount(c);
+    for (const c of memberEmojiCounts) this.addMemberEmojiCount(c);
   }
 }
 
@@ -156,7 +181,7 @@ export async function flushReactions(
 ): Promise<void> {
   if (buffer.isEmpty) return;
   const drained = buffer.drain();
-  const { members, emojis, emojiCounts, receivedCounts } = drained;
+  const { members, emojis, emojiCounts, receivedCounts, memberEmojiCounts } = drained;
   try {
     if (members.length) await writer.upsertMembers(members);
     if (buffer.pending) {
@@ -168,7 +193,8 @@ export async function flushReactions(
     throw err;
   }
   if (!emojiCounts.length && !receivedCounts.length) return;
-  const batch = { id: newBatchId(), emojis, emojiCounts, receivedCounts };
+  // Every reaction adds to emojiCounts, so memberEmojiCounts is empty whenever it is.
+  const batch = { id: newBatchId(), emojis, emojiCounts, receivedCounts, memberEmojiCounts };
   try {
     await writer.incrementReactions(batch);
   } catch (err) {

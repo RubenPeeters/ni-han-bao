@@ -106,11 +106,19 @@ export interface ChannelCountRow {
   count: number;
 }
 
+export interface MemberChannelCountRow {
+  user_id: string;
+  channel_id: string;
+  day: string;
+  count: number;
+}
+
 /** Counts sent together under one id, so the database can drop a retry it already applied. */
 export interface CountBatch {
   id: string;
   counts: CountRow[];
   channelCounts: ChannelCountRow[];
+  memberChannelCounts: MemberChannelCountRow[];
 }
 
 export interface Drained {
@@ -118,6 +126,7 @@ export interface Drained {
   channels: ChannelRow[];
   counts: CountRow[];
   channelCounts: ChannelCountRow[];
+  memberChannelCounts: MemberChannelCountRow[];
 }
 
 /**
@@ -127,6 +136,7 @@ export interface Drained {
 export class ActivityBuffer {
   private counts = new Map<string, CountRow>();
   private channelCounts = new Map<string, ChannelCountRow>();
+  private memberChannelCounts = new Map<string, MemberChannelCountRow>();
   private members = new Map<string, MemberRow>();
   private channels = new Map<string, ChannelRow>();
   /**
@@ -138,6 +148,7 @@ export class ActivityBuffer {
   addMessage(userId: string, channelId: string, at: Date): void {
     this.addCount({ user_id: userId, day: utcDay(at), count: 1 });
     this.addChannelCount({ channel_id: channelId, hour: utcHour(at), count: 1 });
+    this.addMemberChannelCount({ user_id: userId, channel_id: channelId, day: utcDay(at), count: 1 });
   }
 
   private addCount(c: CountRow): void {
@@ -154,6 +165,13 @@ export class ActivityBuffer {
     else this.channelCounts.set(key, { ...c });
   }
 
+  private addMemberChannelCount(c: MemberChannelCountRow): void {
+    const key = `${c.user_id}:${c.channel_id}:${c.day}`;
+    const row = this.memberChannelCounts.get(key);
+    if (row) row.count += c.count;
+    else this.memberChannelCounts.set(key, { ...c });
+  }
+
   /** Latest snapshot wins: a member is written once per flush however often they change. */
   setMember(member: MemberRow): void {
     this.members.set(member.user_id, member);
@@ -168,6 +186,7 @@ export class ActivityBuffer {
     return (
       this.counts.size === 0 &&
       this.channelCounts.size === 0 &&
+      this.memberChannelCounts.size === 0 &&
       this.members.size === 0 &&
       this.channels.size === 0 &&
       this.pending === null
@@ -181,9 +200,11 @@ export class ActivityBuffer {
       channels: [...this.channels.values()],
       counts: [...this.counts.values()],
       channelCounts: [...this.channelCounts.values()],
+      memberChannelCounts: [...this.memberChannelCounts.values()],
     };
     this.counts = new Map();
     this.channelCounts = new Map();
+    this.memberChannelCounts = new Map();
     this.members = new Map();
     this.channels = new Map();
     return drained;
@@ -193,7 +214,7 @@ export class ActivityBuffer {
    * Put back drained data that was never sent, so it goes out next flush. Counts are added
    * to anything that arrived meanwhile; members only fill gaps, since newer snapshots win.
    */
-  restore({ members, channels, counts, channelCounts }: Drained): void {
+  restore({ members, channels, counts, channelCounts, memberChannelCounts }: Drained): void {
     for (const m of members) {
       if (!this.members.has(m.user_id)) this.members.set(m.user_id, m);
     }
@@ -202,6 +223,7 @@ export class ActivityBuffer {
     }
     for (const c of counts) this.addCount(c);
     for (const c of channelCounts) this.addChannelCount(c);
+    for (const c of memberChannelCounts) this.addMemberChannelCount(c);
   }
 }
 
@@ -225,7 +247,7 @@ export async function flushActivity(
 ): Promise<void> {
   if (buffer.isEmpty) return;
   const drained = buffer.drain();
-  const { members, channels, counts, channelCounts } = drained;
+  const { members, channels, counts, channelCounts, memberChannelCounts } = drained;
   try {
     if (members.length) await writer.upsertMembers(members);
     if (channels.length) await writer.upsertChannels(channels);
@@ -238,7 +260,8 @@ export async function flushActivity(
     throw err;
   }
   if (!counts.length && !channelCounts.length) return;
-  const batch = { id: newBatchId(), counts, channelCounts };
+  // Every message adds to counts, so memberChannelCounts is empty whenever counts is.
+  const batch = { id: newBatchId(), counts, channelCounts, memberChannelCounts };
   try {
     await writer.incrementCounts(batch);
   } catch (err) {
