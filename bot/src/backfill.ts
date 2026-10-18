@@ -65,13 +65,22 @@ async function loadCursors(channelIds: string[], beforeId: string): Promise<Map<
       });
     if (error) throw new Error(`backfill_cursors upsert: ${error.message}`);
   }
-  // shortcut: reads at most PostgREST's max-rows (1000) cursors; page this if the server outgrows it.
-  const rows: { channel_id: string; before_id: string; done: boolean }[] = must(
-    "backfill_cursors",
-    await db.from("backfill_cursors").select("channel_id, before_id, done").eq("guild_id", config.guildId),
-  );
-  for (const r of rows) cursors.set(r.channel_id, { beforeId: r.before_id, done: r.done });
-  return cursors;
+  // Paged: PostgREST caps a select at 1000 rows, and a cursor missing here would restart its
+  // channel from the top, where the first page is refused and the channel never finishes.
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const rows: { channel_id: string; before_id: string; done: boolean }[] = must(
+      "backfill_cursors",
+      await db
+        .from("backfill_cursors")
+        .select("channel_id, before_id, done")
+        .eq("guild_id", config.guildId)
+        .order("channel_id")
+        .range(from, from + PAGE - 1),
+    );
+    for (const r of rows) cursors.set(r.channel_id, { beforeId: r.before_id, done: r.done });
+    if (rows.length < PAGE) return cursors;
+  }
 }
 
 /** Active plus archived threads: the live bot counts their messages toward the parent. */
