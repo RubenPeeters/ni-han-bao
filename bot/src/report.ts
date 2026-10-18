@@ -1,4 +1,5 @@
 import type { APIEmbed } from "discord.js";
+import { eventsField, type UpcomingEvent } from "./events.js";
 import { fromWallClock, weekStart } from "./zone.js";
 
 const REPORT_HOUR = 9; // Monday, local time
@@ -90,7 +91,13 @@ export async function postedSince<M extends { id: string; createdTimestamp: numb
 }
 
 /** Last week's report card, in the voice of a mildly disappointed dad. Teases the server, never a member. */
-export function reportEmbed(week: string, data: ReportData, siteUrl: string | null, timeZone: string): APIEmbed {
+export function reportEmbed(
+  week: string,
+  data: ReportData,
+  siteUrl: string | null,
+  timeZone: string,
+  events: UpcomingEvent[] = [],
+): APIEmbed {
   const medals = ["🥇", "🥈", "🥉"];
   const talkers = data.top_talkers.length
     ? data.top_talkers
@@ -115,6 +122,7 @@ export function reportEmbed(week: string, data: ReportData, siteUrl: string | nu
       { name: "Busiest channel", value: channel, inline: true },
       { name: "Top emoji", value: emoji, inline: true },
       { name: "Member growth", value: growthText(data.joins, data.leaves) },
+      { name: "Coming up this week", value: eventsField(events, timeZone) },
     ],
     footer: { text: `Monday ${week} to Sunday ${addDays(week, 6)} (${timeZone})` },
   };

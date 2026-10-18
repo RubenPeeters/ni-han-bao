@@ -114,6 +114,13 @@ describe("reportEmbed", () => {
     );
     expect(embed.fields![2].value).toBe("😂 1 time");
   });
+
+  it("lists the coming week's events with who is going", () => {
+    const event = { id: 1, name: null, starts_at: "2026-10-25T17:00:00Z", url: null, store_name: "Shop", store_city: "Gent", going: ["Alice", "Bob"] };
+    const embed = reportEmbed("2026-10-12", full, null, "Europe/Brussels", [event]);
+    expect(embed.fields![4]).toEqual({ name: "Coming up this week", value: "**Sun 25 Oct, 18:00 · Shop \\(Gent\\)**: Alice, Bob" });
+    expect(reportEmbed("2026-10-12", full, null, "UTC").fields![4].value).toMatch(/\/event going/);
+  });
 });
 
 describe("isReportFor", () => {
