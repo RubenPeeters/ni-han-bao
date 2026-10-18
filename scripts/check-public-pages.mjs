@@ -14,7 +14,7 @@ if (functions["/_middleware"]) {
   process.exit(1);
 }
 
-const PAGES = ["/", "/s"];
+const PAGES = ["/", "/s", "/about"];
 const LEGACY = ["/leaderboard", "/channels", "/emoji", "/timeline"];
 const port = 3999;
 const base = `http://localhost:${port}`;
