@@ -2,7 +2,8 @@ import { GUILD_ID } from "@/lib/guild";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 import { Bot } from "lucide-react";
-import { cache } from "react";
+import { cache, type ReactNode } from "react";
+import { RelativeTime } from "./relative-time";
 
 // The bot writes a heartbeat every minute; older than this means it is down.
 const STALE_AFTER_MS = 5 * 60_000;
@@ -18,9 +19,6 @@ export const loadStatus = cache(async () => {
 });
 
 const isOnline = (lastSeen: Date) => Date.now() - lastSeen.getTime() < STALE_AFTER_MS;
-
-const formatSeen = (d: Date) =>
-  `${d.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" })} UTC`;
 
 export function BotAvatar({ url }: { url: string | null }) {
   const ring = "size-24 shrink-0 rounded-full bg-muted ring-4 ring-primary/30 sm:size-28";
@@ -42,7 +40,7 @@ export async function HeroAvatar() {
   return <BotAvatar url={data?.avatar_url ?? null} />;
 }
 
-export function StatusPill({ tone, children }: { tone: "online" | "offline" | "unknown"; children: string }) {
+export function StatusPill({ tone, children }: { tone: "online" | "offline" | "unknown"; children: ReactNode }) {
   return (
     <p
       role="status"
@@ -72,7 +70,11 @@ export async function HeroStatus() {
   return isOnline(lastSeen) ? (
     <StatusPill tone="online">Online</StatusPill>
   ) : (
-    <StatusPill tone="offline">{`Offline since ${formatSeen(lastSeen)}`}</StatusPill>
+    <StatusPill tone="offline">
+      <span>
+        Offline, last seen <RelativeTime date={lastSeen} />
+      </span>
+    </StatusPill>
   );
 }
 
