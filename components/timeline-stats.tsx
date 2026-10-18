@@ -6,8 +6,7 @@ import {
   StatCard,
   StatGrid,
 } from "@/components/stat-ui";
-import { createPublicClient } from "@/lib/supabase/public";
-import { cacheLife } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
 
 const TOP = 10;
 const DAY_MS = 24 * 60 * 60_000;
@@ -62,9 +61,7 @@ const shortDate = (day: string) =>
   });
 
 export async function TimelineStats({ guild }: { guild: string }) {
-  "use cache";
-  cacheLife("stats");
-  const supabase = createPublicClient();
+  const supabase = await createClient();
   const now = Date.now();
   const monthStart = `${isoDay(now).slice(0, 7)}-01`;
   const [snapshots, flow, voice] = await Promise.all([

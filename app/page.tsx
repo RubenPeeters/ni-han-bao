@@ -1,10 +1,8 @@
 import { BotAvatar, HeroAvatar, HeroStatus, StatusPill } from "@/components/bot-status";
 import { HomeStats, HomeStatsSkeleton } from "@/components/home-stats";
 import { NotConfigured } from "@/components/stat-ui";
-import { Button } from "@/components/ui/button";
-import { GUILD_ID } from "@/lib/guild";
+import { ServersButton } from "@/components/auth-button";
 import { hasEnvVars } from "@/lib/utils";
-import Link from "next/link";
 import { Suspense } from "react";
 
 export default function Home() {
@@ -30,14 +28,14 @@ export default function Home() {
           ) : (
             <StatusPill tone="unknown">Status unknown</StatusPill>
           )}
-          <Button asChild size="lg" className="mt-2">
-            <Link href="/leaderboard">See the leaderboard</Link>
-          </Button>
+          <div className="mt-2 min-h-10">
+            <ServersButton />
+          </div>
         </div>
       </section>
       {hasEnvVars ? (
         <Suspense fallback={<HomeStatsSkeleton />}>
-          <HomeStats guild={GUILD_ID} />
+          <HomeStats />
         </Suspense>
       ) : (
         <NotConfigured />

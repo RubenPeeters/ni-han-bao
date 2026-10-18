@@ -2,8 +2,9 @@
 
 ## What this repo is
 
-ni-han-bao: a Discord bot that lives in one server, plus a public website that shows fun
-statistics about that server.
+ni-han-bao: a Discord bot that counts the servers it is in, plus a website that shows fun
+statistics about them: totals across all servers to everyone, each server's pages only to
+its members (log in with Discord).
 
 ```
 Discord ──gateway──► bot/ (discord.js, container on the Hetzner box)
@@ -17,6 +18,8 @@ Discord ──gateway──► bot/ (discord.js, container on the Hetzner box)
 - Website: the Next.js app at the repo root (App Router, `cacheComponents`), deployed by
   Vercel, from `main` only (`vercel.json`): other branches get no preview deployment, which
   keeps the Hobby plan under its daily deploy limit. Check visual changes with `make screenshots`.
+  Public: the home page (`public_totals()`, no names) and the server picker `/s`. Private:
+  `/s/[guildId]/...`, read with the visitor's session, a 404 for non-members (`lib/guild.ts`).
 - Database: `supabase/migrations/*.sql`, applied by `.github/workflows/migrate.yml` on push
   to `dev` and `main`. Stack choices: `stack.toml`.
 
@@ -32,10 +35,12 @@ Discord ──gateway──► bot/ (discord.js, container on the Hetzner box)
   its code. Production still runs the previous release until then: never assume production
   data matches `dev`.
 - Per-server tables carry `guild_id`, and every new per-server table must have it. The bot
-  writes it explicitly (`DISCORD_GUILD_ID`); every site query filters on it (`lib/guild.ts`).
+  writes it explicitly; every site query filters on the route's `guildId`, after
+  `memberGuild()` (`lib/guild.ts`) has checked the visitor is a member, in every page.
 - Migration files are named `YYYYMMDDHHMMSS_description.sql` and are never edited once merged.
-- The site is public and shows member names. Anything per-member must respect the opt-out
-  (once it exists): hidden members appear in no list and no chart.
+- The site is no longer fully public, but members see each other's names. Anything
+  per-member must respect the opt-out: hidden members appear in no list and no chart.
+  Logged-out pages show totals only: no server names, member names or anything per person.
 
 ## Commands
 
