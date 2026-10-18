@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backfillBefore, backfillChannel, snowflakeAt, type Cursor, type HistoryIo, type HistoryMessage, type Page } from "./history.js";
+import { backfillBefore, backfillChannel, countsLive, snowflakeAt, snowflakeTime, type Cursor, type HistoryIo, type HistoryMessage, type Page } from "./history.js";
 
 const GUILD = "g1";
 const CHANNEL = { channel_id: "c1", name: "general" };
@@ -117,12 +117,29 @@ describe("backfillBefore", () => {
     expect(backfillBefore("2026-10-17", "2026-10-17T13:00:00+00:00", now)).toBe(snowflakeAt(new Date("2026-10-17T13:00:00Z")));
   });
 
-  it("starts at the current hour when nothing was counted live yet", () => {
-    expect(backfillBefore(null, null, now)).toBe(snowflakeAt(new Date("2026-10-18T09:00:00Z")));
+  it("starts at the next hour when nothing was counted live yet, so the first live hour is whole", () => {
+    expect(backfillBefore(null, null, now)).toBe(snowflakeAt(new Date("2026-10-18T10:00:00Z")));
+    expect(backfillBefore(null, null, new Date("2026-12-31T23:59:59.999Z"))).toBe(snowflakeAt(new Date("2027-01-01T00:00:00Z")));
   });
 
   it("starts at the first live day when member counts are older than any channel count", () => {
     expect(backfillBefore("2026-10-16", "2026-10-17T13:00:00+00:00", now)).toBe(snowflakeAt(new Date("2026-10-16T00:00:00Z")));
     expect(backfillBefore("2026-10-16", null, now)).toBe(snowflakeAt(new Date("2026-10-16T00:00:00Z")));
+  });
+});
+
+describe("countsLive", () => {
+  const boundary = snowflakeAt(new Date("2026-10-18T10:00:00Z"));
+
+  it("leaves messages before the boundary to the backfill and counts the rest live", () => {
+    const early = (BigInt(snowflakeAt(new Date("2026-10-18T09:37:00Z"))) | 0x3fffffn).toString();
+    expect(countsLive(early, boundary)).toBe(false);
+    expect(countsLive((BigInt(boundary) - 1n).toString(), boundary)).toBe(false);
+    expect(countsLive(boundary, boundary)).toBe(true);
+    expect(countsLive(snowflakeAt(new Date("2026-10-18T10:00:01Z")), boundary)).toBe(true);
+  });
+
+  it("splits at the time snowflakeTime reads back", () => {
+    expect(snowflakeTime(boundary)).toEqual(new Date("2026-10-18T10:00:00Z"));
   });
 });

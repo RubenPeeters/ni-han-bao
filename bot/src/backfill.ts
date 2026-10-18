@@ -1,5 +1,5 @@
-// One-off, not part of the running bot: counts messages sent before the live bot's first
-// counted hour, one channel or thread at a time, and adds them to the stats (the backfill
+// One-off, not part of the running bot: counts messages sent before live counting began
+// (backfillBefore in history.ts), one channel or thread at a time, and adds them to the stats (the backfill
 // migration says why that never double counts). Run with the live bot's env, after a build:
 // `pnpm --filter ni-han-bao-bot backfill [--dry-run]`, e.g. on the box:
 // `docker compose -f bot/deploy/compose.yaml run --rm bot node bot/dist/backfill.js --dry-run`.
@@ -15,7 +15,7 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { channelRow, memberRow, type ChannelRow, type MemberRow } from "./activity.js";
 import { loadConfig } from "./config.js";
-import { backfillBefore, backfillChannel, type Cursor, type HistoryIo } from "./history.js";
+import { backfillChannel, loadBeforeId, must, snowflakeTime, type Cursor, type HistoryIo } from "./history.js";
 
 const dryRun = process.argv.includes("--dry-run");
 const config = loadConfig();
@@ -25,34 +25,6 @@ const db = createClient(config.supabaseUrl, config.supabaseSecretKey, {
 // No MessageContent intent: fetched history comes back without its text. GuildMembers fills
 // the member cache, so authors get their server nickname and avatar.
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
-
-function must<T>(what: string, r: { data: T | null; error: { message: string } | null }): T {
-  if (r.error || r.data === null) throw new Error(`${what}: ${r.error?.message ?? "no data"}`);
-  return r.data;
-}
-
-/** Fixed by the first real run, so later runs (after history counts exist) stop at the same id. */
-async function loadBeforeId(): Promise<string> {
-  const state = () => db.from("backfill_state").select("before_id").eq("guild_id", config.guildId);
-  const [stored] = must("backfill_state", await state());
-  if (stored) return stored.before_id;
-  const [firstDay] = must(
-    "message_counts",
-    await db.from("message_counts").select("day").eq("guild_id", config.guildId).order("day").limit(1),
-  );
-  const [firstHour] = must(
-    "channel_message_counts",
-    await db.from("channel_message_counts").select("hour").eq("guild_id", config.guildId).order("hour").limit(1),
-  );
-  const before_id = backfillBefore(firstDay?.day ?? null, firstHour?.hour ?? null, new Date());
-  if (dryRun) return before_id;
-  const { error } = await db
-    .from("backfill_state")
-    .upsert({ guild_id: config.guildId, before_id }, { ignoreDuplicates: true });
-  if (error) throw new Error(`backfill_state upsert: ${error.message}`);
-  // Re-read: a concurrent first run may have stored its start first.
-  return must("backfill_state", await state())[0].before_id;
-}
 
 /** Every channel gets a cursor up front, including ones unreadable on earlier runs. */
 async function loadCursors(channelIds: string[], beforeId: string): Promise<Map<string, Cursor>> {
@@ -129,7 +101,14 @@ async function main(): Promise<void> {
   const readable = [...channels, ...(await allThreads(guild, me))].filter((c) =>
     c.permissionsFor(me).has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory]),
   );
-  const beforeId = await loadBeforeId();
+  const beforeId = await loadBeforeId(db, config.guildId, !dryRun);
+  // Messages sent between now and a future boundary would be missed: neither side counts them.
+  const liveFrom = snowflakeTime(beforeId);
+  if (liveFrom > new Date()) {
+    console.error(`live counting starts at ${liveFrom.toISOString()}; run the backfill after that`);
+    process.exitCode = 1;
+    return;
+  }
   console.log(`counting messages before id ${beforeId}${dryRun ? " (dry run: nothing is written)" : ""}`);
   const cursors = await loadCursors(readable.map((c) => c.id), beforeId);
   let total = 0;

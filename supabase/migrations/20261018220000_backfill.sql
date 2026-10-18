@@ -2,12 +2,12 @@
 -- Same convention as bot_status: RLS on, anon may only SELECT, only the bot writes.
 -- Holds ids and timestamps only: message content is never stored.
 --
--- The backfill only counts messages older than `before_id`, the start of the first hour the
--- live bot counted (see backfillBefore in bot/src/history.ts). Live counts begin at or after
--- it, so history counts are simply added to message_counts and channel_message_counts.
+-- `before_id` splits live counting from the backfill: the live bot counts messages at or
+-- after it, the backfill those before it (see backfillBefore in bot/src/history.ts), so
+-- history counts are simply added to message_counts and channel_message_counts.
 
--- One row per server, fixed by the first real run: once older counts are written, the
--- earliest counts no longer say where live counting began.
+-- One row per server, stored by whichever of live bot and backfill runs first: once counts
+-- exist on both sides of it, the counts no longer say where it was.
 create table if not exists public.backfill_state (
     guild_id text primary key,
     before_id text not null,

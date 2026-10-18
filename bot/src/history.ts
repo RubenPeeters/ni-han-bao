@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ActivityBuffer,
   shouldCount,
@@ -19,20 +20,64 @@ export function snowflakeAt(at: Date): string {
 }
 
 /**
- * The id the backfill reads back from: the start of the first hour the live bot counted, or
- * of the current hour when it has counted nothing yet (it may be counting this hour already).
- * Live counts land at or after that hour, history counts before it, so the two never overlap.
- * Member counts older than every channel count (a bot from before channel counts existed)
- * move it back to the start of their day.
- * shortcut: messages in the first live hour from before the bot first started are never
- * counted; exact only if the live bot recorded its first message id, add that if it matters.
+ * The id that splits live counting from the backfill: the live bot counts messages at or
+ * after it, the backfill those before it, so the two never overlap. Stored once per server
+ * (backfill_state) by whichever of the two runs first.
+ * With nothing counted yet it is the start of the next hour, so the live bot's first hour is
+ * whole and every earlier message is left to the backfill.
+ * A bot that counted before this boundary existed has no record of when it started: the
+ * boundary is then the start of the first hour it counted (or of the first day, when member
+ * counts are older than every channel count, from before channel counts existed).
+ * shortcut: for such a bot, messages in its first counted hour from before it started are
+ * never counted; only fixable had it recorded its first message id.
  */
 export function backfillBefore(firstLiveDay: string | null, firstLiveHour: string | null, now: Date): string {
   const hour = firstLiveHour ? new Date(firstLiveHour) : null;
   if (firstLiveDay && (!hour || firstLiveDay < utcHour(hour).slice(0, 10))) {
     return snowflakeAt(new Date(`${firstLiveDay}T00:00:00.000Z`));
   }
-  return snowflakeAt(new Date(utcHour(hour ?? now)));
+  if (hour) return snowflakeAt(new Date(utcHour(hour)));
+  return snowflakeAt(new Date(Date.parse(utcHour(now)) + 3_600_000));
+}
+
+/** Whether the live bot counts message `id`: older ones are the backfill's. */
+export function countsLive(id: string, beforeId: string): boolean {
+  return BigInt(id) >= BigInt(beforeId);
+}
+
+/** When `id` was created; the inverse of snowflakeAt. */
+export function snowflakeTime(id: string): Date {
+  return new Date(Number((BigInt(id) >> 22n) + DISCORD_EPOCH));
+}
+
+export function must<T>(what: string, r: { data: T | null; error: { message: string } | null }): T {
+  if (r.error || r.data === null) throw new Error(`${what}: ${r.error?.message ?? "no data"}`);
+  return r.data;
+}
+
+/**
+ * The stored boundary (see backfillBefore), fixed on first call: once counts exist on both
+ * sides of it, the counts no longer say where it was. With `store` false (a dry run) it is
+ * computed but not stored.
+ */
+export async function loadBeforeId(db: SupabaseClient, guildId: string, store = true): Promise<string> {
+  const state = () => db.from("backfill_state").select("before_id").eq("guild_id", guildId);
+  const [stored] = must("backfill_state", await state());
+  if (stored) return stored.before_id;
+  const [firstDay] = must(
+    "message_counts",
+    await db.from("message_counts").select("day").eq("guild_id", guildId).order("day").limit(1),
+  );
+  const [firstHour] = must(
+    "channel_message_counts",
+    await db.from("channel_message_counts").select("hour").eq("guild_id", guildId).order("hour").limit(1),
+  );
+  const before_id = backfillBefore(firstDay?.day ?? null, firstHour?.hour ?? null, new Date());
+  if (!store) return before_id;
+  const { error } = await db.from("backfill_state").upsert({ guild_id: guildId, before_id }, { ignoreDuplicates: true });
+  if (error) throw new Error(`backfill_state upsert: ${error.message}`);
+  // Re-read: the other of live bot and backfill may have stored its boundary first.
+  return must("backfill_state", await state())[0].before_id;
 }
 
 export interface HistoryMessage extends MessageInfo {
