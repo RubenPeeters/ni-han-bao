@@ -1,4 +1,5 @@
 import { ApplicationCommandOptionType, type APIEmbed } from "discord.js";
+import { wallClock } from "./zone.js";
 
 /** Slash commands registered for our guild; plain data so it can be sent as-is to Discord. */
 export const STATS_COMMANDS = [
@@ -51,15 +52,6 @@ export interface HourCount {
   count: number;
 }
 
-/** Monday of the UTC week containing `now`, as YYYY-MM-DD; same week as the website's. */
-export function utcWeekStart(now: Date): string {
-  const daysSinceMonday = (now.getUTCDay() + 6) % 7;
-  const monday = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysSinceMonday),
-  );
-  return monday.toISOString().slice(0, 10);
-}
-
 /** Sum of the counts on or after `since` (YYYY-MM-DD compares as text), or all when null. */
 export function sumSince(rows: DayCount[], since: string | null): number {
   return rows.reduce((sum, r) => (since === null || r.day >= since ? sum + r.count : sum), 0);
@@ -74,10 +66,10 @@ export function rankOf(rows: LeaderboardRow[], userId: string, count: number): n
   return 1 + rows.filter((r) => r.user_id !== userId && r.message_count > count).length;
 }
 
-/** UTC hour of day (0-23) with the most messages, or null when there are none. */
-export function busiestHour(rows: HourCount[]): number | null {
+/** Hour of day (0-23) in `timeZone` with the most messages, or null when there are none. */
+export function busiestHour(rows: HourCount[], timeZone: string): number | null {
   const byHour = new Array<number>(24).fill(0);
-  for (const r of rows) byHour[new Date(r.hour).getUTCHours()] += r.count;
+  for (const r of rows) byHour[new Date(wallClock(Date.parse(r.hour), timeZone)).getUTCHours()] += r.count;
   const max = Math.max(...byHour);
   return max === 0 ? null : byHour.indexOf(max);
 }
@@ -93,6 +85,7 @@ export function leaderboardEmbed(
   rows: LeaderboardRow[],
   weekStart: string,
   siteUrl: string | null,
+  timeZone: string,
 ): APIEmbed {
   const description = rows.length
     ? rows.map((r, i) => `**${i + 1}.** ${r.display_name}: ${n(r.message_count)}`).join("\n")
@@ -101,7 +94,7 @@ export function leaderboardEmbed(
     title: period === "week" ? "Leaderboard: this week" : "Leaderboard: all time",
     ...link(siteUrl, "/leaderboard"),
     description,
-    ...(period === "week" && { footer: { text: `Since Monday ${weekStart} (UTC)` } }),
+    ...(period === "week" && { footer: { text: `Since Monday ${weekStart} (${timeZone})` } }),
   };
 }
 
@@ -135,9 +128,9 @@ export function meEmbed(stats: MeStats, siteUrl: string | null): APIEmbed {
   };
 }
 
-export function channelEmbed(name: string, rows: HourCount[], siteUrl: string | null): APIEmbed {
+export function channelEmbed(name: string, rows: HourCount[], siteUrl: string | null, timeZone: string): APIEmbed {
   const total = rows.reduce((sum, r) => sum + r.count, 0);
-  const hour = busiestHour(rows);
+  const hour = busiestHour(rows, timeZone);
   return {
     title: `#${name}`,
     ...link(siteUrl, "/channels"),
@@ -145,7 +138,7 @@ export function channelEmbed(name: string, rows: HourCount[], siteUrl: string | 
       { name: `Messages, last ${CHANNEL_DAYS} days`, value: n(total), inline: true },
       {
         name: "Busiest hour",
-        value: hour === null ? "None yet" : `${hh(hour)}-${hh((hour + 1) % 24)} UTC`,
+        value: hour === null ? "None yet" : `${hh(hour)}-${hh((hour + 1) % 24)} ${timeZone}`,
         inline: true,
       },
     ],
