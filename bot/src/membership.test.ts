@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { membershipDiff, READ_PAGE, syncMembers, WRITE_CHUNK, type MembershipStore } from "./membership.js";
+import { keyedQueue, membershipDiff, READ_PAGE, syncMembers, WRITE_CHUNK, type MembershipStore } from "./membership.js";
 
 describe("membershipDiff", () => {
   it("adds newcomers and removes leavers, keeping who stayed", () => {
@@ -50,5 +50,38 @@ describe("syncMembers", () => {
     const s = store([]);
     s.add.mockRejectedValueOnce(new Error("down"));
     await expect(syncMembers(["a"], s)).rejects.toThrow("down");
+  });
+});
+
+describe("keyedQueue", () => {
+  it("runs a leave queued during a sync after the sync's writes", async () => {
+    const stored = new Set(["a"]);
+    const queue = keyedQueue();
+    let release!: () => void;
+    const snapshotTaken = new Promise<void>((r) => (release = r));
+    const sync = queue("g", async () => {
+      const snapshot = ["a", "b"];
+      release();
+      await new Promise((r) => setTimeout(r, 5));
+      for (const id of snapshot) stored.add(id);
+    });
+    await snapshotTaken;
+    const leave = queue("g", async () => void stored.delete("b"));
+    await Promise.all([sync, leave]);
+    expect([...stored]).toEqual(["a"]);
+  });
+
+  it("keeps going after a failed task and does not block other keys", async () => {
+    const queue = keyedQueue();
+    const order: string[] = [];
+    const failed = queue("g", async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      throw new Error("down");
+    });
+    const other = queue("h", async () => void order.push("h"));
+    const next = queue("g", async () => void order.push("g"));
+    await expect(failed).rejects.toThrow("down");
+    await Promise.all([other, next]);
+    expect(order).toEqual(["h", "g"]);
   });
 });

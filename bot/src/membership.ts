@@ -39,3 +39,19 @@ export async function syncMembers(
   for (let i = 0; i < remove.length; i += WRITE_CHUNK) await store.remove(remove.slice(i, i + WRITE_CHUNK));
   return { added: add.length, removed: remove.length };
 }
+
+/**
+ * Runs tasks one at a time per key, in call order. A full sync snapshots Discord's member
+ * list and then writes; a join or leave written in between would be undone by the stale
+ * snapshot, so every membership write for a server goes through one queue.
+ */
+export function keyedQueue(): <T>(key: string, task: () => Promise<T>) => Promise<T> {
+  const tails = new Map<string, Promise<unknown>>();
+  return (key, task) => {
+    const run = (tails.get(key) ?? Promise.resolve()).then(task);
+    const tail = run.catch(() => {});
+    tails.set(key, tail);
+    void tail.then(() => tails.get(key) === tail && tails.delete(key));
+    return run;
+  };
+}

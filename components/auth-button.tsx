@@ -25,8 +25,9 @@ export function AuthButton() {
       <Button
         size="sm"
         onClick={() =>
-          // No `scopes`: Supabase always asks Discord for `identify email`, and membership
-          // comes from the bot, so the `guilds` scope is not needed.
+          // No `scopes`: Supabase's Discord provider always asks for `identify email` and only
+          // appends extra scopes, so identify-only is not possible without a custom OAuth flow.
+          // Membership comes from the bot, so the `guilds` scope is not needed.
           void createClient().auth.signInWithOAuth({
             provider: "discord",
             options: { redirectTo: `${location.origin}/auth/callback` },
