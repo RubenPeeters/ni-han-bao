@@ -7,7 +7,8 @@ import {
   StatGrid,
 } from "@/components/stat-ui";
 import { GUILD_ID } from "@/lib/guild";
-import { createClient } from "@/lib/supabase/server";
+import { createPublicClient } from "@/lib/supabase/public";
+import { cacheLife } from "next/cache";
 
 const TOP = 10;
 
@@ -28,7 +29,9 @@ export function utcWeekStart(now: Date): string {
 }
 
 export async function Leaderboard() {
-  const supabase = await createClient();
+  "use cache";
+  cacheLife("minutes");
+  const supabase = createPublicClient();
   const weekStart = utcWeekStart(new Date());
   const [week, allTime] = await Promise.all([
     supabase.rpc("leaderboard", { since: weekStart, top: TOP, guild: GUILD_ID }),

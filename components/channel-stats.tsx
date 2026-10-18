@@ -7,7 +7,8 @@ import {
   StatGrid,
 } from "@/components/stat-ui";
 import { GUILD_ID } from "@/lib/guild";
-import { createClient } from "@/lib/supabase/server";
+import { createPublicClient } from "@/lib/supabase/public";
+import { cacheLife } from "next/cache";
 
 const TOP = 10;
 const DAY_MS = 24 * 60 * 60_000;
@@ -38,7 +39,9 @@ function heatmapGrid(cells: HeatmapCell[]): number[][] {
 }
 
 export async function ChannelStats() {
-  const supabase = await createClient();
+  "use cache";
+  cacheLife("minutes");
+  const supabase = createPublicClient();
   const now = Date.now();
   const [busiest, heatmap] = await Promise.all([
     supabase.rpc("busiest_channels", {
