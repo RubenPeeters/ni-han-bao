@@ -64,7 +64,7 @@ export function Emoji({ row }: { row: EmojiRow }) {
   );
 }
 
-function TopEmoji({ rows }: { rows: EmojiRow[] }) {
+export function TopEmoji({ rows }: { rows: EmojiRow[] }) {
   return (
     <StatCard title="Top emoji" description="Reactions added, all time">
       {rows.length === 0 ? (
