@@ -100,6 +100,29 @@ export function isReportFor(embeds: readonly { title?: string | null }[], week: 
   return embeds.some((e) => e.title === reportTitle(week));
 }
 
+export const PAGE_SIZE = 100; // Discord's maximum per history request
+
+/**
+ * Whether any message posted at or after `since` matches, paging back through the channel
+ * history newest first (`fetchPage(before)` returns up to PAGE_SIZE messages before that id).
+ * A failed fetch rejects, so the caller does not post on a search that never finished.
+ */
+export async function postedSince<M extends { id: string; createdTimestamp: number }>(
+  fetchPage: (before: string | undefined) => Promise<readonly M[]>,
+  since: number,
+  matches: (m: M) => boolean,
+): Promise<boolean> {
+  let before: string | undefined;
+  for (;;) {
+    const page = await fetchPage(before);
+    if (page.some((m) => m.createdTimestamp >= since && matches(m))) return true;
+    if (page.length < PAGE_SIZE) return false;
+    const oldest = page.reduce((a, b) => (b.createdTimestamp < a.createdTimestamp ? b : a));
+    if (oldest.createdTimestamp < since) return false;
+    before = oldest.id;
+  }
+}
+
 /** Last week's report card, in the voice of a mildly disappointed dad. Teases the server, never a member. */
 export function reportEmbed(week: string, data: ReportData, siteUrl: string | null): APIEmbed {
   const medals = ["🥇", "🥈", "🥉"];

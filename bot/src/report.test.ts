@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { addDays, dueReportWeek, isReportFor, reportEmbed, reportSlot, type ReportData } from "./report.js";
+import {
+  addDays,
+  dueReportWeek,
+  isReportFor,
+  PAGE_SIZE,
+  postedSince,
+  reportEmbed,
+  reportSlot,
+  type ReportData,
+} from "./report.js";
 
 describe("reportSlot", () => {
   it.each([
@@ -99,5 +108,53 @@ describe("isReportFor", () => {
     expect(isReportFor(embeds, "2026-10-12")).toBe(true);
     expect(isReportFor(embeds, "2026-10-05")).toBe(false);
     expect(isReportFor([{ title: null }], "2026-10-12")).toBe(false);
+  });
+});
+
+describe("postedSince", () => {
+  const slot = Date.parse("2026-10-19T07:00:00Z");
+  // Newest first, one per minute, like Discord history; message `i` is i minutes before the newest.
+  const history = (count: number, newest: number) =>
+    Array.from({ length: count }, (_, i) => ({ id: String(count - i), createdTimestamp: newest - i * 60_000 }));
+  const pager = (messages: { id: string; createdTimestamp: number }[]) => {
+    const calls: (string | undefined)[] = [];
+    const fetchPage = async (before: string | undefined) => {
+      calls.push(before);
+      const start = before === undefined ? 0 : messages.findIndex((m) => m.id === before) + 1;
+      return messages.slice(start, start + PAGE_SIZE);
+    };
+    return { calls, fetchPage };
+  };
+
+  it("finds a report sent right after the slot behind more than 100 newer messages", async () => {
+    const messages = history(250, slot + 249 * 60_000);
+    const report = messages[249].id; // the oldest, posted at the slot
+    const { calls, fetchPage } = pager(messages);
+    expect(await postedSince(fetchPage, slot, (m) => m.id === report)).toBe(true);
+    expect(calls).toHaveLength(3);
+  });
+
+  it("stops paging once it is past the slot", async () => {
+    const messages = history(500, slot + 150 * 60_000);
+    const { calls, fetchPage } = pager(messages);
+    expect(await postedSince(fetchPage, slot, () => false)).toBe(false);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("ignores a match from before the slot, such as last week's report", async () => {
+    const messages = history(10, slot + 60_000);
+    const { fetchPage } = pager(messages);
+    expect(await postedSince(fetchPage, slot, (m) => m.id === "1")).toBe(false);
+  });
+
+  it("fails closed when a page cannot be fetched", async () => {
+    const messages = history(250, slot + 249 * 60_000);
+    const { fetchPage } = pager(messages);
+    let n = 0;
+    const flaky = async (before: string | undefined) => {
+      if (++n === 2) throw new Error("rate limited");
+      return fetchPage(before);
+    };
+    await expect(postedSince(flaky, slot, () => false)).rejects.toThrow("rate limited");
   });
 });

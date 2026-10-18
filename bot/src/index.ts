@@ -26,7 +26,16 @@ import { loadConfig } from "./config.js";
 import { createLogger } from "./log.js";
 import { nextPresence, PRESENCE_PHRASES } from "./presence.js";
 import { emojiRow, flushReactions, ReactionBuffer, receivesReaction } from "./reactions.js";
-import { addDays, dueReportWeek, isReportFor, reportEmbed, type ReportData } from "./report.js";
+import {
+  addDays,
+  dueReportWeek,
+  isReportFor,
+  PAGE_SIZE,
+  postedSince,
+  reportEmbed,
+  reportSlot,
+  type ReportData,
+} from "./report.js";
 import {
   CHANNEL_DAYS,
   channelEmbed,
@@ -474,9 +483,16 @@ async function weeklyReport(): Promise<void> {
     if (!channel?.isSendable()) throw new Error("REPORT_CHANNEL_ID is not a channel the bot can post in");
     // The channel, not the table, decides whether the week went out: a send whose response
     // was lost, or a crash before the row below was written, must not post it twice.
-    // shortcut: only the last 100 messages are searched, enough for the one-day posting window.
-    const recent = await channel.messages.fetch({ limit: 100 });
-    if (!recent.some((m) => m.author.id === client.user?.id && isReportFor(m.embeds, week))) {
+    // Searched back to the slot: Discord's nonce check only covers the last few minutes.
+    // A minute earlier than the slot, in case Discord's clock is behind ours.
+    const posted = await postedSince(
+      async (before) => [
+        ...(await channel.messages.fetch(before ? { limit: PAGE_SIZE, before } : { limit: PAGE_SIZE })).values(),
+      ],
+      reportSlot(new Date()).getTime() - 60_000,
+      (m) => m.author.id === client.user?.id && isReportFor(m.embeds, week),
+    );
+    if (!posted) {
       const { data, error } = await db.rpc("report_card", { since: week, until: addDays(week, 7) });
       if (error) throw new Error(`report_card: ${error.message}`);
       // The nonce makes Discord drop a second send of the same week from a concurrent bot.
