@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   backfillBoundary,
   backfillChannel,
+  must,
+  mustWrite,
   snowflakeAt,
   type Cursor,
   type HistoryIo,
@@ -129,16 +131,34 @@ describe("backfillChannel", () => {
 });
 
 describe("backfillBoundary", () => {
-  it("is the start of the first live day", () => {
-    expect(backfillBoundary("2026-10-17", new Date("2026-10-18T12:00:00Z"))).toEqual(
-      new Date("2026-10-17T00:00:00Z"),
+  it("is the start of the first live hour, so earlier messages that day are still counted", () => {
+    expect(backfillBoundary("2026-10-17", "2026-10-17T18:00:00+00:00", new Date("2026-10-18T12:00:00Z"))).toEqual(
+      new Date("2026-10-17T18:00:00Z"),
     );
   });
 
-  it("is the start of today when nothing was counted live yet", () => {
-    expect(backfillBoundary(null, new Date("2026-10-18T12:34:00Z"))).toEqual(
-      new Date("2026-10-18T00:00:00Z"),
+  it("is the start of the first live day when member counts predate channel counts", () => {
+    expect(backfillBoundary("2026-10-16", "2026-10-17T18:00:00+00:00", new Date("2026-10-18T12:00:00Z"))).toEqual(
+      new Date("2026-10-16T00:00:00Z"),
     );
+  });
+
+  it("is the start of this hour when nothing was counted live yet", () => {
+    expect(backfillBoundary(null, null, new Date("2026-10-18T12:34:00Z"))).toEqual(
+      new Date("2026-10-18T12:00:00Z"),
+    );
+  });
+});
+
+describe("must / mustWrite", () => {
+  it("accepts a successful write that returns no data", () => {
+    expect(() => mustWrite("t", { data: null, error: null })).not.toThrow();
+    expect(() => mustWrite("t", { data: null, error: { message: "boom" } })).toThrow("t: boom");
+  });
+
+  it("requires data from reads", () => {
+    expect(must("t", { data: [1], error: null })).toEqual([1]);
+    expect(() => must("t", { data: null, error: null })).toThrow("t: no data");
   });
 });
 

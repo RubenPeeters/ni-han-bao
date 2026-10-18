@@ -2,9 +2,9 @@
 -- Same convention as bot_status: RLS on, anon may only SELECT, only the bot writes.
 -- Holds ids and timestamps only: message content is never stored.
 --
--- The backfill only counts messages sent before `boundary`, the start of the UTC day of the
--- live bot's first count. The live bot never writes a bucket before that, so history counts
--- are simply added to message_counts and channel_message_counts: nothing is counted twice.
+-- The backfill only counts messages sent before `boundary`, the start of the UTC hour of the
+-- live bot's first count. The live bot counted nothing before that, so history counts are
+-- simply added to message_counts and channel_message_counts: nothing is counted twice.
 
 -- Single row, fixed by the first real run: once the backfill has written older days, the
 -- earliest day in message_counts no longer says where live counting began.

@@ -18,14 +18,31 @@ export function snowflakeAt(at: Date): string {
 }
 
 /**
- * Where the backfill stops: the start of the earliest day the live bot counted, or of today
- * when it has counted nothing yet. The live bot never writes a bucket before it, so history
- * counts can be added without counting anything twice.
- * shortcut: messages on that first day before the bot started are not counted; the day
- * bucket is shared with live counts, so counting them would need the exact start time.
+ * Where the backfill stops: the start of the earliest hour the live bot counted, or of the
+ * current hour when it has counted nothing yet. Live counts land in that hour's channel bucket
+ * and its day's member bucket; history counts are added to the same buckets, and the message
+ * ranges do not overlap. Falls back to the first live day when member counts are older than
+ * any channel count (a bot from before channel counts existed).
+ * shortcut: messages in the first live hour from before the bot started are not counted; its
+ * exact start was never recorded, and an hour is the finest grain stored.
  */
-export function backfillBoundary(firstLiveDay: string | null, now: Date): Date {
-  return new Date(`${firstLiveDay ?? now.toISOString().slice(0, 10)}T00:00:00.000Z`);
+export function backfillBoundary(firstLiveDay: string | null, firstLiveHour: string | null, now: Date): Date {
+  if (firstLiveHour && (!firstLiveDay || firstLiveHour.slice(0, 10) <= firstLiveDay)) return new Date(firstLiveHour);
+  if (firstLiveDay) return new Date(`${firstLiveDay}T00:00:00.000Z`);
+  return new Date(`${now.toISOString().slice(0, 13)}:00:00.000Z`);
+}
+
+type Result<T> = { data: T | null; error: { message: string } | null };
+
+/** For reads and RPCs: throws on a failed query; data is only null when there is an error. */
+export function must<T>(what: string, r: Result<T>): T {
+  if (r.error || r.data === null) throw new Error(`${what}: ${r.error?.message ?? "no data"}`);
+  return r.data;
+}
+
+/** For writes without `.select()`: those return data null on success. */
+export function mustWrite(what: string, r: Result<unknown>): void {
+  if (r.error) throw new Error(`${what}: ${r.error.message}`);
 }
 
 export interface HistoryMessage extends MessageInfo {

@@ -1,4 +1,4 @@
-// One-off: counts messages sent before the live bot's first counted day, one channel or
+// One-off: counts messages sent before the live bot's first counted hour, one channel or
 // thread at a time, and adds them to the stats (the backfill_cursors migration says why
 // that never double counts). Run with the live bot's env, after a build:
 // `pnpm --filter ni-han-bao-bot backfill [--dry-run]`. Safe to rerun: it resumes from the
@@ -14,7 +14,15 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { channelRow, memberRow, type ChannelRow, type MemberRow } from "./activity.js";
 import { loadConfig } from "./config.js";
-import { backfillBoundary, backfillChannel, snowflakeAt, type Cursor, type HistoryIo } from "./history.js";
+import {
+  backfillBoundary,
+  backfillChannel,
+  must,
+  mustWrite,
+  snowflakeAt,
+  type Cursor,
+  type HistoryIo,
+} from "./history.js";
 
 const dryRun = process.argv.includes("--dry-run");
 const config = loadConfig();
@@ -25,12 +33,6 @@ const db = createClient(config.supabaseUrl, config.supabaseSecretKey, {
 // the member cache, so authors get their server nickname and avatar.
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 
-/** Throws on a failed query; data is only null when there is an error. */
-function must<T>(what: string, r: { data: T | null; error: { message: string } | null }): T {
-  if (r.error || r.data === null) throw new Error(`${what}: ${r.error?.message ?? "no data"}`);
-  return r.data;
-}
-
 /** Fixed by the first real run, so later runs stop at the same moment. */
 async function loadBoundary(): Promise<Date> {
   const [stored] = must("backfill_state", await db.from("backfill_state").select("boundary"));
@@ -39,9 +41,15 @@ async function loadBoundary(): Promise<Date> {
     "message_counts",
     await db.from("message_counts").select("day").order("day").limit(1),
   );
-  const boundary = { boundary: backfillBoundary(first?.day ?? null, new Date()).toISOString() };
+  const [firstHour] = must(
+    "channel_message_counts",
+    await db.from("channel_message_counts").select("hour").order("hour").limit(1),
+  );
+  const boundary = {
+    boundary: backfillBoundary(first?.day ?? null, firstHour?.hour ?? null, new Date()).toISOString(),
+  };
   if (dryRun) return new Date(boundary.boundary);
-  must("backfill_state", await db.from("backfill_state").upsert(boundary, { ignoreDuplicates: true }));
+  mustWrite("backfill_state", await db.from("backfill_state").upsert(boundary, { ignoreDuplicates: true }));
   // Re-read: a concurrent first run may have stored its boundary first.
   const [row] = must("backfill_state", await db.from("backfill_state").select("boundary"));
   return new Date(row.boundary);
@@ -51,7 +59,7 @@ async function loadBoundary(): Promise<Date> {
 async function loadCursors(channelIds: string[], boundary: Date): Promise<Map<string, Cursor>> {
   const fresh = channelIds.map((id) => ({ channel_id: id, before_id: snowflakeAt(boundary) }));
   if (!dryRun) {
-    must("backfill_cursors", await db.from("backfill_cursors").upsert(fresh, { ignoreDuplicates: true }));
+    mustWrite("backfill_cursors", await db.from("backfill_cursors").upsert(fresh, { ignoreDuplicates: true }));
   }
   const rows: { channel_id: string; before_id: string; done: boolean }[] = must(
     "backfill_cursors",
@@ -93,7 +101,7 @@ async function allThreads(guild: Guild, me: GuildMember): Promise<AnyThreadChann
 
 async function insertMissing(table: "members" | "channels", rows: (MemberRow | ChannelRow)[]): Promise<void> {
   // Existing rows are left alone: the live bot keeps names current, and members carry the opt-out.
-  must(table, await db.from(table).upsert(rows, { ignoreDuplicates: true }));
+  mustWrite(table, await db.from(table).upsert(rows, { ignoreDuplicates: true }));
 }
 
 async function main(): Promise<void> {
