@@ -32,6 +32,8 @@ const walk = (dir) => {
   for (const name of readdirSync(dir)) {
     const full = join(dir, name);
     if (statSync(full).isDirectory()) walk(full);
+    // Open Graph images are drawn by Satori, which cannot read the tokens' CSS variables.
+    else if (/^opengraph-image\./.test(name)) continue;
     else if (/\.(tsx|ts|jsx|js)$/.test(name)) files.push(full);
   }
 };
