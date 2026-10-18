@@ -21,6 +21,24 @@ as $$
     select encode(sha256(convert_to(member, 'UTF8')), 'hex');
 $$;
 
+-- Per-user advisory lock: writes take it shared, forget_user exclusive, so a write that
+-- overlaps a deletion waits for its commit and then sees the marker. Volatile on purpose:
+-- in read committed the check after the lock gets a fresh snapshot.
+create or replace function public.lock_user(member text, exclusive boolean)
+returns void
+language plpgsql
+volatile
+set search_path = ''
+as $$
+begin
+    if exclusive then
+        perform pg_catalog.pg_advisory_xact_lock(72, pg_catalog.hashtext(member));
+    else
+        perform pg_catalog.pg_advisory_xact_lock_shared(72, pg_catalog.hashtext(member));
+    end if;
+end;
+$$;
+
 -- Drops the row instead of failing, so a batch that still holds a forgotten user's counts
 -- (buffered in the bot before /forget-me, or a history backfill) writes everyone else's.
 create or replace function public.skip_forgotten()
@@ -29,6 +47,7 @@ language plpgsql
 set search_path = ''
 as $$
 begin
+    perform public.lock_user(new.user_id, false);
     if exists (select from public.forgotten_users f where f.user_hash = public.user_hash(new.user_id)) then
         return null;
     end if;
@@ -65,6 +84,7 @@ set search_path = ''
 as $$
 declare t text;
 begin
+    perform public.lock_user(member, true);
     insert into public.forgotten_users (user_hash) values (public.user_hash(member))
     on conflict (user_hash) do nothing;
     for t in
@@ -90,7 +110,9 @@ as $$
     delete from public.forgotten_users where user_hash = public.user_hash(member);
 $$;
 
+revoke execute on function public.lock_user(text, boolean) from public, anon, authenticated;
 revoke execute on function public.forget_user(text) from public, anon, authenticated;
 revoke execute on function public.remember_user(text) from public, anon, authenticated;
+grant execute on function public.lock_user(text, boolean) to service_role;
 grant execute on function public.forget_user(text) to service_role;
 grant execute on function public.remember_user(text) to service_role;

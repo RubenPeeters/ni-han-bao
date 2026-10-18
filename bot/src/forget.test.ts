@@ -50,6 +50,13 @@ describe("forgotten users", () => {
     expect([...perUserTables(sql)].filter((t) => !guarded.has(t))).toEqual([]);
   });
 
+  // Without the shared lock a write overlapping an uncommitted forget_user() passes the
+  // check and lands after the delete (#95 review).
+  it("serializes writes with forget_user() on a per-user lock", () => {
+    expect(sql).toMatch(/function public\.skip_forgotten\(\)[\s\S]*?perform public\.lock_user\(new\.user_id, false\);\s+if exists/);
+    expect(sql).toMatch(/function public\.forget_user\(member text\)[\s\S]*?begin\s+perform public\.lock_user\(member, true\);/);
+  });
+
   it("flags a new per-user table without the trigger", () => {
     const added = `${sql}\ncreate table if not exists public.member_streaks (\n    guild_id text not null,\n    user_id text not null\n);\n`;
     const guarded = guardedTables(added);
