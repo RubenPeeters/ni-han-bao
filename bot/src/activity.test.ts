@@ -6,7 +6,6 @@ import {
   flushActivity,
   memberRow,
   shouldCount,
-  utcDay,
   utcHour,
   type ActivityWriter,
   type CountBatch,
@@ -34,10 +33,28 @@ describe("shouldCount", () => {
   });
 });
 
-describe("utcDay", () => {
-  it("uses the UTC date, not the local one", () => {
-    expect(utcDay(new Date("2026-10-18T23:59:59-02:00"))).toBe("2026-10-19");
-    expect(utcDay(new Date("2026-10-19T00:30:00+02:00"))).toBe("2026-10-18");
+describe("ActivityBuffer days", () => {
+  const days = (timeZone: string, ...times: string[]) => {
+    const buffer = new ActivityBuffer(() => timeZone);
+    for (const t of times) buffer.addMessage("a", "c1", new Date(t));
+    return buffer.drain().counts.map((c) => [c.day, c.count]);
+  };
+
+  it("counts on the server's local day, on both sides of its midnight", () => {
+    // Brussels summer time: Sunday 21:59 UTC is Sunday, 22:00 UTC is already Monday.
+    expect(days("Europe/Brussels", "2026-07-19T21:59:59Z", "2026-07-19T22:00:00Z")).toEqual([
+      ["2026-07-19", 1],
+      ["2026-07-20", 1],
+    ]);
+    expect(days("UTC", "2026-07-19T21:59:59Z", "2026-07-19T22:00:00Z")).toEqual([["2026-07-19", 2]]);
+  });
+
+  it("follows the DST switch: Brussels midnight is 23:00 UTC in winter", () => {
+    // Sunday 25 Oct 2026 Brussels leaves summer time; the next midnight is at 23:00 UTC.
+    expect(days("Europe/Brussels", "2026-10-25T22:59:59Z", "2026-10-25T23:00:00Z")).toEqual([
+      ["2026-10-25", 1],
+      ["2026-10-26", 1],
+    ]);
   });
 });
 

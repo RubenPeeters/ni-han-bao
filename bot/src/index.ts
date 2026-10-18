@@ -22,7 +22,7 @@ import {
 } from "discord.js";
 import { createClient } from "@supabase/supabase-js";
 import { FORGET_CANCEL_ID, FORGET_COMMAND, FORGET_CONFIRM_ID, FORGET_PROMPT, forgetMe } from "./forget.js";
-import { channelRow, memberRow, shouldCount, utcDay, type MemberRow } from "./activity.js";
+import { channelRow, memberRow, shouldCount, type MemberRow } from "./activity.js";
 import { Backoff, flushUntil, InFlight } from "./backoff.js";
 import { loadConfig } from "./config.js";
 import { countsLive, loadBeforeId } from "./history.js";
@@ -48,13 +48,14 @@ import {
   rankOf,
   STATS_COMMANDS,
   sumSince,
-  utcWeekStart,
   type Period,
 } from "./stats.js";
 import { backfillGuild } from "./server-history.js";
 import { flushServers, Server, type ServerWriter } from "./servers.js";
+import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
+import { dayStart, localDay, weekStart } from "./zone.js";
 
 const HEARTBEAT_MS = 60_000;
 const FLUSH_MS = 10_000;
@@ -115,7 +116,7 @@ async function writeHeartbeat(): Promise<void> {
   const snapshot = await db.from("member_count_snapshots").upsert(
     guilds.map((guild) => ({
       guild_id: guild.id,
-      day: utcDay(now),
+      day: localDay(now, settingsFor(guild.id).timezone),
       member_count: guild.memberCount,
       updated_at: now.toISOString(),
     })),
@@ -126,8 +127,14 @@ async function writeHeartbeat(): Promise<void> {
   }
 }
 
+// Every server's /setup row, loaded before login and kept current by /setup.
+const settings = new Map<string, GuildSettings>();
+const settingsFor = (guildId: string) => settings.get(guildId) ?? DEFAULT_SETTINGS;
+
 // Servers whose backfill boundary is known; events from any other server are not counted.
 const servers = new Map<string, Server>();
+// Days are counted in the zone set now, so a /setup timezone change applies from then on.
+const newServer = (id: string, liveFrom: string) => new Server(id, liveFrom, () => settingsFor(id).timezone);
 
 let flushing: Promise<boolean> | null = null;
 // Flushes and reaction lookups started before shutdown; they may still add or write counts.
@@ -520,11 +527,12 @@ async function leaderboard(guild: string, since: string | null, top: number) {
 // Every answer is about the server the command was used in.
 async function statsReply(interaction: ChatInputCommandInteraction<"cached">) {
   const guild = interaction.guildId;
-  const weekStart = utcWeekStart(new Date());
+  const { timezone } = settingsFor(guild);
+  const monday = weekStart(new Date(), timezone);
   if (interaction.commandName === "leaderboard") {
     const period: Period = interaction.options.getString("period") === "all" ? "all" : "week";
-    const rows = await leaderboard(guild, period === "week" ? weekStart : null, 10);
-    return { embeds: [leaderboardEmbed(period, rows, weekStart, config.siteUrl)] };
+    const rows = await leaderboard(guild, period === "week" ? monday : null, 10);
+    return { embeds: [leaderboardEmbed(period, rows, monday, config.siteUrl, timezone)] };
   }
   if (interaction.commandName === "me") {
     const userId = interaction.user.id;
@@ -532,11 +540,12 @@ async function statsReply(interaction: ChatInputCommandInteraction<"cached">) {
       db.from("message_counts").select("day, count").eq("guild_id", guild).eq("user_id", userId),
       db.from("reactions_received").select("day, count").eq("guild_id", guild).eq("user_id", userId),
       db.from("members").select("hidden").eq("guild_id", guild).eq("user_id", userId).maybeSingle(),
-      leaderboard(guild, weekStart, RANK_TOP),
+      leaderboard(guild, monday, RANK_TOP),
       leaderboard(guild, null, RANK_TOP),
     ]);
     for (const r of [counts, received, member]) if (r.error) throw new Error(`/me: ${r.error.message}`);
-    const weekCount = sumSince(counts.data ?? [], weekStart);
+    // shortcut: days are stored as UTC days, so the local week is off by the zone's offset.
+    const weekCount = sumSince(counts.data ?? [], monday);
     const allTimeCount = sumSince(counts.data ?? [], null);
     const stats = {
       displayName: memberRow(interaction.user, interaction.member).display_name,
@@ -560,7 +569,7 @@ async function statsReply(interaction: ChatInputCommandInteraction<"cached">) {
     .eq("channel_id", target.id)
     .gte("hour", new Date(Date.now() - CHANNEL_DAYS * 24 * 60 * 60_000).toISOString());
   if (error) throw new Error(`channel_message_counts: ${error.message}`);
-  return { embeds: [channelEmbed(target.name, data, config.siteUrl)] };
+  return { embeds: [channelEmbed(target.name, data, config.siteUrl, timezone)] };
 }
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -583,6 +592,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
   if (interaction.commandName === FORGET_COMMAND.name) {
     await tracked("command", forgetCommand(interaction));
+    return;
+  }
+  if (interaction.commandName === SETUP_COMMAND.name) {
+    await tracked("command", setupCommand(interaction));
     return;
   }
   const hidden = hiddenFor(interaction.commandName);
@@ -654,6 +667,40 @@ async function forgetCommand(interaction: ChatInputCommandInteraction<"cached">)
   await interaction.editReply({ content: reply, components: [] });
 }
 
+/** /setup: only members with Manage Server see it (default_member_permissions). */
+async function setupCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  // Deferred because Discord drops replies sent more than 3 s in, and the write may be slow.
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const guildId = interaction.guildId;
+  const channel = interaction.options.getChannel("channel");
+  const me = interaction.guild.members.me;
+  const change = setupChange({
+    subcommand: interaction.options.getSubcommand(),
+    channelId: channel?.id ?? null,
+    canSend:
+      !!channel &&
+      !!me &&
+      !!channel.permissionsFor(me)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]),
+    timezone: interaction.options.getString("timezone"),
+    include: interaction.options.getBoolean("include"),
+  });
+  const { reply, settings: next } = await applySetup(
+    {
+      async save(columns) {
+        const { error } = await db
+          .from("guild_settings")
+          .upsert({ guild_id: guildId, ...columns, updated_at: new Date().toISOString() }, { onConflict: "guild_id" });
+        if (error) throw new Error(`guild_settings upsert: ${error.message}`);
+      },
+    },
+    settingsFor(guildId),
+    change,
+  );
+  settings.set(guildId, next);
+  if (change && typeof change === "object") log("info", "setup_changed", { guild: guildId, ...change });
+  await interaction.editReply(reply);
+}
+
 let presenceIndex = 0;
 
 async function rotatePresence(): Promise<void> {
@@ -665,7 +712,7 @@ async function rotatePresence(): Promise<void> {
       guilds.map(async (guild) => {
         // shortcut: messages today are summed over at most 1000 channels per server; fine for small servers.
         const { data, error } = await db.rpc("busiest_channels", {
-          since: `${utcDay(new Date())}T00:00:00Z`,
+          since: dayStart(new Date(), settingsFor(guild.id).timezone).toISOString(),
           top: 1000,
           guild: guild.id,
         });
@@ -687,23 +734,24 @@ async function rotatePresence(): Promise<void> {
   }
 }
 
-// Week last seen posted, so the database is asked once per week rather than every check.
-let reportedWeek: string | null = null;
-let reporting = false;
+// Week last seen posted per server, so the database is asked once per week rather than every check.
+const reportedWeek = new Map<string, string>();
+const reporting = new Set<string>();
 
-async function weeklyReport(): Promise<void> {
-  const channelId = config.reportChannelId;
-  const week = dueReportWeek(new Date());
-  if (!channelId || week === null || week === reportedWeek || reporting) return;
-  reporting = true;
+function weeklyReports(): void {
+  for (const guild of client.guilds.cache.values()) void weeklyReport(guild.id);
+}
+
+async function weeklyReport(guild: string): Promise<void> {
+  const { report_channel_id: channelId, timezone } = settingsFor(guild);
+  const week = dueReportWeek(new Date(), timezone);
+  if (!channelId || week === null || week === reportedWeek.get(guild) || reporting.has(guild)) return;
+  reporting.add(guild);
   try {
     const channel = await client.channels.fetch(channelId);
-    if (!channel?.isSendable() || channel.isDMBased()) {
-      throw new Error("REPORT_CHANNEL_ID is not a server channel the bot can post in");
+    if (!channel?.isSendable() || channel.isDMBased() || channel.guildId !== guild) {
+      throw new Error("the report channel is not a channel of this server the bot can post in");
     }
-    // The report is about the channel's own server (The Think Tank); other servers get none
-    // until the channel is configurable per server.
-    const guild = channel.guildId;
     const recorded = await db
       .from("report_cards")
       .select("week")
@@ -712,7 +760,7 @@ async function weeklyReport(): Promise<void> {
       .maybeSingle();
     if (recorded.error) throw new Error(`report_cards select: ${recorded.error.message}`);
     if (recorded.data) {
-      reportedWeek = week;
+      reportedWeek.set(guild, week);
       return;
     }
     // The channel, not the table, decides whether the week went out: a send whose response
@@ -723,7 +771,7 @@ async function weeklyReport(): Promise<void> {
       async (before) => [
         ...(await channel.messages.fetch(before ? { limit: PAGE_SIZE, before } : { limit: PAGE_SIZE })).values(),
       ],
-      reportSlot(new Date()).getTime() - 60_000,
+      reportSlot(new Date(), timezone).getTime() - 60_000,
       (m) => m.author.id === client.user?.id && isReportFor(m.embeds, week),
     );
     if (!posted) {
@@ -731,11 +779,12 @@ async function weeklyReport(): Promise<void> {
         since: week,
         until: addDays(week, 7),
         guild,
+        tz: timezone,
       });
       if (error) throw new Error(`report_card: ${error.message}`);
       // The nonce makes Discord drop a second send of the same week from a concurrent bot.
       await channel.send({
-        embeds: [reportEmbed(week, data as ReportData, config.siteUrl)],
+        embeds: [reportEmbed(week, data as ReportData, config.siteUrl, timezone)],
         nonce: `report-${week}`,
         enforceNonce: true,
       });
@@ -744,12 +793,12 @@ async function weeklyReport(): Promise<void> {
       .from("report_cards")
       .upsert({ guild_id: guild, week }, { onConflict: "guild_id,week", ignoreDuplicates: true });
     if (record.error) throw new Error(`report_cards upsert: ${record.error.message}`);
-    reportedWeek = week;
+    reportedWeek.set(guild, week);
     log("info", "report_posted", { guild, week });
   } catch (err) {
-    log("error", "report_failed", { week, error: err });
+    log("error", "report_failed", { guild, week, error: err });
   } finally {
-    reporting = false;
+    reporting.delete(guild);
   }
 }
 
@@ -769,7 +818,11 @@ async function backfillServer(guildId: string): Promise<void> {
   if (error) throw new Error(`backfill_state select: ${error.message}`);
   if (data?.done_at) return;
   // A failed channel leaves the server not done; the next start resumes it.
-  await backfillGuild(db, guild, { log, stopped: () => stopping || !client.guilds.cache.has(guildId) });
+  await backfillGuild(db, guild, {
+    log,
+    stopped: () => stopping || !client.guilds.cache.has(guildId),
+    timeZone: settingsFor(guildId).timezone,
+  });
 }
 
 /**
@@ -779,7 +832,7 @@ async function backfillServer(guildId: string): Promise<void> {
 async function startServer(guild: Guild): Promise<void> {
   // Guild commands, not global ones: they apply instantly.
   try {
-    await guild.commands.set([...VISIBILITY_COMMANDS, FORGET_COMMAND, ...STATS_COMMANDS]);
+    await guild.commands.set([...VISIBILITY_COMMANDS, FORGET_COMMAND, ...STATS_COMMANDS, SETUP_COMMAND]);
   } catch (err) {
     log("error", "command_registration_failed", { guild: guild.id, error: err });
   }
@@ -787,7 +840,7 @@ async function startServer(guild: Guild): Promise<void> {
     // Not caught: a server without its boundary goes uncounted, so the rejection is fatal and
     // Docker restarts the bot to try again.
     const liveFrom = await loadBeforeId(db, guild.id);
-    if (!servers.has(guild.id)) servers.set(guild.id, new Server(guild.id, liveFrom));
+    if (!servers.has(guild.id)) servers.set(guild.id, newServer(guild.id, liveFrom));
     log("info", "live_counting_from", { guild: guild.id, before_id: liveFrom });
   }
   const server = servers.get(guild.id)!;
@@ -822,10 +875,8 @@ client.once(Events.ClientReady, async (c) => {
   setInterval(() => void periodicFlush(), FLUSH_MS);
   void rotatePresence();
   setInterval(() => void rotatePresence(), PRESENCE_MS);
-  if (config.reportChannelId) {
-    void weeklyReport();
-    setInterval(() => void weeklyReport(), REPORT_CHECK_MS);
-  }
+  weeklyReports();
+  setInterval(weeklyReports, REPORT_CHECK_MS);
   for (const guild of c.guilds.cache.values()) await startServer(guild);
 });
 
@@ -895,5 +946,12 @@ process.on("uncaughtException", (error) => fatal("uncaught_exception", error));
 // shortcut: PostgREST returns at most 1000 rows; beyond that many servers, page this.
 const { data: boundaries, error: boundariesError } = await db.from("backfill_state").select("guild_id, before_id");
 if (boundariesError) throw new Error(`backfill_state: ${boundariesError.message}`);
-for (const b of boundaries) servers.set(b.guild_id, new Server(b.guild_id, b.before_id));
+for (const b of boundaries) servers.set(b.guild_id, newServer(b.guild_id, b.before_id));
+// Before login, so no report or command runs on the defaults of a configured server.
+// shortcut: PostgREST returns at most 1000 rows; beyond that many servers, page this.
+const { data: savedSettings, error: settingsError } = await db
+  .from("guild_settings")
+  .select("guild_id, report_channel_id, timezone, public_totals_opt_out");
+if (settingsError) throw new Error(`guild_settings: ${settingsError.message}`);
+for (const { guild_id, ...row } of savedSettings) settings.set(guild_id, row);
 await client.login(config.discordToken);

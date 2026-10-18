@@ -10,6 +10,7 @@ import {
   backfillChannel,
   backfillComplete,
   backfillProgress,
+  HISTORY_PAGE_SIZE,
   loadBeforeId,
   must,
   snowflakeTime,
@@ -24,6 +25,8 @@ export interface BackfillOptions {
   log: (level: Level, event: string, fields?: Record<string, unknown>) => void;
   /** Checked before each channel: the bot stops between channels when it shuts down. */
   stopped?: () => boolean;
+  /** The server's /setup time zone: counts go on its days, like live ones. */
+  timeZone?: string;
 }
 
 /** Every channel gets a cursor up front, including ones unreadable on earlier runs. */
@@ -119,7 +122,7 @@ async function insertMissing(
  * in backfill_state. One channel at a time; discord.js waits out rate limits (429s) on its own.
  */
 export async function backfillGuild(db: SupabaseClient, guild: Guild, options: BackfillOptions): Promise<boolean> {
-  const { dryRun = false, log, stopped = () => false } = options;
+  const { dryRun = false, log, stopped = () => false, timeZone = "UTC" } = options;
   const guildId = guild.id;
   const me = await guild.members.fetchMe();
   const channels = [...(await guild.channels.fetch()).values()].flatMap((c) =>
@@ -194,7 +197,7 @@ export async function backfillGuild(db: SupabaseClient, guild: Guild, options: B
       },
     };
     try {
-      const counted = await backfillChannel(row, cursor, guildId, io);
+      const counted = await backfillChannel(row, cursor, guildId, io, HISTORY_PAGE_SIZE, timeZone);
       total += counted;
       log("info", "backfill_channel_done", { guild: guildId, channel: channel.id, into: row.channel_id, counted });
     } catch (err) {

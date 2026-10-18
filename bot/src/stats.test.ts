@@ -6,7 +6,6 @@ import {
   meEmbed,
   rankOf,
   sumSince,
-  utcWeekStart,
 } from "./stats.js";
 
 const SITE = "https://nihanbao.example/";
@@ -15,17 +14,6 @@ const rows = [
   { user_id: "b", display_name: "Bob", message_count: 30 },
   { user_id: "c", display_name: "Cleo", message_count: 30 },
 ];
-
-describe("utcWeekStart", () => {
-  it.each([
-    ["2026-10-17T10:00:00Z", "2026-10-12"], // Saturday
-    ["2026-10-12T00:00:00Z", "2026-10-12"], // Monday
-    ["2026-10-18T23:59:59Z", "2026-10-12"], // Sunday
-    ["2026-11-01T12:00:00Z", "2026-10-26"], // across a month
-  ])("%s -> %s", (now, monday) => {
-    expect(utcWeekStart(new Date(now))).toBe(monday);
-  });
-});
 
 describe("sumSince", () => {
   const days = [
@@ -57,23 +45,26 @@ describe("busiestHour", () => {
         { hour: "2026-10-15T09:00:00+00:00", count: 4 },
         { hour: "2026-10-15T21:00:00+00:00", count: 5 },
         { hour: "2026-10-16T09:00:00+00:00", count: 3 },
-      ]),
+      ], "UTC"),
     ).toBe(9);
   });
-  it("is null without messages", () => expect(busiestHour([])).toBeNull());
+  it("uses the server's time zone", () => {
+    expect(busiestHour([{ hour: "2026-10-15T09:00:00+00:00", count: 1 }], "Europe/Brussels")).toBe(11);
+  });
+  it("is null without messages", () => expect(busiestHour([], "UTC")).toBeNull());
 });
 
 describe("leaderboardEmbed", () => {
   it("numbers the rows and links the leaderboard page", () => {
-    expect(leaderboardEmbed("week", rows, "2026-10-12", SITE)).toEqual({
+    expect(leaderboardEmbed("week", rows, "2026-10-12", SITE, "Europe/Brussels")).toEqual({
       title: "Leaderboard: this week",
       url: "https://nihanbao.example/leaderboard",
       description: "**1.** Alice: 1,200\n**2.** Bob: 30\n**3.** Cleo: 30",
-      footer: { text: "Since Monday 2026-10-12 (UTC)" },
+      footer: { text: "Since Monday 2026-10-12 (Europe/Brussels)" },
     });
   });
   it("has no week footer for all time, and no link without a site url", () => {
-    expect(leaderboardEmbed("all", [], "2026-10-12", null)).toEqual({
+    expect(leaderboardEmbed("all", [], "2026-10-12", null, "UTC")).toEqual({
       title: "Leaderboard: all time",
       description: "No messages counted yet.",
     });
@@ -109,7 +100,7 @@ describe("meEmbed", () => {
 describe("channelEmbed", () => {
   it("shows the total and busiest hour and links the channels page", () => {
     expect(
-      channelEmbed("general", [{ hour: "2026-10-15T23:00:00Z", count: 2_500 }], SITE),
+      channelEmbed("general", [{ hour: "2026-10-15T23:00:00Z", count: 2_500 }], SITE, "UTC"),
     ).toEqual({
       title: "#general",
       url: "https://nihanbao.example/channels",
@@ -120,6 +111,6 @@ describe("channelEmbed", () => {
     });
   });
   it("handles a channel without messages", () => {
-    expect(channelEmbed("quiet", [], null).fields?.[1].value).toBe("None yet");
+    expect(channelEmbed("quiet", [], null, "UTC").fields?.[1].value).toBe("None yet");
   });
 });

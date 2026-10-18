@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { utcDay, type MemberRow } from "./activity.js";
+import type { MemberRow } from "./activity.js";
+import { fromWallClock, localDay } from "./zone.js";
 
-const DAY_S = 24 * 60 * 60;
+const DAY_MS = 24 * 60 * 60_000;
 
 export interface VoiceSecondsRow {
   user_id: string;
@@ -10,15 +11,18 @@ export interface VoiceSecondsRow {
 }
 
 /**
- * Split `[from, to)` (whole seconds since the epoch) at UTC midnights, so time spent in
- * voice across midnight lands on both days.
+ * Split `[from, to)` (whole seconds since the epoch) at midnights in `timeZone`, so time spent
+ * in voice across midnight lands on both days.
  */
-export function splitByUtcDay(userId: string, from: number, to: number): VoiceSecondsRow[] {
+export function splitByDay(userId: string, from: number, to: number, timeZone: string): VoiceSecondsRow[] {
   const rows: VoiceSecondsRow[] = [];
   let start = from;
   while (start < to) {
-    const end = Math.min(to, (Math.floor(start / DAY_S) + 1) * DAY_S);
-    rows.push({ user_id: userId, day: utcDay(new Date(start * 1000)), seconds: end - start });
+    const day = localDay(new Date(start * 1000), timeZone);
+    const midnight = fromWallClock(Date.parse(day) + DAY_MS, timeZone) / 1000;
+    // shortcut: a zone whose clocks skip midnight (DST gap) splits a second at a time until the gap ends; rare and still exact.
+    const end = Math.min(to, Math.max(start + 1, midnight));
+    rows.push({ user_id: userId, day, seconds: end - start });
     start = end;
   }
   return rows;
@@ -38,6 +42,9 @@ function toSeconds(at: Date): number {
  */
 export class VoiceSessions {
   private open = new Map<string, number>();
+
+  /** `timeZone`: the server's, as in ActivityBuffer. */
+  constructor(private readonly timeZone: () => string = () => "UTC") {}
 
   get size(): number {
     return this.open.size;
@@ -88,7 +95,7 @@ export class VoiceSessions {
     // A clock that went backwards counts nothing rather than negative time.
     if (to <= from) return [];
     this.open.set(userId, to);
-    return splitByUtcDay(userId, from, to);
+    return splitByDay(userId, from, to, this.timeZone());
   }
 }
 
@@ -119,12 +126,15 @@ export class TimelineBuffer {
   /** A batch whose write failed; resent unchanged under the same id, as in ActivityBuffer. */
   pending: TimelineBatch | null = null;
 
+  /** `timeZone`: the server's, as in ActivityBuffer. */
+  constructor(private readonly timeZone: () => string = () => "UTC") {}
+
   addJoin(at: Date): void {
-    this.addFlow({ day: utcDay(at), joins: 1, leaves: 0 });
+    this.addFlow({ day: localDay(at, this.timeZone()), joins: 1, leaves: 0 });
   }
 
   addLeave(at: Date): void {
-    this.addFlow({ day: utcDay(at), joins: 0, leaves: 1 });
+    this.addFlow({ day: localDay(at, this.timeZone()), joins: 0, leaves: 1 });
   }
 
   /** Written before any voice time, which references it. Latest snapshot wins. */

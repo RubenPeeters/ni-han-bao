@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   flushTimeline,
-  splitByUtcDay,
+  splitByDay,
   TimelineBuffer,
   VoiceSessions,
   type TimelineBatch,
@@ -22,17 +22,17 @@ function total(rows: VoiceSecondsRow[]): Record<string, number> {
   return sums;
 }
 
-describe("splitByUtcDay", () => {
+describe("splitByDay", () => {
   it("keeps a span inside one day whole", () => {
     const from = at("10:00:00").getTime() / 1000;
-    expect(splitByUtcDay("a", from, from + 90)).toEqual([
+    expect(splitByDay("a", from, from + 90, "UTC")).toEqual([
       { user_id: "a", day: "2026-10-17", seconds: 90 },
     ]);
   });
 
   it("splits a span at UTC midnight", () => {
     const from = at("23:59:00").getTime() / 1000;
-    expect(splitByUtcDay("a", from, from + 120)).toEqual([
+    expect(splitByDay("a", from, from + 120, "UTC")).toEqual([
       { user_id: "a", day: "2026-10-17", seconds: 60 },
       { user_id: "a", day: "2026-10-18", seconds: 60 },
     ]);
@@ -40,7 +40,7 @@ describe("splitByUtcDay", () => {
 
   it("gives a whole day in between all 86400 seconds", () => {
     const from = at("23:00:00").getTime() / 1000;
-    const rows = splitByUtcDay("a", from, from + 3600 + 86400 + 1800);
+    const rows = splitByDay("a", from, from + 3600 + 86400 + 1800, "UTC");
     expect(rows.map((r) => [r.day, r.seconds])).toEqual([
       ["2026-10-17", 3600],
       ["2026-10-18", 86400],
@@ -49,7 +49,18 @@ describe("splitByUtcDay", () => {
   });
 
   it("returns nothing for an empty span", () => {
-    expect(splitByUtcDay("a", 100, 100)).toEqual([]);
+    expect(splitByDay("a", 100, 100, "UTC")).toEqual([]);
+  });
+
+  it("splits at the server's midnight, which moves with DST", () => {
+    // Brussels: midnight is 22:00 UTC in summer; 25 Oct 2026 has 25 hours and ends at 23:00 UTC.
+    const from = new Date("2026-10-24T21:00:00Z").getTime() / 1000;
+    const rows = splitByDay("a", from, from + 3 * 3600 + 25 * 3600, "Europe/Brussels");
+    expect(rows.map((r) => [r.day, r.seconds])).toEqual([
+      ["2026-10-24", 3600],
+      ["2026-10-25", 25 * 3600],
+      ["2026-10-26", 2 * 3600],
+    ]);
   });
 });
 
