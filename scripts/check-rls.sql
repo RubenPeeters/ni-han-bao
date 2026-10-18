@@ -29,6 +29,7 @@ begin
         insert into public.member_flow (guild_id, day, joins, leaves) values (g, '2026-01-01', 1, 0);
         insert into public.voice_seconds (guild_id, user_id, day, seconds) values (g, 'rls-user', '2026-01-01', 60);
         insert into public.report_cards (guild_id, week) values (g, '2025-12-29');
+        insert into public.monthly_recaps (guild_id, month) values (g, '2025-12-01');
         insert into public.backfill_state (guild_id, before_id) values (g, '1');
         insert into public.backfill_cursors (guild_id, channel_id, before_id) values (g, 'c', '1');
         insert into public.welcome_messages (guild_id, channel_id) values (g, 'c');
@@ -39,6 +40,8 @@ begin
         values (g, 'rls-user', 'e', '2026-01-01', 1);
     end loop;
     insert into public.guild_members (guild_id, user_id) values ('rls-mine', 'rls-user');
+    -- anon cannot read keys itself, so hand it one for the recap checks below.
+    perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
 
 -- From pg_catalog, which every role can read, so a table anon has no grant on still counts.
@@ -61,6 +64,17 @@ begin
     if (select servers from public.public_totals('2026-01-01')) < 2 then
         raise exception 'anon cannot read public_totals()';
     end if;
+    -- Without the month's key (#75), anon gets no recap; with it, that month only.
+    if public.monthly_recap('rls-mine', '2025-12-01') is not null then
+        raise exception 'anon reads a recap without its key';
+    end if;
+    if public.monthly_recap('rls-mine', '2025-12-01',
+        current_setting('rls.other_key')::uuid) is not null then
+        raise exception 'anon reads a recap with another server''s key';
+    end if;
+    if public.monthly_recap('rls-other', '2025-12-01', current_setting('rls.other_key')::uuid) is null then
+        raise exception 'anon cannot read a recap with its key';
+    end if;
 end $$;
 
 set local role authenticated;
@@ -75,6 +89,8 @@ begin
         if other <> 0 then raise exception 'a member reads % rows of other servers from %', other, t; end if;
     end loop;
     if (select count(*) from public.my_guilds()) <> 1 then raise exception 'my_guilds() is not just mine'; end if;
+    if public.monthly_recap('rls-mine', '2025-12-01') is null then raise exception 'a member cannot read their recap'; end if;
+    if public.monthly_recap('rls-other', '2025-12-01') is not null then raise exception 'a member reads another server''s recap'; end if;
 end $$;
 
 -- /forget-me (#72): no row about the user is left anywhere, and none can be written again

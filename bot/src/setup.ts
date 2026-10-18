@@ -21,7 +21,7 @@ export const SETUP_COMMAND = {
     {
       type: ApplicationCommandOptionType.Subcommand,
       name: "report-channel",
-      description: "Where the weekly report card goes; leave the channel out to turn it off",
+      description: "Where the weekly report card and monthly recap go; leave the channel out to turn both off",
       options: [
         {
           type: ApplicationCommandOptionType.Channel,
