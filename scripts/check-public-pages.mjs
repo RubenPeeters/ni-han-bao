@@ -40,6 +40,11 @@ try {
     if (!ok) failed = true;
     console.log(`${ok ? "ok  " : "FAIL"} ${path} -> ${res.status} ${res.headers.get("location") ?? ""}`);
   }
+  // Unknown paths get the styled not-found page (#58), not Next's default one.
+  const res = await fetch(`${base}/no-such-page`, { redirect: "manual" });
+  const ok = res.status === 404 && (await res.text()).includes("Page not found");
+  if (!ok) failed = true;
+  console.log(`${ok ? "ok  " : "FAIL"} /no-such-page -> ${res.status} (styled 404)`);
 } finally {
   stop();
 }
