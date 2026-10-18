@@ -2,6 +2,7 @@ import {
   ActionRowBuilder,
   ActivityType,
   ButtonBuilder,
+  type ButtonInteraction,
   ButtonStyle,
   ChannelType,
   type ChatInputCommandInteraction,
@@ -11,6 +12,7 @@ import {
   GatewayIntentBits,
   type Guild,
   type GuildMember,
+  type GuildScheduledEvent,
   MessageFlags,
   type MessageReaction,
   Partials,
@@ -23,6 +25,20 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { FORGET_CANCEL_ID, FORGET_COMMAND, FORGET_CONFIRM_ID, FORGET_PROMPT, forgetMe } from "./forget.js";
 import { channelRow, memberRow, shouldCount, type MemberRow } from "./activity.js";
+import {
+  EVENT_COMMAND,
+  allSubscriberIds,
+  eventChoices,
+  SUBSCRIBER_PAGE,
+  goingEventId,
+  goingId,
+  goingText,
+  eventLabel,
+  matchStore,
+  parseWhen,
+  unticked,
+  type UpcomingEvent,
+} from "./events.js";
 import { Backoff, flushUntil, InFlight } from "./backoff.js";
 import { loadConfig } from "./config.js";
 import { countsLive, loadBeforeId } from "./history.js";
@@ -53,6 +69,17 @@ import {
 } from "./stats.js";
 import { backfillGuild } from "./server-history.js";
 import { flushServers, Server, type ServerWriter } from "./servers.js";
+import {
+  canRemove,
+  httpsUrl,
+  LINK_ERROR,
+  newStore,
+  STORE_COMMAND,
+  storeChoices,
+  storeLabel,
+  storeList,
+  type Store,
+} from "./stores.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
@@ -82,9 +109,12 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.GuildVoiceStates,
+    // Not privileged: the server's Discord events and who clicked Interested (#115).
+    GatewayIntentBits.GuildScheduledEvents,
   ],
-  // Without these, reactions on messages sent before the bot (re)started are not emitted.
-  partials: [Partials.Message, Partials.Reaction],
+  // Without these, reactions on messages sent before the bot (re)started are not emitted,
+  // nor Interested clicks on an event the cache does not hold.
+  partials: [Partials.Message, Partials.Reaction, Partials.GuildScheduledEvent],
 });
 
 async function heartbeat(): Promise<void> {
@@ -574,6 +604,28 @@ async function statsReply(interaction: ChatInputCommandInteraction<"cached">) {
 }
 
 client.on(Events.InteractionCreate, async (interaction) => {
+  const autocompleted = [STORE_COMMAND.name, EVENT_COMMAND.name] as string[];
+  if (interaction.isAutocomplete() && interaction.inCachedGuild() && autocompleted.includes(interaction.commandName)) {
+    const focused = interaction.options.getFocused(true);
+    const choices =
+      focused.name === "event"
+        ? eventsGoing(interaction.guildId, interaction.user.id).then((events) =>
+            eventChoices(events, focused.value, settingsFor(interaction.guildId).timezone),
+          )
+        : guildStores(interaction.guildId).then((stores) => storeChoices(stores, focused.value));
+    await tracked(
+      "command",
+      choices
+        .then((c) => interaction.respond(c))
+        .catch((err: unknown) => log("error", "autocomplete_failed", { command: interaction.commandName, error: err })),
+    );
+    return;
+  }
+  if (interaction.isButton() && interaction.inCachedGuild()) {
+    const eventId = goingEventId(interaction.customId);
+    if (eventId !== null) await tracked("command", goingButton(interaction, eventId));
+    return;
+  }
   if (!interaction.isChatInputCommand() || !interaction.inCachedGuild()) return;
   if (STATS_COMMANDS.some((c) => c.name === interaction.commandName)) {
     try {
@@ -601,6 +653,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
   if (interaction.commandName === RECAP_COMMAND.name) {
     await tracked("command", recapCommand(interaction));
+    return;
+  }
+  if (interaction.commandName === STORE_COMMAND.name) {
+    await tracked("command", storeCommand(interaction));
+    return;
+  }
+  if (interaction.commandName === EVENT_COMMAND.name) {
+    await tracked("command", eventCommand(interaction));
     return;
   }
   const hidden = hiddenFor(interaction.commandName);
@@ -706,6 +766,376 @@ async function setupCommand(interaction: ChatInputCommandInteraction<"cached">):
   await interaction.editReply(reply);
 }
 
+async function guildStores(guildId: string): Promise<Store[]> {
+  const { data, error } = await db
+    .from("stores")
+    .select("id, game, name, city, url, added_by")
+    .eq("guild_id", guildId)
+    .order("name");
+  if (error) throw new Error(`stores select: ${error.message}`);
+  return data;
+}
+
+/** /store: add, list and remove the server's stores, and mark your regulars. */
+async function storeCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  const sub = interaction.options.getSubcommand();
+  // Only the list is for everyone; the rest answers just the caller.
+  await interaction.deferReply(sub === "list" ? {} : { flags: MessageFlags.Ephemeral });
+  const guildId = interaction.guildId;
+  const userId = interaction.user.id;
+  let reply: string;
+  try {
+    if (sub === "list") {
+      reply = storeList(await guildStores(guildId), config.siteUrl, guildId);
+    } else if (sub === "add") {
+      const row = newStore({
+        name: interaction.options.getString("name", true),
+        city: interaction.options.getString("city", true),
+        link: interaction.options.getString("link"),
+        game: interaction.options.getString("game"),
+      });
+      if (typeof row === "string") {
+        reply = row;
+      } else {
+        const { error } = await db.from("stores").insert({ ...row, guild_id: guildId, added_by: userId });
+        if (error?.code === "23505") reply = `${storeLabel(row)} is already on the list.`;
+        else if (error) throw new Error(`stores insert: ${error.message}`);
+        else reply = `Added ${storeLabel(row)}. Mark it as yours with /store mine.`;
+      }
+    } else {
+      // Autocomplete only suggests; a typed id may belong to another server, hence the guild filter.
+      const store = (await guildStores(guildId)).find((s) => s.id === interaction.options.getInteger("store", true));
+      if (!store) {
+        reply = "That store is not on this server's list. Pick one from the suggestions.";
+      } else if (sub === "remove") {
+        if (!canRemove(store, userId, interaction.memberPermissions.has(PermissionFlagsBits.ManageGuild))) {
+          reply = "Only the member who added it, or someone with Manage Server, can remove it.";
+        } else {
+          const { error } = await db.from("stores").delete().eq("guild_id", guildId).eq("id", store.id);
+          if (error) throw new Error(`stores delete: ${error.message}`);
+          reply = `Removed ${storeLabel(store)}.`;
+        }
+      } else {
+        // A toggle, so the same command undoes it.
+        const { data, error } = await db
+          .from("store_regulars")
+          .delete()
+          .eq("store_id", store.id)
+          .eq("user_id", userId)
+          .select("store_id");
+        if (error) throw new Error(`store_regulars delete: ${error.message}`);
+        if (data.length > 0) {
+          reply = `${storeLabel(store)} is no longer one of your regulars.`;
+        } else {
+          const added = await db.from("store_regulars").insert({ guild_id: guildId, store_id: store.id, user_id: userId });
+          if (added.error) throw new Error(`store_regulars insert: ${added.error.message}`);
+          reply = `${storeLabel(store)} is now one of your regulars. Use /store mine again to undo.`;
+        }
+      }
+    }
+  } catch (err) {
+    log("error", "command_failed", { command: STORE_COMMAND.name, error: err });
+    reply = "Something went wrong, nothing was changed. Please try again later.";
+  }
+  // Store names are typed by members: no @everyone or role pings from them.
+  await interaction.editReply({ content: reply, allowedMentions: { parse: [] } });
+}
+
+/** The server's upcoming events, with goers' names; hidden members are left out by upcoming_events() itself. */
+async function upcomingEvents(guildId: string, until: Date | null = null): Promise<UpcomingEvent[]> {
+  const { data, error } = await db.rpc("upcoming_events", { guild: guildId, until: until?.toISOString() ?? null });
+  if (error) throw new Error(`upcoming_events: ${error.message}`);
+  return data as UpcomingEvent[];
+}
+
+/** The upcoming events a member is going to, for /event not-going; one member's are few, so all of them. */
+async function eventsGoing(guildId: string, userId: string): Promise<UpcomingEvent[]> {
+  const { data, error } = await db
+    .from("event_attendees")
+    .select("events!inner(id, name, starts_at, url, stores(name, city))")
+    .eq("guild_id", guildId)
+    .eq("user_id", userId)
+    .gte("events.starts_at", new Date().toISOString());
+  if (error) throw new Error(`event_attendees select: ${error.message}`);
+  return data
+    .map(({ events }) => {
+      const e = events as unknown as Omit<UpcomingEvent, "store_name" | "store_city" | "going"> & {
+        stores: { name: string; city: string } | null;
+      };
+      return { ...e, store_name: e.stores?.name ?? null, store_city: e.stores?.city ?? null, going: [] };
+    })
+    .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+}
+
+/**
+ * Marks members as going; their members row is what gives the site and the report a name to show.
+ * `fromDiscord` is for Interested clicks: it never overrides what a member said with the bot.
+ */
+async function markGoing(guild: Guild, eventId: number, userIds: string[], fromDiscord = false): Promise<void> {
+  // The member cache is complete (see UserUpdate): a miss is someone no longer in the server.
+  const members = userIds.flatMap((id) => {
+    const member = guild.members.cache.get(id);
+    return member && !member.user.bot ? [member] : [];
+  });
+  if (!members.length) return;
+  for (const m of members) servers.get(guild.id)?.activity.setMember(memberRow(m.user, m));
+  const { error } = await db
+    .from("event_attendees")
+    .upsert(
+      members.map((m) => ({ guild_id: guild.id, event_id: eventId, user_id: m.id, from_discord: fromDiscord })),
+      { onConflict: "event_id,user_id", ignoreDuplicates: fromDiscord },
+    );
+  if (error) throw new Error(`event_attendees upsert: ${error.message}`);
+}
+
+interface EventRow {
+  id: number;
+  starts_at: string;
+  url: string | null;
+  stores: Pick<Store, "game" | "name" | "city"> | null;
+}
+
+const EVENT_COLUMNS = "id, starts_at, url, stores(game, name, city)";
+
+/** /event going and not-going. Answers the caller only; a going is announced with a Going button for everyone. */
+async function eventCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  // Deferred because Discord drops replies sent more than 3 s in, and the writes may be slow.
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const guildId = interaction.guildId;
+  const userId = interaction.user.id;
+  const { timezone } = settingsFor(guildId);
+  let reply: string;
+  let announce: EventRow | null = null;
+  try {
+    if (interaction.options.getSubcommand() === "not-going") {
+      // Filtered on the guild too: a typed id may belong to another server.
+      const { data, error } = await db
+        .from("event_attendees")
+        .delete()
+        .eq("guild_id", guildId)
+        .eq("event_id", interaction.options.getInteger("event", true))
+        .eq("user_id", userId)
+        .select("event_id");
+      if (error) throw new Error(`event_attendees delete: ${error.message}`);
+      reply = data.length
+        ? "You are no longer going. If you clicked Interested on the Discord event, untick that too."
+        : "You were not going to that event.";
+    } else {
+      const event = await findOrAddEvent(interaction, guildId, timezone);
+      if (typeof event === "string") {
+        reply = event;
+      } else {
+        await markGoing(interaction.guild, event.id, [userId]);
+        reply = "You are going. Undo it with /event not-going.";
+        announce = event;
+      }
+    }
+  } catch (err) {
+    log("error", "command_failed", { command: EVENT_COMMAND.name, error: err });
+    reply = "Something went wrong, nothing was changed. Please try again later.";
+  }
+  await interaction.editReply(reply);
+  if (!announce) return;
+  const button = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(goingId(announce.id)).setLabel("Going").setStyle(ButtonStyle.Primary),
+  );
+  // Store names are typed by members: no @everyone or role pings from them.
+  await interaction.followUp({
+    content: goingText(announce.stores, announce.starts_at, timezone, announce.url),
+    components: [button],
+    allowedMentions: { parse: [] },
+  });
+}
+
+/** The event /event going names: by its link, else by store and time, added if not known yet. Or why not. */
+async function findOrAddEvent(
+  interaction: ChatInputCommandInteraction<"cached">,
+  guildId: string,
+  timeZone: string,
+): Promise<EventRow | string> {
+  const link = interaction.options.getString("link");
+  const storeId = interaction.options.getInteger("store");
+  const when = interaction.options.getString("when");
+  const url = link ? httpsUrl(link) : null;
+  if (link && !url) return LINK_ERROR;
+  if (url) {
+    const { data, error } = await db
+      .from("events")
+      .select(EVENT_COLUMNS)
+      .eq("guild_id", guildId)
+      .eq("url", url)
+      .gte("starts_at", new Date().toISOString())
+      .order("starts_at")
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(`events select: ${error.message}`);
+    if (data) return data as unknown as EventRow;
+  }
+  if (storeId === null || !when) {
+    return url
+      ? "That event is not known yet. Add its store and when as well, and it gets added."
+      : "Give the event's link, or its store and when.";
+  }
+  const store = (await guildStores(guildId)).find((s) => s.id === storeId);
+  if (!store) return "That store is not on this server's list. Pick one from the suggestions, or add it with /store add.";
+  const at = parseWhen(when, timeZone, new Date());
+  if (typeof at === "string") return at;
+  const find = async () => {
+    const { data, error } = await db
+      .from("events")
+      .select(EVENT_COLUMNS)
+      .eq("guild_id", guildId)
+      .eq("store_id", store.id)
+      .eq("starts_at", at.toISOString())
+      .order("id")
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(`events select: ${error.message}`);
+    return data as unknown as EventRow | null;
+  };
+  const known = await find();
+  if (known) return known;
+  const { data, error } = await db
+    .from("events")
+    .insert({ guild_id: guildId, store_id: store.id, starts_at: at.toISOString(), url })
+    .select(EVENT_COLUMNS)
+    .single();
+  // Someone added the same store and time a moment ago.
+  if (error?.code === "23505") return (await find()) ?? "Something went wrong, nothing was changed. Please try again.";
+  if (error) throw new Error(`events insert: ${error.message}`);
+  log("info", "event_added", { guild: guildId, event: data.id });
+  return data as unknown as EventRow;
+}
+
+/** The Going button under an /event going message. */
+async function goingButton(interaction: ButtonInteraction<"cached">, eventId: number): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const { timezone } = settingsFor(interaction.guildId);
+  let reply: string;
+  try {
+    const { data, error } = await db
+      .from("events")
+      .select("id, name, starts_at, stores(name, city)")
+      .eq("guild_id", interaction.guildId)
+      .eq("id", eventId)
+      .gte("starts_at", new Date().toISOString())
+      .maybeSingle();
+    if (error) throw new Error(`events select: ${error.message}`);
+    if (!data) {
+      reply = "That event is over or no longer listed.";
+    } else {
+      await markGoing(interaction.guild, data.id, [interaction.user.id]);
+      const store = data.stores as unknown as { name: string; city: string } | null;
+      const label = eventLabel({ ...data, store_name: store?.name ?? null, store_city: store?.city ?? null }, timezone);
+      reply = `You are going: ${label}. Undo it with /event not-going.`;
+    }
+  } catch (err) {
+    log("error", "command_failed", { command: "event-going-button", error: err });
+    reply = "Something went wrong, nothing was changed. Please try again later.";
+  }
+  await interaction.editReply({ content: reply, allowedMentions: { parse: [] } });
+}
+
+/** Saves a Discord event of the server, with the store its location names; returns its row id, or null once canceled. */
+async function saveScheduledEvent(event: GuildScheduledEvent): Promise<number | null> {
+  if (event.isCanceled()) {
+    await deleteScheduledEvent(event.id);
+    return null;
+  }
+  const stores = await guildStores(event.guildId);
+  const { data, error } = await db
+    .from("events")
+    .upsert(
+      {
+        guild_id: event.guildId,
+        discord_event_id: event.id,
+        name: event.name,
+        starts_at: new Date(event.scheduledStartTimestamp ?? Date.now()).toISOString(),
+        url: event.url,
+        // Only the location's text is read, to pick a store; it is not stored.
+        store_id: matchStore(stores, event.entityMetadata?.location ?? null)?.id ?? null,
+      },
+      { onConflict: "discord_event_id" },
+    )
+    .select("id")
+    .single();
+  if (error) throw new Error(`events upsert: ${error.message}`);
+  return data.id as number;
+}
+
+async function deleteScheduledEvent(discordEventId: string): Promise<void> {
+  const { error } = await db.from("events").delete().eq("discord_event_id", discordEventId);
+  if (error) throw new Error(`events delete: ${error.message}`);
+}
+
+/** All of a server's Discord events and their Interested members, and drops the ones deleted while the bot was offline. */
+async function syncScheduledEvents(guild: Guild): Promise<void> {
+  const events = await guild.scheduledEvents.fetch();
+  for (const event of events.values()) {
+    const id = await saveScheduledEvent(event);
+    if (id === null) continue;
+    const interested = await allSubscriberIds(async (after) => {
+      const page = await event.fetchSubscribers({ limit: SUBSCRIBER_PAGE, after });
+      return [...page.keys()];
+    });
+    await markGoing(guild, id, interested, true);
+    // Unticks while the bot was offline. shortcut: an Interested click landing between the fetch
+    // above and this delete is lost until the next start; lock per event if that ever shows up.
+    const recorded = await db.from("event_attendees").select("user_id").eq("event_id", id).eq("from_discord", true);
+    if (recorded.error) throw new Error(`event_attendees select: ${recorded.error.message}`);
+    const stale = unticked(recorded.data.map((r) => r.user_id as string), interested);
+    if (stale.length) {
+      const removed = await db.from("event_attendees").delete().eq("event_id", id).eq("from_discord", true).in("user_id", stale);
+      if (removed.error) throw new Error(`event_attendees delete: ${removed.error.message}`);
+    }
+  }
+  let gone = db
+    .from("events")
+    .delete()
+    .eq("guild_id", guild.id)
+    .not("discord_event_id", "is", null)
+    .gte("starts_at", new Date().toISOString());
+  // Snowflakes are digits only, so they are safe in the filter as they are.
+  if (events.size) gone = gone.not("discord_event_id", "in", `(${[...events.keys()].join(",")})`);
+  const { error } = await gone;
+  if (error) throw new Error(`events delete: ${error.message}`);
+  log("info", "scheduled_events_synced", { guild: guild.id, events: events.size });
+}
+
+client.on(Events.GuildScheduledEventCreate, (event) => void tracked("scheduled_event", saveScheduledEvent(event)));
+client.on(Events.GuildScheduledEventUpdate, (_old, event) => void tracked("scheduled_event", saveScheduledEvent(event)));
+client.on(Events.GuildScheduledEventDelete, (event) => void tracked("scheduled_event", deleteScheduledEvent(event.id)));
+
+client.on(Events.GuildScheduledEventUserAdd, (event, user) =>
+  void tracked(
+    "scheduled_event_user",
+    (async () => {
+      const full = event.partial ? await event.fetch() : event;
+      const id = await saveScheduledEvent(full);
+      if (id !== null && full.guild) await markGoing(full.guild, id, [user.id], true);
+    })(),
+  ),
+);
+
+client.on(Events.GuildScheduledEventUserRemove, (event, user) =>
+  void tracked(
+    "scheduled_event_user",
+    (async () => {
+      const { data, error } = await db.from("events").select("id").eq("discord_event_id", event.id).maybeSingle();
+      if (error) throw new Error(`events select: ${error.message}`);
+      if (!data) return;
+      // A going said with the bot stays: undoing that is /event not-going.
+      const removed = await db
+        .from("event_attendees")
+        .delete()
+        .eq("event_id", data.id)
+        .eq("user_id", user.id)
+        .eq("from_discord", true);
+      if (removed.error) throw new Error(`event_attendees delete: ${removed.error.message}`);
+    })(),
+  ),
+);
+
 let presenceIndex = 0;
 
 async function rotatePresence(): Promise<void> {
@@ -787,9 +1217,10 @@ async function weeklyReport(guild: string): Promise<void> {
         tz: timezone,
       });
       if (error) throw new Error(`report_card: ${error.message}`);
+      const events = await upcomingEvents(guild, new Date(Date.now() + 7 * 24 * 60 * 60_000));
       // The nonce makes Discord drop a second send of the same week from a concurrent bot.
       await channel.send({
-        embeds: [reportEmbed(week, data as ReportData, config.siteUrl, timezone)],
+        embeds: [reportEmbed(week, data as ReportData, config.siteUrl, timezone, events)],
         nonce: `report-${week}`,
         enforceNonce: true,
       });
@@ -934,6 +1365,8 @@ async function startServer(guild: Guild): Promise<void> {
       ...STATS_COMMANDS,
       SETUP_COMMAND,
       RECAP_COMMAND,
+      STORE_COMMAND,
+      EVENT_COMMAND,
     ]);
   } catch (err) {
     log("error", "command_registration_failed", { guild: guild.id, error: err });
@@ -966,7 +1399,8 @@ async function startServer(guild: Guild): Promise<void> {
   } catch (err) {
     log("error", "member_sync_failed", { guild: guild.id, error: err });
   }
-  // After the member sync: the backfill takes authors' names from the member cache.
+  // After the member sync: goers' names and the backfill's authors come from the member cache.
+  void tracked("scheduled_events_sync", syncScheduledEvents(guild));
   queueBackfill(guild.id);
 }
 

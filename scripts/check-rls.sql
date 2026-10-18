@@ -8,7 +8,7 @@ begin;
 
 -- Two servers; the test user is a member of the first only. Ids no real row can have.
 do $$
-declare g text;
+declare g text; s bigint; e bigint;
 begin
     insert into auth.users (id) values ('00000000-0000-4000-8000-000000000045');
     insert into auth.identities (provider_id, user_id, identity_data, provider)
@@ -38,8 +38,18 @@ begin
         values (g, 'rls-user', 'c', '2026-01-01', 1);
         insert into public.member_emoji_counts (guild_id, user_id, emoji_key, day, count)
         values (g, 'rls-user', 'e', '2026-01-01', 1);
+        insert into public.stores (guild_id, name, city, added_by) values (g, 's', 'c', 'rls-user') returning id into s;
+        insert into public.store_regulars (guild_id, store_id, user_id) values (g, s, 'rls-user');
+        insert into public.events (guild_id, store_id, starts_at) values (g, s, now() + interval '1 day') returning id into e;
+        insert into public.event_attendees (guild_id, event_id, user_id) values (g, e, 'rls-user');
     end loop;
     insert into public.guild_members (guild_id, user_id) values ('rls-mine', 'rls-user');
+    -- A member who ran /hide-me: none of their regulars may show.
+    insert into public.members (guild_id, user_id, display_name, hidden) values ('rls-mine', 'rls-hidden', 'x', true);
+    insert into public.store_regulars (guild_id, store_id, user_id)
+    select 'rls-mine', id, 'rls-hidden' from public.stores where guild_id = 'rls-mine';
+    insert into public.event_attendees (guild_id, event_id, user_id)
+    select 'rls-mine', id, 'rls-hidden' from public.events where guild_id = 'rls-mine';
     -- anon cannot read keys itself, so hand it one for the recap checks below.
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
@@ -88,6 +98,21 @@ begin
         if mine = 0 then raise exception 'a member reads no rows of their own server from %', t; end if;
         if other <> 0 then raise exception 'a member reads % rows of other servers from %', other, t; end if;
     end loop;
+    if exists (select from public.store_regulars where user_id = 'rls-hidden') then
+        raise exception 'a member reads the regulars of a hidden member';
+    end if;
+    if (select sum(regulars) from public.store_regular_counts('rls-mine')) <> 1 then
+        raise exception 'store_regular_counts() does not count just the visible regular';
+    end if;
+    if exists (select from public.event_attendees where user_id = 'rls-hidden') then
+        raise exception 'a member reads the attendance of a hidden member';
+    end if;
+    if (select going from public.upcoming_events('rls-mine')) <> array['x'] then
+        raise exception 'upcoming_events() does not list just the visible goer';
+    end if;
+    if exists (select from public.upcoming_events('rls-other')) then
+        raise exception 'a member reads another server''s events';
+    end if;
     if (select count(*) from public.my_guilds()) <> 1 then raise exception 'my_guilds() is not just mine'; end if;
     if public.monthly_recap('rls-mine', '2025-12-01') is null then raise exception 'a member cannot read their recap'; end if;
     if public.monthly_recap('rls-other', '2025-12-01') is not null then raise exception 'a member reads another server''s recap'; end if;
@@ -109,6 +134,9 @@ begin
         execute format('select count(*) from public.%I where user_id = ''rls-user''', t) into n;
         if n <> 0 then raise exception 'forget_user() leaves % rows in %', n, t; end if;
     end loop;
+    if exists (select from public.stores where added_by = 'rls-user') then
+        raise exception 'forget_user() leaves the user on the stores they added';
+    end if;
     insert into public.members (guild_id, user_id, display_name) values ('rls-mine', 'rls-user', 'x');
     if exists (select from public.members where user_id = 'rls-user') then
         raise exception 'a forgotten user is written again';
