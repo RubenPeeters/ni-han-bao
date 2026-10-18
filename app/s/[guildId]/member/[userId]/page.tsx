@@ -4,7 +4,10 @@ import { memberGuild } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
-export const metadata = { title: "Member · ni han bao" };
+export const metadata = {
+  title: "Member · ni han bao",
+  description: "Their activity in this server.",
+};
 
 export default function MemberPage({ params }: PageProps<"/s/[guildId]/member/[userId]">) {
   return hasEnvVars ? (

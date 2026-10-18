@@ -4,7 +4,10 @@ import { memberGuild } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
-export const metadata = { title: "Emoji · ni han bao" };
+export const metadata = {
+  title: "Emoji · ni han bao",
+  description: "What everyone reacts with.",
+};
 
 export default function EmojiPage({ params }: PageProps<"/s/[guildId]/emoji">) {
   return (

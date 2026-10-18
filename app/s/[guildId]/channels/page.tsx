@@ -4,7 +4,10 @@ import { memberGuild } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
-export const metadata = { title: "Channels · ni han bao" };
+export const metadata = {
+  title: "Channels · ni han bao",
+  description: "Where and when it is busy.",
+};
 
 export default function ChannelsPage({ params }: PageProps<"/s/[guildId]/channels">) {
   return (

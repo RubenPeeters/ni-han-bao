@@ -49,6 +49,13 @@ try {
     if (!ok) failed = true;
     console.log(`${ok ? "ok  " : "FAIL"} ${path} -> ${res.status} ${location}`);
   }
+  // Link previews (#55): every page points at the generated image, and it renders logged out.
+  const html = await (await fetch(`${base}/s`)).text();
+  const image = html.match(/<meta property="og:image" content="([^"]+)"/)?.[1];
+  const png = image && (await fetch(base + new URL(image).pathname));
+  const previewOk = png?.status === 200 && png.headers.get("content-type") === "image/png";
+  if (!previewOk) failed = true;
+  console.log(`${previewOk ? "ok  " : "FAIL"} og:image ${image} -> ${png?.status}`);
   // Unknown paths get the styled not-found page (#58), not Next's default one.
   const res = await fetch(`${base}/no-such-page`, { redirect: "manual" });
   const ok = res.status === 404 && (await res.text()).includes("Page not found");

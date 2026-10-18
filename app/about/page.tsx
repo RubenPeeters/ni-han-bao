@@ -1,7 +1,10 @@
 import { PageHeader } from "@/components/stat-ui";
 import type { ReactNode } from "react";
 
-export const metadata = { title: "About & privacy · ni han bao" };
+export const metadata = {
+  title: "About & privacy · ni han bao",
+  description: "What the bot counts, who can see it, and how to opt out.",
+};
 
 const REPO = "https://github.com/RubenPeeters/ni-han-bao";
 
