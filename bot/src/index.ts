@@ -100,6 +100,7 @@ async function writeHeartbeat(): Promise<void> {
   if (error) log("error", "heartbeat_failed", { error: error.message });
   // Rewritten every heartbeat, so each day keeps the last count seen that day.
   const snapshot = await db.from("member_count_snapshots").upsert({
+    guild_id: config.guildId,
     day: utcDay(new Date()),
     member_count: guild.memberCount,
     updated_at: new Date().toISOString(),
@@ -123,7 +124,7 @@ const voice = new VoiceSessions();
 async function upsertMembers(rows: MemberRow[]): Promise<void> {
   const { error } = await db
     .from("members")
-    .upsert(rows.map((r) => ({ ...r, updated_at: new Date().toISOString() })));
+    .upsert(rows.map((r) => ({ ...r, guild_id: config.guildId, updated_at: new Date().toISOString() })));
   if (error) throw new Error(`members upsert: ${error.message}`);
 }
 
@@ -139,7 +140,7 @@ async function flushAll(): Promise<boolean> {
     async upsertChannels(rows) {
       const { error } = await db
         .from("channels")
-        .upsert(rows.map((r) => ({ ...r, updated_at: new Date().toISOString() })));
+        .upsert(rows.map((r) => ({ ...r, guild_id: config.guildId, updated_at: new Date().toISOString() })));
       if (error) throw new Error(`channels upsert: ${error.message}`);
     },
     async incrementCounts(batch) {
@@ -147,6 +148,7 @@ async function flushAll(): Promise<boolean> {
         batch: batch.id,
         counts: batch.counts,
         channel_counts: batch.channelCounts,
+        guild: config.guildId,
       });
       if (error) throw new Error(`increment_activity: ${error.message}`);
     },
@@ -159,6 +161,7 @@ async function flushAll(): Promise<boolean> {
         emojis: batch.emojis,
         emoji_counts: batch.emojiCounts,
         received_counts: batch.receivedCounts,
+        guild: config.guildId,
       });
       if (error) throw new Error(`increment_reactions: ${error.message}`);
     },
@@ -172,6 +175,7 @@ async function flushAll(): Promise<boolean> {
         batch: batch.id,
         flow: batch.flow,
         voice: batch.voice,
+        guild: config.guildId,
       });
       if (error) throw new Error(`increment_timeline: ${error.message}`);
     },
@@ -345,7 +349,7 @@ client.on(Events.VoiceStateUpdate, (_old, state) => {
 const RANK_TOP = 1000;
 
 async function leaderboard(since: string | null, top: number) {
-  const { data, error } = await db.rpc("leaderboard", { since, top });
+  const { data, error } = await db.rpc("leaderboard", { since, top, guild: config.guildId });
   if (error) throw new Error(`leaderboard: ${error.message}`);
   return data as { user_id: string; display_name: string; message_count: number }[];
 }
@@ -362,9 +366,9 @@ async function statsReply(interaction: ChatInputCommandInteraction<"cached">) {
   if (interaction.commandName === "me") {
     const userId = interaction.user.id;
     const [counts, received, member, week, allTime] = await Promise.all([
-      db.from("message_counts").select("day, count").eq("user_id", userId),
-      db.from("reactions_received").select("day, count").eq("user_id", userId),
-      db.from("members").select("hidden").eq("user_id", userId).maybeSingle(),
+      db.from("message_counts").select("day, count").eq("guild_id", config.guildId).eq("user_id", userId),
+      db.from("reactions_received").select("day, count").eq("guild_id", config.guildId).eq("user_id", userId),
+      db.from("members").select("hidden").eq("guild_id", config.guildId).eq("user_id", userId).maybeSingle(),
       leaderboard(weekStart, RANK_TOP),
       leaderboard(null, RANK_TOP),
     ]);
@@ -389,6 +393,7 @@ async function statsReply(interaction: ChatInputCommandInteraction<"cached">) {
   const { data, error } = await db
     .from("channel_message_counts")
     .select("hour, count")
+    .eq("guild_id", config.guildId)
     .eq("channel_id", target.id)
     .gte("hour", new Date(Date.now() - CHANNEL_DAYS * 24 * 60 * 60_000).toISOString());
   if (error) throw new Error(`channel_message_counts: ${error.message}`);
@@ -425,7 +430,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           // Upsert so a member who has never posted still gets a row to carry the flag.
           const { error } = await db
             .from("members")
-            .upsert({ ...row, hidden: flag, updated_at: new Date().toISOString() });
+            .upsert({ ...row, guild_id: config.guildId, hidden: flag, updated_at: new Date().toISOString() });
           if (error) throw new Error(`members upsert: ${error.message}`);
         },
       },
@@ -447,6 +452,7 @@ async function rotatePresence(): Promise<void> {
     const { data, error } = await db.rpc("busiest_channels", {
       since: `${utcDay(new Date())}T00:00:00Z`,
       top: 1000,
+      guild: config.guildId,
     });
     if (error) throw new Error(`busiest_channels: ${error.message}`);
     const rows = data as { name: string; message_count: number }[];
@@ -473,7 +479,12 @@ async function weeklyReport(): Promise<void> {
   if (!channelId || week === null || week === reportedWeek || reporting) return;
   reporting = true;
   try {
-    const recorded = await db.from("report_cards").select("week").eq("week", week).maybeSingle();
+    const recorded = await db
+      .from("report_cards")
+      .select("week")
+      .eq("guild_id", config.guildId)
+      .eq("week", week)
+      .maybeSingle();
     if (recorded.error) throw new Error(`report_cards select: ${recorded.error.message}`);
     if (recorded.data) {
       reportedWeek = week;
@@ -493,7 +504,11 @@ async function weeklyReport(): Promise<void> {
       (m) => m.author.id === client.user?.id && isReportFor(m.embeds, week),
     );
     if (!posted) {
-      const { data, error } = await db.rpc("report_card", { since: week, until: addDays(week, 7) });
+      const { data, error } = await db.rpc("report_card", {
+        since: week,
+        until: addDays(week, 7),
+        guild: config.guildId,
+      });
       if (error) throw new Error(`report_card: ${error.message}`);
       // The nonce makes Discord drop a second send of the same week from a concurrent bot.
       await channel.send({
@@ -502,7 +517,7 @@ async function weeklyReport(): Promise<void> {
         enforceNonce: true,
       });
     }
-    const record = await db.from("report_cards").upsert({ week }, { ignoreDuplicates: true });
+    const record = await db.from("report_cards").upsert({ guild_id: config.guildId, week }, { ignoreDuplicates: true });
     if (record.error) throw new Error(`report_cards upsert: ${record.error.message}`);
     reportedWeek = week;
     log("info", "report_posted", { week });

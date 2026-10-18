@@ -27,6 +27,8 @@ Discord ──gateway──► bot/ (discord.js, container on the Hetzner box)
   writes, with the secret key. The secret key never appears in website code.
 - `dev` previews and production share **one** database. Migrations must be additive and
   backwards compatible: add tables/columns, never rename or drop in the same release.
+- Per-server tables carry `guild_id`, and every new per-server table must have it. The bot
+  writes it explicitly (`DISCORD_GUILD_ID`); every site query filters on it (`lib/guild.ts`).
 - Migration files are named `YYYYMMDDHHMMSS_description.sql` and are never edited once merged.
 - The site is public and shows member names. Anything per-member must respect the opt-out
   (once it exists): hidden members appear in no list and no chart.

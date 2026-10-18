@@ -7,6 +7,7 @@ import {
   StatCard,
   StatGrid,
 } from "@/components/stat-ui";
+import { GUILD_ID } from "@/lib/guild";
 import { createClient } from "@/lib/supabase/server";
 
 const TOP = 10;
@@ -29,8 +30,8 @@ interface MemberRow {
 export async function EmojiStats() {
   const supabase = await createClient();
   const [emoji, members] = await Promise.all([
-    supabase.rpc("top_emoji", { top: TOP }),
-    supabase.rpc("most_reacted_members", { top: TOP }),
+    supabase.rpc("top_emoji", { top: TOP, guild: GUILD_ID }),
+    supabase.rpc("most_reacted_members", { top: TOP, guild: GUILD_ID }),
   ]);
 
   if (emoji.error || members.error) {

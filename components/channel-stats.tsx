@@ -6,6 +6,7 @@ import {
   StatCard,
   StatGrid,
 } from "@/components/stat-ui";
+import { GUILD_ID } from "@/lib/guild";
 import { createClient } from "@/lib/supabase/server";
 
 const TOP = 10;
@@ -43,8 +44,12 @@ export async function ChannelStats() {
     supabase.rpc("busiest_channels", {
       since: new Date(now - BUSIEST_DAYS * DAY_MS).toISOString(),
       top: TOP,
+      guild: GUILD_ID,
     }),
-    supabase.rpc("channel_heatmap", { since: new Date(now - HEATMAP_DAYS * DAY_MS).toISOString() }),
+    supabase.rpc("channel_heatmap", {
+      since: new Date(now - HEATMAP_DAYS * DAY_MS).toISOString(),
+      guild: GUILD_ID,
+    }),
   ]);
 
   if (busiest.error || heatmap.error) {
