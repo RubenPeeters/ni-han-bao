@@ -61,7 +61,12 @@ export default function RootLayout({
             </header>
             <main className="flex flex-1 flex-col gap-8">{children}</main>
             <footer className="flex flex-wrap items-center justify-between gap-2 border-t pt-4 text-xs text-muted-foreground">
-              <span>made by forge</span>
+              <span className="flex gap-3">
+                <span>made by forge</span>
+                <Link href="/about" className="hover:text-foreground">
+                  About &amp; privacy
+                </Link>
+              </span>
               {hasEnvVars && (
                 <Suspense fallback={<span>Bot status…</span>}>
                   <BotStatusDot />
