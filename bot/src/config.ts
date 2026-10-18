@@ -1,6 +1,7 @@
 export interface Config {
   discordToken: string;
-  guildId: string;
+  /** Only the history backfill needs it: the bot counts every server it is in. */
+  guildId: string | null;
   supabaseUrl: string;
   supabaseSecretKey: string;
   /** Website base URL for links in command replies; null leaves the links out. */
@@ -11,7 +12,6 @@ export interface Config {
 
 const REQUIRED = {
   discordToken: "DISCORD_TOKEN",
-  guildId: "DISCORD_GUILD_ID",
   supabaseUrl: "SUPABASE_URL",
   supabaseSecretKey: "SUPABASE_SECRET_KEY",
 } as const;
@@ -25,6 +25,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   return {
     ...Object.fromEntries(Object.entries(REQUIRED).map(([key, name]) => [key, env[name] as string])),
     // Optional so a box without it keeps counting; only the reply links go missing.
+    guildId: env.DISCORD_GUILD_ID || null,
     siteUrl: env.SITE_URL || null,
     reportChannelId: env.REPORT_CHANNEL_ID || null,
   } as unknown as Config;
