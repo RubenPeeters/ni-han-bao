@@ -3,6 +3,7 @@ import {
   ActivityType,
   ButtonBuilder,
   ButtonStyle,
+  ChannelType,
   type ChatInputCommandInteraction,
   Client,
   type Collection,
@@ -15,6 +16,8 @@ import {
   Partials,
   type PartialMessageReaction,
   type PartialUser,
+  PermissionFlagsBits,
+  type TextChannel,
   type User,
 } from "discord.js";
 import { createClient } from "@supabase/supabase-js";
@@ -51,6 +54,7 @@ import {
 import { backfillGuild } from "./server-history.js";
 import { flushServers, Server, type ServerWriter } from "./servers.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
+import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
 
 const HEARTBEAT_MS = 60_000;
 const FLUSH_MS = 10_000;
@@ -434,7 +438,39 @@ async function syncGuildNow(guild: Guild): Promise<Collection<string, GuildMembe
 }
 
 // Emitted after ready only for servers the bot joins; those it is already in start on ready.
-client.on(Events.GuildCreate, (guild) => void startServer(guild));
+client.on(Events.GuildCreate, (guild) => {
+  void startServer(guild);
+  void tracked("welcome", welcome(guild));
+});
+async function welcome(guild: Guild): Promise<void> {
+  const me = guild.members.me;
+  const canSend = (c: TextChannel) =>
+    !!me && !!c.permissionsFor(me)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]);
+  const channels = [...guild.channels.cache.values()]
+    .filter((c): c is TextChannel => c.type === ChannelType.GuildText)
+    .sort((a, b) => a.rawPosition - b.rawPosition);
+  const channel = welcomeChannel(guild.systemChannel, channels, canSend);
+  const result = await postWelcome(
+    {
+      async claim(channelId) {
+        const { data, error } = await db
+          .from("welcome_messages")
+          .upsert({ guild_id: guild.id, channel_id: channelId }, { onConflict: "guild_id", ignoreDuplicates: true })
+          .select("guild_id");
+        if (error) throw new Error(`welcome_messages upsert: ${error.message}`);
+        return data.length > 0;
+      },
+      async release() {
+        const { error } = await db.from("welcome_messages").delete().eq("guild_id", guild.id);
+        if (error) throw new Error(`welcome_messages delete: ${error.message}`);
+      },
+    },
+    channel,
+    welcomeText(config.siteUrl, guild.id),
+  );
+  log(result === "no_channel" ? "warn" : "info", `welcome_${result}`, { guild: guild.id, channel: channel?.id });
+}
+
 client.on(Events.GuildUpdate, (_old, guild) => void tracked("guild_update", membership(guild.id, () => upsertGuild(guild))));
 
 // Only when the bot leaves or is removed: discord.js reports an outage as GuildUnavailable.

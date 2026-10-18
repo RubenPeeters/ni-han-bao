@@ -31,6 +31,7 @@ begin
         insert into public.report_cards (guild_id, week) values (g, '2025-12-29');
         insert into public.backfill_state (guild_id, before_id) values (g, '1');
         insert into public.backfill_cursors (guild_id, channel_id, before_id) values (g, 'c', '1');
+        insert into public.welcome_messages (guild_id, channel_id) values (g, 'c');
         insert into public.member_channel_counts (guild_id, user_id, channel_id, day, count)
         values (g, 'rls-user', 'c', '2026-01-01', 1);
         insert into public.member_emoji_counts (guild_id, user_id, emoji_key, day, count)
