@@ -6,6 +6,7 @@ import {
   StatCard,
   StatGrid,
 } from "@/components/stat-ui";
+import { GUILD_ID } from "@/lib/guild";
 import { createClient } from "@/lib/supabase/server";
 
 const TOP = 10;
@@ -68,10 +69,14 @@ export async function TimelineStats() {
     supabase
       .from("member_count_snapshots")
       .select("day, member_count")
+      .eq("guild_id", GUILD_ID)
       .gte("day", isoDay(now - HISTORY_DAYS * DAY_MS))
       .order("day"),
-    supabase.rpc("weekly_member_flow", { since: weekStart(now - (WEEKS - 1) * 7 * DAY_MS) }),
-    supabase.rpc("top_voice_members", { since: monthStart, top: TOP }),
+    supabase.rpc("weekly_member_flow", {
+      since: weekStart(now - (WEEKS - 1) * 7 * DAY_MS),
+      guild: GUILD_ID,
+    }),
+    supabase.rpc("top_voice_members", { since: monthStart, top: TOP, guild: GUILD_ID }),
   ]);
 
   if (snapshots.error || flow.error || voice.error) {

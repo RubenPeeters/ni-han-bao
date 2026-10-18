@@ -1,3 +1,4 @@
+import { GUILD_ID } from "@/lib/guild";
 import { createClient } from "@/lib/supabase/server";
 import { cache } from "react";
 
@@ -10,6 +11,7 @@ const loadStatus = cache(async () => {
   return supabase
     .from("bot_status")
     .select("guild_name, member_count, last_seen")
+    .eq("guild_id", GUILD_ID)
     .maybeSingle();
 });
 

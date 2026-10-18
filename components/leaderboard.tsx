@@ -6,6 +6,7 @@ import {
   StatCard,
   StatGrid,
 } from "@/components/stat-ui";
+import { GUILD_ID } from "@/lib/guild";
 import { createClient } from "@/lib/supabase/server";
 
 const TOP = 10;
@@ -30,8 +31,8 @@ export async function Leaderboard() {
   const supabase = await createClient();
   const weekStart = utcWeekStart(new Date());
   const [week, allTime] = await Promise.all([
-    supabase.rpc("leaderboard", { since: weekStart, top: TOP }),
-    supabase.rpc("leaderboard", { top: TOP }),
+    supabase.rpc("leaderboard", { since: weekStart, top: TOP, guild: GUILD_ID }),
+    supabase.rpc("leaderboard", { top: TOP, guild: GUILD_ID }),
   ]);
 
   if (week.error || allTime.error) {
