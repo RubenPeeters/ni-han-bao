@@ -24,7 +24,7 @@ export async function createClient() {
             );
           } catch {
             // Server Components can't set cookies; safe to ignore because
-            // the site has no user sessions to refresh.
+            // the browser client (lib/supabase/client.ts) refreshes sessions.
           }
         },
       },

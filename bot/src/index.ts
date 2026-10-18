@@ -4,6 +4,7 @@ import {
   Client,
   Events,
   GatewayIntentBits,
+  type Guild,
   MessageFlags,
   type MessageReaction,
   Partials,
@@ -24,6 +25,7 @@ import {
 import { Backoff, flushUntil, InFlight } from "./backoff.js";
 import { loadConfig } from "./config.js";
 import { createLogger } from "./log.js";
+import { syncMembers } from "./membership.js";
 import { nextPresence, PRESENCE_PHRASES } from "./presence.js";
 import { emojiRow, flushReactions, ReactionBuffer, receivesReaction } from "./reactions.js";
 import {
@@ -325,11 +327,87 @@ client.on(Events.UserUpdate, (_old, user) => {
 // Discord's, which includes them, and joins minus leaves should add up to it.
 client.on(Events.GuildMemberAdd, (member) => {
   if (member.guild.id === config.guildId) timeline.addJoin(new Date());
+  if (!member.user.bot) void tracked("member_add", addMembers(member.guild.id, [member.id]));
 });
 
 client.on(Events.GuildMemberRemove, (member) => {
   if (member.guild.id === config.guildId) timeline.addLeave(new Date());
+  void tracked("member_remove", removeMembers(member.guild.id, [member.id]));
 });
+
+// Membership covers every server the bot is in, not only DISCORD_GUILD_ID: the site uses it
+// to know which servers a logged-in visitor shares with the bot.
+async function tracked(event: string, work: Promise<unknown>): Promise<void> {
+  // Caught here: these run from events, and an unhandled rejection would exit the bot.
+  try {
+    await work;
+  } catch (err) {
+    log("error", `${event}_failed`, { error: err });
+  }
+}
+
+async function upsertGuild(guild: Guild): Promise<void> {
+  const { error } = await db.from("guilds").upsert({
+    guild_id: guild.id,
+    name: guild.name,
+    icon_url: guild.iconURL(),
+    updated_at: new Date().toISOString(),
+  });
+  if (error) throw new Error(`guilds upsert: ${error.message}`);
+}
+
+async function addMembers(guildId: string, userIds: string[]): Promise<void> {
+  const { error } = await db
+    .from("guild_members")
+    .upsert(userIds.map((user_id) => ({ guild_id: guildId, user_id })), { ignoreDuplicates: true });
+  if (error) throw new Error(`guild_members upsert: ${error.message}`);
+}
+
+async function removeMembers(guildId: string, userIds: string[]): Promise<void> {
+  const { error } = await db.from("guild_members").delete().eq("guild_id", guildId).in("user_id", userIds);
+  if (error) throw new Error(`guild_members delete: ${error.message}`);
+}
+
+/** Full resync of one server: its row, then its member list diffed against what is stored. */
+async function syncGuild(guild: Guild): Promise<void> {
+  await upsertGuild(guild);
+  const members = await guild.members.fetch();
+  const result = await syncMembers(
+    [...members.values()].filter((m) => !m.user.bot).map((m) => m.id),
+    {
+      async storedPage(from, to) {
+        const { data, error } = await db
+          .from("guild_members")
+          .select("user_id")
+          .eq("guild_id", guild.id)
+          .order("user_id")
+          .range(from, to);
+        if (error) throw new Error(`guild_members select: ${error.message}`);
+        return data.map((r) => r.user_id as string);
+      },
+      add: (ids) => addMembers(guild.id, ids),
+      remove: (ids) => removeMembers(guild.id, ids),
+    },
+  );
+  log("info", "membership_synced", { guild: guild.id, ...result });
+}
+
+// Emitted after ready only for servers the bot joins; the ones it is already in sync on ready.
+client.on(Events.GuildCreate, (guild) => void tracked("membership_sync", syncGuild(guild)));
+client.on(Events.GuildUpdate, (_old, guild) => void tracked("guild_update", upsertGuild(guild)));
+
+// Only when the bot leaves or is removed: discord.js reports an outage as GuildUnavailable.
+client.on(Events.GuildDelete, (guild) =>
+  void tracked(
+    "guild_delete",
+    (async () => {
+      const members = await db.from("guild_members").delete().eq("guild_id", guild.id);
+      if (members.error) throw new Error(`guild_members delete: ${members.error.message}`);
+      const row = await db.from("guilds").delete().eq("guild_id", guild.id);
+      if (row.error) throw new Error(`guilds delete: ${row.error.message}`);
+    })(),
+  ),
+);
 
 client.on(Events.VoiceStateUpdate, (_old, state) => {
   if (state.guild.id !== config.guildId) return;
@@ -560,6 +638,7 @@ client.once(Events.ClientReady, async (c) => {
   } catch (err) {
     log("error", "member_sync_failed", { error: err });
   }
+  for (const guild of c.guilds.cache.values()) await tracked("membership_sync", syncGuild(guild));
 });
 
 // discord.js reconnects by itself; these only make outages visible in the log.
