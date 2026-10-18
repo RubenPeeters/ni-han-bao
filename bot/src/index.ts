@@ -98,6 +98,8 @@ async function writeHeartbeat(): Promise<void> {
     guild_id: guild.id,
     guild_name: guild.name,
     member_count: guild.memberCount,
+    // Discord's CDN URL, so changing the avatar on Discord changes the site.
+    avatar_url: client.user?.displayAvatarURL({ size: 256 }) ?? null,
     last_seen: new Date().toISOString(),
   });
   if (error) log("error", "heartbeat_failed", { error: error.message });
