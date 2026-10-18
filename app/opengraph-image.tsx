@@ -1,5 +1,6 @@
 import type { Totals } from "@/components/bot-status";
 import { utcWeekStart } from "@/components/leaderboard";
+import { BACKGROUND, BORDER, CARD, FOREGROUND, MUTED, PRIMARY } from "@/lib/og";
 import { hasEnvVars } from "@/lib/utils";
 import { createClient } from "@supabase/supabase-js";
 import { cacheLife } from "next/cache";
@@ -10,15 +11,6 @@ import { ImageResponse } from "next/og";
 export const alt = "ni han bao: totals across every server it counts";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
-
-// Satori draws this, not the browser, so the design tokens (CSS variables) do not reach it:
-// these are the dark theme's values from globals.css.
-const BACKGROUND = "hsl(230, 30%, 4%)";
-const CARD = "hsl(230, 25%, 9%)";
-const BORDER = "hsl(230, 20%, 18%)";
-const FOREGROUND = "hsl(220, 20%, 96%)";
-const MUTED = "hsl(225, 15%, 66%)";
-const PRIMARY = "hsl(250, 90%, 74%)";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
