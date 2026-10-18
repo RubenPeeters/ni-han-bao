@@ -1,7 +1,8 @@
-// One-off: counts messages sent before the live bot's first counted hour, one channel or
+// One-off: counts messages sent before the live bot's first counted message, one channel or
 // thread at a time, and adds them to the stats (the backfill_cursors migration says why
 // that never double counts). Run with the live bot's env, after a build:
-// `pnpm --filter ni-han-bao-bot backfill [--dry-run]`. Safe to rerun: it resumes from the
+// `pnpm --filter ni-han-bao-bot backfill [--dry-run] [--before <message id | ISO time>]`
+// (see backfillBefore for when --before is needed). Safe to rerun: it resumes from the
 // cursors in backfill_cursors and never counts a page twice.
 import {
   Client,
@@ -15,16 +16,17 @@ import { createClient } from "@supabase/supabase-js";
 import { channelRow, memberRow, type ChannelRow, type MemberRow } from "./activity.js";
 import { loadConfig } from "./config.js";
 import {
-  backfillBoundary,
+  backfillBefore,
   backfillChannel,
   must,
   mustWrite,
-  snowflakeAt,
   type Cursor,
   type HistoryIo,
 } from "./history.js";
 
 const dryRun = process.argv.includes("--dry-run");
+const beforeFlag = process.argv.indexOf("--before");
+const override = beforeFlag === -1 ? null : (process.argv[beforeFlag + 1] ?? "");
 const config = loadConfig();
 const db = createClient(config.supabaseUrl, config.supabaseSecretKey, {
   auth: { persistSession: false },
@@ -34,9 +36,18 @@ const db = createClient(config.supabaseUrl, config.supabaseSecretKey, {
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
 
 /** Fixed by the first real run, so later runs stop at the same moment. */
-async function loadBoundary(): Promise<Date> {
-  const [stored] = must("backfill_state", await db.from("backfill_state").select("boundary"));
-  if (stored) return new Date(stored.boundary);
+async function loadBeforeId(): Promise<string> {
+  const [stored] = must("backfill_state", await db.from("backfill_state").select("before_id"));
+  if (stored) {
+    if (override !== null && backfillBefore(override, null, null, null, new Date()) !== stored.before_id) {
+      throw new Error(`--before: the backfill already reads from ${stored.before_id}`);
+    }
+    return stored.before_id;
+  }
+  const [firstCounted] = must(
+    "first_counted_message",
+    await db.from("first_counted_message").select("message_id"),
+  );
   const [first] = must(
     "message_counts",
     await db.from("message_counts").select("day").order("day").limit(1),
@@ -45,19 +56,25 @@ async function loadBoundary(): Promise<Date> {
     "channel_message_counts",
     await db.from("channel_message_counts").select("hour").order("hour").limit(1),
   );
-  const boundary = {
-    boundary: backfillBoundary(first?.day ?? null, firstHour?.hour ?? null, new Date()).toISOString(),
+  const state = {
+    before_id: backfillBefore(
+      override,
+      firstCounted?.message_id ?? null,
+      first?.day ?? null,
+      firstHour?.hour ?? null,
+      new Date(),
+    ),
   };
-  if (dryRun) return new Date(boundary.boundary);
-  mustWrite("backfill_state", await db.from("backfill_state").upsert(boundary, { ignoreDuplicates: true }));
-  // Re-read: a concurrent first run may have stored its boundary first.
-  const [row] = must("backfill_state", await db.from("backfill_state").select("boundary"));
-  return new Date(row.boundary);
+  if (dryRun) return state.before_id;
+  mustWrite("backfill_state", await db.from("backfill_state").upsert(state, { ignoreDuplicates: true }));
+  // Re-read: a concurrent first run may have stored its start first.
+  const [row] = must("backfill_state", await db.from("backfill_state").select("before_id"));
+  return row.before_id;
 }
 
-/** Every channel gets a cursor at the boundary, including ones unreadable on earlier runs. */
-async function loadCursors(channelIds: string[], boundary: Date): Promise<Map<string, Cursor>> {
-  const fresh = channelIds.map((id) => ({ channel_id: id, before_id: snowflakeAt(boundary) }));
+/** Every channel gets a cursor at the start, including ones unreadable on earlier runs. */
+async function loadCursors(channelIds: string[], beforeId: string): Promise<Map<string, Cursor>> {
+  const fresh = channelIds.map((id) => ({ channel_id: id, before_id: beforeId }));
   if (!dryRun) {
     mustWrite("backfill_cursors", await db.from("backfill_cursors").upsert(fresh, { ignoreDuplicates: true }));
   }
@@ -115,9 +132,9 @@ async function main(): Promise<void> {
   const readable = [...channels, ...(await allThreads(guild, me))].filter((c) =>
     c.permissionsFor(me).has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory]),
   );
-  const boundary = await loadBoundary();
-  console.log(`counting messages before ${boundary.toISOString()}${dryRun ? " (dry run: nothing is written)" : ""}`);
-  const cursors = await loadCursors(readable.map((c) => c.id), boundary);
+  const beforeId = await loadBeforeId();
+  console.log(`counting messages before id ${beforeId}${dryRun ? " (dry run: nothing is written)" : ""}`);
+  const cursors = await loadCursors(readable.map((c) => c.id), beforeId);
   let total = 0;
   let failed = 0;
   // One channel at a time; discord.js waits out rate limits (429s) on its own.

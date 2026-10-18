@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  backfillBefore,
   backfillBoundary,
   backfillChannel,
   must,
@@ -146,6 +147,35 @@ describe("backfillBoundary", () => {
   it("is the start of this hour when nothing was counted live yet", () => {
     expect(backfillBoundary(null, null, new Date("2026-10-18T12:34:00Z"))).toEqual(
       new Date("2026-10-18T12:00:00Z"),
+    );
+  });
+});
+
+describe("backfillBefore", () => {
+  const now = new Date("2026-10-18T12:00:00Z");
+  // The live bot came up at 18:45, so 18:00-18:44 is history and 18:45 on was counted live.
+  const firstCounted = snowflakeAt(new Date("2026-10-17T18:45:00Z"));
+  const earlierThatHour = snowflakeAt(new Date("2026-10-17T18:10:00Z"));
+  const counts = (before: string, id: string) => BigInt(id) < BigInt(before);
+
+  it("stops at the first counted message, so earlier messages in its hour are still history", () => {
+    const before = backfillBefore(null, firstCounted, "2026-10-17", "2026-10-17T18:00:00+00:00", now);
+    expect(counts(before, earlierThatHour)).toBe(true);
+    expect(counts(before, firstCounted)).toBe(false);
+  });
+
+  it("takes an exact start for a bot that never recorded one, as an id or a time", () => {
+    expect(backfillBefore(firstCounted, null, "2026-10-17", "2026-10-17T18:00:00+00:00", now)).toBe(firstCounted);
+    expect(backfillBefore("2026-10-17T18:45:00Z", null, "2026-10-17", "2026-10-17T18:00:00+00:00", now)).toBe(
+      firstCounted,
+    );
+    expect(() => backfillBefore("yesterday", null, null, null, now)).toThrow();
+  });
+
+  it("ignores a first message recorded after the first live hour (an upgraded older bot)", () => {
+    const late = snowflakeAt(new Date("2026-10-18T09:00:00Z"));
+    expect(backfillBefore(null, late, "2026-10-17", "2026-10-17T18:00:00+00:00", now)).toBe(
+      snowflakeAt(new Date("2026-10-17T18:00:00Z")),
     );
   });
 });

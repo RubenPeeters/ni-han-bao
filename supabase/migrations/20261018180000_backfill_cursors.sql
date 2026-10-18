@@ -2,15 +2,27 @@
 -- Same convention as bot_status: RLS on, anon may only SELECT, only the bot writes.
 -- Holds ids and timestamps only: message content is never stored.
 --
--- The backfill only counts messages sent before `boundary`, the start of the UTC hour of the
--- live bot's first count. The live bot counted nothing before that, so history counts are
--- simply added to message_counts and channel_message_counts: nothing is counted twice.
+-- The backfill only counts messages older than `before_id`, the first message the live bot
+-- counted (see backfillBefore in bot/src/history.ts). The live bot counted nothing before
+-- that, so history counts are simply added to message_counts and channel_message_counts:
+-- nothing is counted twice.
+
+-- Single row, written by the live bot before it writes any count, so it is never later than
+-- a counted message. Later restarts leave it alone.
+create table if not exists public.first_counted_message (
+    id smallint primary key default 1 check (id = 1),
+    message_id text not null
+);
+
+alter table public.first_counted_message enable row level security;
+
+create policy "public read" on public.first_counted_message for select to anon, authenticated using (true);
 
 -- Single row, fixed by the first real run: once the backfill has written older days, the
--- earliest day in message_counts no longer says where live counting began.
+-- earliest counts no longer say where live counting began.
 create table if not exists public.backfill_state (
     id smallint primary key default 1 check (id = 1),
-    boundary timestamptz not null
+    before_id text not null
 );
 
 alter table public.backfill_state enable row level security;
@@ -20,8 +32,8 @@ create policy "public read" on public.backfill_state for select to anon, authent
 -- One row per channel or thread read.
 create table if not exists public.backfill_cursors (
     channel_id text primary key,
-    -- Oldest message id already counted; before the first page, the snowflake of the
-    -- boundary. Only messages older than this are still to be read.
+    -- Oldest message id already counted; before the first page, backfill_state.before_id.
+    -- Only messages older than this are still to be read.
     before_id text not null,
     done boolean not null default false,
     updated_at timestamptz not null default now()

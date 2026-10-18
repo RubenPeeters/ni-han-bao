@@ -17,19 +17,48 @@ export function snowflakeAt(at: Date): string {
   return ((BigInt(at.getTime()) - DISCORD_EPOCH) << 22n).toString();
 }
 
+function snowflakeTime(id: string): number {
+  return Number((BigInt(id) >> 22n) + DISCORD_EPOCH);
+}
+
 /**
  * Where the backfill stops: the start of the earliest hour the live bot counted, or of the
  * current hour when it has counted nothing yet. Live counts land in that hour's channel bucket
  * and its day's member bucket; history counts are added to the same buckets, and the message
  * ranges do not overlap. Falls back to the first live day when member counts are older than
  * any channel count (a bot from before channel counts existed).
- * shortcut: messages in the first live hour from before the bot started are not counted; its
- * exact start was never recorded, and an hour is the finest grain stored.
+ * Only a fallback for backfillBefore: messages in the first live hour from before the bot
+ * started are missed.
  */
 export function backfillBoundary(firstLiveDay: string | null, firstLiveHour: string | null, now: Date): Date {
   if (firstLiveHour && (!firstLiveDay || firstLiveHour.slice(0, 10) <= firstLiveDay)) return new Date(firstLiveHour);
   if (firstLiveDay) return new Date(`${firstLiveDay}T00:00:00.000Z`);
   return new Date(`${now.toISOString().slice(0, 13)}:00:00.000Z`);
+}
+
+/**
+ * The id the backfill reads back from: older messages are history, the rest were counted live.
+ * `override` (a message id or ISO time) is the exact start of a bot from before
+ * first_counted_message existed, e.g. the time of its first `ready` log line. Otherwise the
+ * first message the live bot counted, unless it was recorded after the first live hour (by such
+ * an older bot, upgraded later); failing both, the start of the first live hour.
+ */
+export function backfillBefore(
+  override: string | null,
+  firstCountedId: string | null,
+  firstLiveDay: string | null,
+  firstLiveHour: string | null,
+  now: Date,
+): string {
+  if (override !== null && /^\d+$/.test(override)) return override;
+  if (override !== null) {
+    const at = new Date(override);
+    if (Number.isNaN(at.getTime())) throw new Error(`--before: not a message id or time: ${override}`);
+    return snowflakeAt(at);
+  }
+  const boundary = backfillBoundary(firstLiveDay, firstLiveHour, now);
+  if (firstCountedId && snowflakeTime(firstCountedId) < boundary.getTime() + 3_600_000) return firstCountedId;
+  return snowflakeAt(boundary);
 }
 
 type Result<T> = { data: T | null; error: { message: string } | null };

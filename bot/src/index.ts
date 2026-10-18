@@ -127,6 +127,21 @@ async function upsertMembers(rows: MemberRow[]): Promise<void> {
   if (error) throw new Error(`members upsert: ${error.message}`);
 }
 
+// Where the history backfill stops. Kept as the lowest id until written, because messages
+// from different channels can arrive slightly out of order.
+let firstCounted: string | null = null;
+let firstRecorded = false;
+
+async function recordFirstCounted(): Promise<void> {
+  if (firstRecorded || !firstCounted) return;
+  // ignoreDuplicates: a restart must not move it past messages already counted.
+  const { error } = await db
+    .from("first_counted_message")
+    .upsert({ message_id: firstCounted }, { ignoreDuplicates: true });
+  if (error) throw new Error(`first_counted_message upsert: ${error.message}`);
+  firstRecorded = true;
+}
+
 /** Logs each stream that failed and reports whether all of them were written. */
 async function flushAll(): Promise<boolean> {
   let ok = true;
@@ -134,7 +149,8 @@ async function flushAll(): Promise<boolean> {
     ok = false;
     log("warn", "flush_failed", { stream, error: err });
   };
-  await flushActivity(activity, {
+  // Counts only go out once their first message is recorded, so the backfill never re-counts one.
+  await recordFirstCounted().then(() => flushActivity(activity, {
     upsertMembers,
     async upsertChannels(rows) {
       const { error } = await db
@@ -150,7 +166,7 @@ async function flushAll(): Promise<boolean> {
       });
       if (error) throw new Error(`increment_activity: ${error.message}`);
     },
-  }).catch(failed("activity"));
+  })).catch(failed("activity"));
   await flushReactions(reactions, {
     upsertMembers,
     async incrementReactions(batch) {
@@ -258,6 +274,7 @@ client.on(Events.MessageCreate, (message) => {
     name: channel.name,
     parent: channel.isThread() ? channel.parent : null,
   });
+  if (!firstRecorded && (!firstCounted || BigInt(message.id) < BigInt(firstCounted))) firstCounted = message.id;
   activity.addMessage(message.author.id, row.channel_id, message.createdAt);
   activity.setMember(memberRow(message.author, message.member));
   activity.setChannel(row);
