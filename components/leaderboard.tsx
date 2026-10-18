@@ -48,13 +48,13 @@ export async function Leaderboard({ guild }: { guild: string }) {
   );
 }
 
-function Board({
+export function Board({
   guild,
   title,
   description,
   rows,
 }: {
-  guild: string;
+  guild?: string;
   title: string;
   description: string;
   rows: Row[];
@@ -72,7 +72,7 @@ function Board({
               name={row.display_name}
               avatarUrl={row.avatar_url}
               value={row.message_count.toLocaleString("en-US")}
-              href={`/s/${guild}/member/${row.user_id}`}
+              href={guild && `/s/${guild}/member/${row.user_id}`}
             />
           ))}
         </RankList>
