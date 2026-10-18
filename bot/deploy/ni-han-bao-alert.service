@@ -1,0 +1,9 @@
+[Unit]
+Description=Alert in Discord when the ni-han-bao bot or site is down
+
+[Service]
+Type=oneshot
+User=deploy
+StateDirectory=ni-han-bao-alert
+# Absent before the first release that ships it: exit 0 rather than fail every 5 minutes.
+ExecStart=/bin/sh -c '[ -x /opt/ni-han-bao/bot/deploy/alert.sh ] || exit 0; exec /opt/ni-han-bao/bot/deploy/alert.sh'
