@@ -2,7 +2,7 @@ import { PermissionFlagsBits } from "discord.js";
 import { describe, expect, it } from "vitest";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 
-const input = { subcommand: "show", channelId: null, canSend: false, timezone: null };
+const input = { subcommand: "show", channelId: null, canSend: false, timezone: null, include: null };
 
 describe("SETUP_COMMAND", () => {
   it("is for members with Manage Server only", () => {
@@ -30,6 +30,10 @@ describe("setupChange", () => {
   it("refuses an unknown time zone", () => {
     expect(setupChange({ ...input, subcommand: "timezone", timezone: "Brussels" })).toMatch(/not a time zone/);
   });
+  it("opts out of and back into the public totals", () => {
+    expect(setupChange({ ...input, subcommand: "public-totals", include: false })).toEqual({ public_totals_opt_out: true });
+    expect(setupChange({ ...input, subcommand: "public-totals", include: true })).toEqual({ public_totals_opt_out: false });
+  });
   it("changes nothing for show", () => expect(setupChange(input)).toBeNull());
 });
 
@@ -40,8 +44,8 @@ describe("applySetup", () => {
   it("saves the change and replies with the new settings", async () => {
     const { reply, settings } = await applySetup(writer, DEFAULT_SETTINGS, { report_channel_id: "c1" });
     expect(saved).toEqual([{ report_channel_id: "c1" }]);
-    expect(settings).toEqual({ report_channel_id: "c1", timezone: "UTC" });
-    expect(reply).toBe("Saved.\nWeekly report card: <#c1>\nTime zone: UTC");
+    expect(settings).toEqual({ report_channel_id: "c1", timezone: "UTC", public_totals_opt_out: false });
+    expect(reply).toBe("Saved.\nWeekly report card: <#c1>\nTime zone: UTC\nPublic totals: included");
   });
   it("shows the settings without saving", async () => {
     const { reply } = await applySetup(

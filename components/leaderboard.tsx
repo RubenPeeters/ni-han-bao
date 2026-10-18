@@ -31,7 +31,6 @@ export function utcWeekStart(now: Date): string {
 export async function Leaderboard({ guild }: { guild: string }) {
   const supabase = await createClient();
   const timeZone = await guildTimeZone(guild);
-  // shortcut: days are stored as UTC days, so the local week is off by the zone's offset.
   const monday = weekStart(new Date(), timeZone);
   const [week, allTime] = await Promise.all([
     supabase.rpc("leaderboard", { since: monday, top: TOP, guild }),

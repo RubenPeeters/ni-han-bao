@@ -22,7 +22,7 @@ import {
 } from "discord.js";
 import { createClient } from "@supabase/supabase-js";
 import { FORGET_CANCEL_ID, FORGET_COMMAND, FORGET_CONFIRM_ID, FORGET_PROMPT, forgetMe } from "./forget.js";
-import { channelRow, memberRow, shouldCount, utcDay, type MemberRow } from "./activity.js";
+import { channelRow, memberRow, shouldCount, type MemberRow } from "./activity.js";
 import { Backoff, flushUntil, InFlight } from "./backoff.js";
 import { loadConfig } from "./config.js";
 import { countsLive, loadBeforeId } from "./history.js";
@@ -55,7 +55,7 @@ import { flushServers, Server, type ServerWriter } from "./servers.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
-import { dayStart, weekStart } from "./zone.js";
+import { dayStart, localDay, weekStart } from "./zone.js";
 
 const HEARTBEAT_MS = 60_000;
 const FLUSH_MS = 10_000;
@@ -116,7 +116,7 @@ async function writeHeartbeat(): Promise<void> {
   const snapshot = await db.from("member_count_snapshots").upsert(
     guilds.map((guild) => ({
       guild_id: guild.id,
-      day: utcDay(now),
+      day: localDay(now, settingsFor(guild.id).timezone),
       member_count: guild.memberCount,
       updated_at: now.toISOString(),
     })),
@@ -133,6 +133,8 @@ const settingsFor = (guildId: string) => settings.get(guildId) ?? DEFAULT_SETTIN
 
 // Servers whose backfill boundary is known; events from any other server are not counted.
 const servers = new Map<string, Server>();
+// Days are counted in the zone set now, so a /setup timezone change applies from then on.
+const newServer = (id: string, liveFrom: string) => new Server(id, liveFrom, () => settingsFor(id).timezone);
 
 let flushing: Promise<boolean> | null = null;
 // Flushes and reaction lookups started before shutdown; they may still add or write counts.
@@ -680,6 +682,7 @@ async function setupCommand(interaction: ChatInputCommandInteraction<"cached">):
       !!me &&
       !!channel.permissionsFor(me)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]),
     timezone: interaction.options.getString("timezone"),
+    include: interaction.options.getBoolean("include"),
   });
   const { reply, settings: next } = await applySetup(
     {
@@ -815,7 +818,11 @@ async function backfillServer(guildId: string): Promise<void> {
   if (error) throw new Error(`backfill_state select: ${error.message}`);
   if (data?.done_at) return;
   // A failed channel leaves the server not done; the next start resumes it.
-  await backfillGuild(db, guild, { log, stopped: () => stopping || !client.guilds.cache.has(guildId) });
+  await backfillGuild(db, guild, {
+    log,
+    stopped: () => stopping || !client.guilds.cache.has(guildId),
+    timeZone: settingsFor(guildId).timezone,
+  });
 }
 
 /**
@@ -833,7 +840,7 @@ async function startServer(guild: Guild): Promise<void> {
     // Not caught: a server without its boundary goes uncounted, so the rejection is fatal and
     // Docker restarts the bot to try again.
     const liveFrom = await loadBeforeId(db, guild.id);
-    if (!servers.has(guild.id)) servers.set(guild.id, new Server(guild.id, liveFrom));
+    if (!servers.has(guild.id)) servers.set(guild.id, newServer(guild.id, liveFrom));
     log("info", "live_counting_from", { guild: guild.id, before_id: liveFrom });
   }
   const server = servers.get(guild.id)!;
@@ -939,12 +946,12 @@ process.on("uncaughtException", (error) => fatal("uncaught_exception", error));
 // shortcut: PostgREST returns at most 1000 rows; beyond that many servers, page this.
 const { data: boundaries, error: boundariesError } = await db.from("backfill_state").select("guild_id, before_id");
 if (boundariesError) throw new Error(`backfill_state: ${boundariesError.message}`);
-for (const b of boundaries) servers.set(b.guild_id, new Server(b.guild_id, b.before_id));
+for (const b of boundaries) servers.set(b.guild_id, newServer(b.guild_id, b.before_id));
 // Before login, so no report or command runs on the defaults of a configured server.
 // shortcut: PostgREST returns at most 1000 rows; beyond that many servers, page this.
 const { data: savedSettings, error: settingsError } = await db
   .from("guild_settings")
-  .select("guild_id, report_channel_id, timezone");
+  .select("guild_id, report_channel_id, timezone, public_totals_opt_out");
 if (settingsError) throw new Error(`guild_settings: ${settingsError.message}`);
 for (const { guild_id, ...row } of savedSettings) settings.set(guild_id, row);
 await client.login(config.discordToken);

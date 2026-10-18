@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { shouldCount, utcDay, type MemberRow, type MessageInfo } from "./activity.js";
+import { shouldCount, type MemberRow, type MessageInfo } from "./activity.js";
+import { localDay } from "./zone.js";
 
 export interface EmojiInfo {
   id: string | null;
@@ -90,19 +91,22 @@ export class ReactionBuffer {
   /** A batch whose write failed; resent unchanged under the same id, as in ActivityBuffer. */
   pending: ReactionBatch | null = null;
 
+  /** `timeZone`: the server's, as in ActivityBuffer. */
+  constructor(private readonly timeZone: () => string = () => "UTC") {}
+
   /** `reactor` (null when not a known member) is written before the count, which references it. */
   addEmoji(emoji: EmojiRow, at: Date, reactor: MemberRow | null): void {
     this.emojis.set(emoji.emoji_key, emoji);
-    this.addEmojiCount({ emoji_key: emoji.emoji_key, day: utcDay(at), count: 1 });
+    this.addEmojiCount({ emoji_key: emoji.emoji_key, day: localDay(at, this.timeZone()), count: 1 });
     if (!reactor) return;
     this.members.set(reactor.user_id, reactor);
-    this.addMemberEmojiCount({ user_id: reactor.user_id, emoji_key: emoji.emoji_key, day: utcDay(at), count: 1 });
+    this.addMemberEmojiCount({ user_id: reactor.user_id, emoji_key: emoji.emoji_key, day: localDay(at, this.timeZone()), count: 1 });
   }
 
   /** `author` is written before the count, which references it. */
   addReceived(author: MemberRow, at: Date): void {
     this.members.set(author.user_id, author);
-    this.addReceivedCount({ user_id: author.user_id, day: utcDay(at), count: 1 });
+    this.addReceivedCount({ user_id: author.user_id, day: localDay(at, this.timeZone()), count: 1 });
   }
 
   private addEmojiCount(c: EmojiCountRow): void {

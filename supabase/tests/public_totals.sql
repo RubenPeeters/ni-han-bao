@@ -1,4 +1,4 @@
--- Checks public_totals() for anon and my_guilds() for a logged-in visitor and for anon.
+-- Checks public_totals() for anon (including a server's opt-out) and my_guilds() for a logged-in visitor and for anon.
 -- Run against a local database with the migrations applied:
 --   supabase db reset && psql "$(supabase status -o env | grep DB_URL | cut -d= -f2- | tr -d '"')" \
 --     -v ON_ERROR_STOP=1 -f supabase/tests/public_totals.sql
@@ -47,6 +47,21 @@ do $$
 begin
     if (select array_agg(name) from public.my_guilds()) is distinct from array['Alpha', 'Bravo'] then
         raise exception 'my_guilds() is %', (select array_agg(name) from public.my_guilds());
+    end if;
+end;
+$$;
+
+-- A server that opted out with /setup public-totals is left out of every total.
+reset role;
+insert into public.guild_settings (guild_id, public_totals_opt_out) values ('t-c', true), ('t-b', false);
+set local role anon;
+
+do $$
+declare t record;
+begin
+    select * into t from public.public_totals('2026-10-12');
+    if (t.servers, t.members, t.messages_since, t.active_since) is distinct from (2::bigint, 1::bigint, 5::bigint, 1::bigint) then
+        raise exception 'public_totals() with t-c opted out is %', t;
     end if;
 end;
 $$;

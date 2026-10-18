@@ -6,8 +6,10 @@ import {
   StatCard,
   StatGrid,
 } from "@/components/stat-ui";
+import { guildTimeZone } from "@/lib/guild";
 import { countingSince, WARMUP_DAYS, warmingUp } from "@/lib/history";
 import { createClient } from "@/lib/supabase/server";
+import { localDay } from "@/lib/time";
 
 const TOP = 10;
 const DAY_MS = 24 * 60 * 60_000;
@@ -63,7 +65,9 @@ const shortDate = (day: string) =>
 
 export async function TimelineStats({ guild }: { guild: string }) {
   const supabase = await createClient();
-  const now = Date.now();
+  const timeZone = await guildTimeZone(guild);
+  // Today on the server's calendar, as midnight UTC: the bot stores these days as its local days.
+  const now = Date.parse(localDay(new Date(), timeZone));
   const monthStart = `${isoDay(now).slice(0, 7)}-01`;
   const [snapshots, flow, voice, state] = await Promise.all([
     supabase
@@ -81,21 +85,21 @@ export async function TimelineStats({ guild }: { guild: string }) {
   ]);
   // Member counts and joins are only counted live, never backfilled, so their first days
   // would chart as a sudden start. A failed read of the state just shows the charts.
-  const warming = !!state.data && warmingUp(countingSince(state.data.before_id), new Date(now));
+  const warming = !!state.data && warmingUp(countingSince(state.data.before_id), new Date());
 
   if (snapshots.error || flow.error || voice.error) {
     return <ErrorState title="Could not load the timeline">Try again in a minute.</ErrorState>;
   }
   return (
     <StatGrid>
-      <MemberCount rows={snapshots.data} warming={warming} />
-      <JoinsLeaves rows={weeklyFlow(flow.data, now)} warming={warming} />
-      <TopVoice rows={voice.data} />
+      <MemberCount rows={snapshots.data} warming={warming} timeZone={timeZone} />
+      <JoinsLeaves rows={weeklyFlow(flow.data, now)} warming={warming} timeZone={timeZone} />
+      <TopVoice rows={voice.data} timeZone={timeZone} />
     </StatGrid>
   );
 }
 
-function MemberCount({ rows, warming }: { rows: SnapshotRow[]; warming: boolean }) {
+function MemberCount({ rows, warming, timeZone }: { rows: SnapshotRow[]; warming: boolean; timeZone: string }) {
   // The SVG stretches to its box (preserveAspectRatio="none") and H matches its CSS height,
   // so y() is in pixels and the HTML axis labels line up; labels inside a scaled SVG
   // would shrink to unreadable on a phone.
@@ -116,7 +120,7 @@ function MemberCount({ rows, warming }: { rows: SnapshotRow[]; warming: boolean 
   return (
     <StatCard
       title="Members"
-      description={`Member count per day, UTC, last ${HISTORY_DAYS} days${
+      description={`Member count per day, ${timeZone}, last ${HISTORY_DAYS} days${
         last ? ` · now ${last.member_count.toLocaleString("en-US")}` : ""
       }`}
       wide
@@ -208,7 +212,7 @@ function MemberCount({ rows, warming }: { rows: SnapshotRow[]; warming: boolean 
   );
 }
 
-function JoinsLeaves({ rows, warming }: { rows: WeekRow[]; warming: boolean }) {
+function JoinsLeaves({ rows, warming, timeZone }: { rows: WeekRow[]; warming: boolean; timeZone: string }) {
   const max = Math.max(...rows.flatMap((r) => [r.joins, r.leaves]));
   const bar = (n: number, color: string) => (
     <span
@@ -219,7 +223,7 @@ function JoinsLeaves({ rows, warming }: { rows: WeekRow[]; warming: boolean }) {
   return (
     <StatCard
       title="Joins vs leaves"
-      description={`Per week (from Monday, UTC), last ${WEEKS} weeks`}
+      description={`Per week (from Monday, ${timeZone}), last ${WEEKS} weeks`}
       wide
       aside={
         <ul className="flex gap-3 text-xs text-muted-foreground">
@@ -291,9 +295,9 @@ function WarmingUp() {
   return <EmptyState>Warming up: this chart appears after {WARMUP_DAYS} days of counting.</EmptyState>;
 }
 
-function TopVoice({ rows }: { rows: VoiceRow[] }) {
+function TopVoice({ rows, timeZone }: { rows: VoiceRow[]; timeZone: string }) {
   return (
-    <StatCard title="Top voice members" description="Time in voice channels this month (UTC)" wide>
+    <StatCard title="Top voice members" description={`Time in voice channels this month (${timeZone})`} wide>
       {rows.length === 0 ? (
         <EmptyState>The top voice members this month appear here once someone joins voice.</EmptyState>
       ) : (

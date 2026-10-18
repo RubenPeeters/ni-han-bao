@@ -1,5 +1,6 @@
 // Wall-clock time in a server's time zone (set with /setup timezone), for "today", "this
-// week" and the weekly report. Stored counts stay in UTC days and hours.
+// week" and the weekly report. Per-day counts are stored on the server's local days (in the
+// zone set when they were counted); hourly counts stay UTC instants.
 
 const DAY_MS = 24 * 60 * 60_000;
 const formats = new Map<string, Intl.DateTimeFormat>();

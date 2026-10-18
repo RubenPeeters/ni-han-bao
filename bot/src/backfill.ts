@@ -23,7 +23,10 @@ try {
   await client.login(config.discordToken);
   const guild = await client.guilds.fetch(config.guildId);
   await guild.members.fetch();
-  if (!(await backfillGuild(db, guild, { dryRun, log: createLogger() }))) process.exitCode = 1;
+  const settings = await db.from("guild_settings").select("timezone").eq("guild_id", guild.id).maybeSingle();
+  if (settings.error) throw new Error(`guild_settings: ${settings.error.message}`);
+  const timeZone = settings.data?.timezone ?? "UTC";
+  if (!(await backfillGuild(db, guild, { dryRun, log: createLogger(), timeZone }))) process.exitCode = 1;
 } finally {
   await client.destroy();
 }

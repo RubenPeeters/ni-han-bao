@@ -144,6 +144,7 @@ export async function backfillChannel(
   guildId: string,
   io: HistoryIo,
   pageSize = HISTORY_PAGE_SIZE,
+  timeZone = "UTC",
 ): Promise<number> {
   let { beforeId, done } = cursor;
   let total = 0;
@@ -151,7 +152,7 @@ export async function backfillChannel(
     const messages = await io.fetchBefore(beforeId, pageSize);
     const nextBeforeId = messages.reduce((min, m) => (BigInt(m.id) < BigInt(min) ? m.id : min), beforeId);
     done = messages.length < pageSize;
-    const buffer = new ActivityBuffer();
+    const buffer = new ActivityBuffer(() => timeZone);
     let counted = 0;
     for (const m of messages) {
       if (!shouldCount(m, guildId)) continue;

@@ -7,8 +7,11 @@ create table if not exists public.guild_settings (
     guild_id text primary key,
     -- Null: no weekly report card.
     report_channel_id text,
-    -- IANA name; the bot checks it before writing. Days stored elsewhere stay UTC days.
+    -- IANA name; the bot checks it before writing. From now on the bot stores this server's
+    -- per-day counts on its local days; earlier rows stay on UTC days.
     timezone text not null default 'UTC',
+    -- True: left out of public_totals(), the logged-out home page's totals.
+    public_totals_opt_out boolean not null default false,
     updated_at timestamptz not null default now()
 );
 
@@ -47,9 +50,8 @@ $$;
 grant execute on function public.channel_heatmap(timestamptz, text, text) to anon, authenticated;
 
 -- Everything one report card shows, for the days [since, until) in the server's time zone.
--- shortcut: message, emoji and flow counts are stored per UTC day, so their window is off by
--- the zone's UTC offset; only the hourly channel counts follow it exactly. Store local days
--- if that ever matters.
+-- Per-day counts are already on the server's local days; the hourly channel counts are
+-- windowed on its local midnights here.
 drop function if exists public.report_card(date, date, text);
 create function public.report_card(
     since date, until date, guild text default '1525456003854897152', tz text default 'UTC'
@@ -112,3 +114,34 @@ $$;
 
 revoke execute on function public.report_card(date, date, text, text) from public, anon, authenticated;
 grant execute on function public.report_card(date, date, text, text) to service_role;
+
+-- Same totals, minus the servers that opted out with /setup public-totals. The bot's
+-- heartbeat stays: it is the bot's, not a server's.
+create or replace function public.public_totals(since date)
+returns table (
+    servers bigint,
+    members bigint,
+    messages_since bigint,
+    active_since bigint,
+    bot_last_seen timestamptz,
+    bot_avatar_url text
+)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+    with opted_out as (
+        select s.guild_id from public.guild_settings s where s.public_totals_opt_out
+    )
+    select
+        (select count(*) from public.guilds g where g.guild_id not in (select guild_id from opted_out)),
+        (select count(distinct m.user_id) from public.guild_members m
+            where m.guild_id not in (select guild_id from opted_out)),
+        (select coalesce(sum(c.count), 0)::bigint from public.message_counts c
+            where c.day >= since and c.guild_id not in (select guild_id from opted_out)),
+        (select count(distinct c.user_id) from public.message_counts c
+            where c.day >= since and c.count > 0 and c.guild_id not in (select guild_id from opted_out)),
+        (select max(b.last_seen) from public.bot_status b),
+        (select b.avatar_url from public.bot_status b order by b.last_seen desc limit 1);
+$$;
