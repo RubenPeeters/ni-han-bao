@@ -2,9 +2,11 @@ import {
   ActivityType,
   type ChatInputCommandInteraction,
   Client,
+  type Collection,
   Events,
   GatewayIntentBits,
   type Guild,
+  type GuildMember,
   MessageFlags,
   type MessageReaction,
   Partials,
@@ -18,7 +20,7 @@ import { Backoff, flushUntil, InFlight } from "./backoff.js";
 import { loadConfig } from "./config.js";
 import { countsLive, loadBeforeId } from "./history.js";
 import { createLogger } from "./log.js";
-import { keyedQueue, syncMembers } from "./membership.js";
+import { keyedQueue, memberFetchRetryMs, syncMembers } from "./membership.js";
 import { nextPresence, PRESENCE_PHRASES } from "./presence.js";
 import { emojiRow, receivesReaction } from "./reactions.js";
 import {
@@ -376,14 +378,31 @@ async function removeMembers(guildId: string, userIds: string[]): Promise<void> 
   if (error) throw new Error(`guild_members delete: ${error.message}`);
 }
 
-/** Full resync of one server: its row, then its member list diffed against what is stored. */
-function syncGuild(guild: Guild): Promise<void> {
+/** Every member of the server, retrying while Discord rate limits the request. */
+async function fetchMembers(guild: Guild): Promise<Collection<string, GuildMember>> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await guild.members.fetch();
+    } catch (err) {
+      const delay = memberFetchRetryMs(err, attempt);
+      if (delay === null) throw err;
+      log("warn", "membership_sync_retry", { guild: guild.id, attempt, retry_in_ms: delay });
+      await new Promise<void>((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
+/**
+ * Full resync of one server: its row, then its member list diffed against what is stored.
+ * Returns the fetched members, so startup needs no second (rate limited) fetch.
+ */
+function syncGuild(guild: Guild): Promise<Collection<string, GuildMember>> {
   return membership(guild.id, () => syncGuildNow(guild));
 }
 
-async function syncGuildNow(guild: Guild): Promise<void> {
+async function syncGuildNow(guild: Guild): Promise<Collection<string, GuildMember>> {
   await upsertGuild(guild);
-  const members = await guild.members.fetch();
+  const members = await fetchMembers(guild);
   const result = await syncMembers(
     [...members.values()].filter((m) => !m.user.bot).map((m) => m.id),
     {
@@ -402,6 +421,7 @@ async function syncGuildNow(guild: Guild): Promise<void> {
     },
   );
   log("info", "membership_synced", { guild: guild.id, ...result });
+  return members;
 }
 
 // Emitted after ready only for servers the bot joins; those it is already in start on ready.
@@ -659,9 +679,15 @@ async function startServer(guild: Guild): Promise<void> {
     log("info", "live_counting_from", { guild: guild.id, before_id: liveFrom });
   }
   const server = servers.get(guild.id)!;
+  let members: Collection<string, GuildMember> | undefined;
+  try {
+    members = await syncGuild(guild);
+  } catch (err) {
+    log("error", "membership_sync_failed", { guild: guild.id, error: err });
+  }
   // Names and avatars may have changed while the bot was offline (or out of the server).
   try {
-    for (const member of (await guild.members.fetch()).values()) {
+    for (const member of members?.values() ?? []) {
       if (!member.user.bot) server.activity.setMember(memberRow(member.user, member));
     }
     // Whoever was in voice before counting started is counted from now on.
@@ -673,7 +699,6 @@ async function startServer(guild: Guild): Promise<void> {
   } catch (err) {
     log("error", "member_sync_failed", { guild: guild.id, error: err });
   }
-  await tracked("membership_sync", syncGuild(guild));
 }
 
 client.once(Events.ClientReady, async (c) => {
