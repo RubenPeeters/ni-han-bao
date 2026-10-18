@@ -6,8 +6,7 @@ import {
   StatCard,
   StatGrid,
 } from "@/components/stat-ui";
-import { createPublicClient } from "@/lib/supabase/public";
-import { cacheLife } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
 
 const TOP = 10;
 
@@ -28,9 +27,7 @@ export function utcWeekStart(now: Date): string {
 }
 
 export async function Leaderboard({ guild }: { guild: string }) {
-  "use cache";
-  cacheLife("stats");
-  const supabase = createPublicClient();
+  const supabase = await createClient();
   const weekStart = utcWeekStart(new Date());
   const [week, allTime] = await Promise.all([
     supabase.rpc("leaderboard", { since: weekStart, top: TOP, guild }),
@@ -42,13 +39,23 @@ export async function Leaderboard({ guild }: { guild: string }) {
   }
   return (
     <StatGrid>
-      <Board title="This week" description={`Since Monday ${weekStart} (UTC)`} rows={week.data} />
-      <Board title="All time" description="Every message since the bot joined" rows={allTime.data} />
+      <Board guild={guild} title="This week" description={`Since Monday ${weekStart} (UTC)`} rows={week.data} />
+      <Board guild={guild} title="All time" description="Every message since the bot joined" rows={allTime.data} />
     </StatGrid>
   );
 }
 
-function Board({ title, description, rows }: { title: string; description: string; rows: Row[] }) {
+function Board({
+  guild,
+  title,
+  description,
+  rows,
+}: {
+  guild: string;
+  title: string;
+  description: string;
+  rows: Row[];
+}) {
   return (
     <StatCard title={title} description={description}>
       {rows.length === 0 ? (
@@ -62,6 +69,7 @@ function Board({ title, description, rows }: { title: string; description: strin
               name={row.display_name}
               avatarUrl={row.avatar_url}
               value={row.message_count.toLocaleString("en-US")}
+              href={`/s/${guild}/member/${row.user_id}`}
             />
           ))}
         </RankList>

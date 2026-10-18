@@ -1,22 +1,26 @@
 import { Leaderboard } from "@/components/leaderboard";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
-import { GUILD_ID } from "@/lib/guild";
+import { memberGuild } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
 export const metadata = { title: "Leaderboard · ni han bao" };
 
-export default function LeaderboardPage() {
+export default function LeaderboardPage({ params }: PageProps<"/s/[guildId]/leaderboard">) {
   return (
     <>
       <PageHeader title="Leaderboard" description="Who talks the most." />
       {hasEnvVars ? (
         <Suspense fallback={<StatsSkeleton cards={2} />}>
-          <Leaderboard guild={GUILD_ID} />
+          <LeaderboardForMember params={params} />
         </Suspense>
       ) : (
         <NotConfigured />
       )}
     </>
   );
+}
+
+async function LeaderboardForMember({ params }: { params: Promise<{ guildId: string }> }) {
+  return <Leaderboard guild={await memberGuild(params)} />;
 }

@@ -1,22 +1,26 @@
 import { TimelineStats } from "@/components/timeline-stats";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
-import { GUILD_ID } from "@/lib/guild";
+import { memberGuild } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
 export const metadata = { title: "Timeline · ni han bao" };
 
-export default function TimelinePage() {
+export default function TimelinePage({ params }: PageProps<"/s/[guildId]/timeline">) {
   return (
     <>
       <PageHeader title="Timeline" description="How the server grows, and who hangs out in voice." />
       {hasEnvVars ? (
         <Suspense fallback={<StatsSkeleton cards={3} wide />}>
-          <TimelineStats guild={GUILD_ID} />
+          <TimelineStatsForMember params={params} />
         </Suspense>
       ) : (
         <NotConfigured />
       )}
     </>
   );
+}
+
+async function TimelineStatsForMember({ params }: { params: Promise<{ guildId: string }> }) {
+  return <TimelineStats guild={await memberGuild(params)} />;
 }

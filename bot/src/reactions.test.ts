@@ -66,9 +66,9 @@ describe("receivesReaction", () => {
 describe("ReactionBuffer", () => {
   it("aggregates into one row per emoji per UTC day", () => {
     const buf = new ReactionBuffer();
-    for (let i = 0; i < 3; i++) buf.addEmoji(thumbs, day);
-    buf.addEmoji(thumbs, new Date("2026-10-18T00:00:01Z"));
-    buf.addEmoji(pog, new Date("2026-10-17T23:59:59Z"));
+    for (let i = 0; i < 3; i++) buf.addEmoji(thumbs, day, null);
+    buf.addEmoji(thumbs, new Date("2026-10-18T00:00:01Z"), null);
+    buf.addEmoji(pog, new Date("2026-10-17T23:59:59Z"), null);
     const drained = buf.drain();
     expect(drained.emojiCounts).toEqual([
       { emoji_key: "👍", day: "2026-10-17", count: 3 },
@@ -80,11 +80,29 @@ describe("ReactionBuffer", () => {
 
   it("keeps the latest emoji name", () => {
     const buf = new ReactionBuffer();
-    buf.addEmoji(pog, day);
-    buf.addEmoji({ ...pog, name: "poggers" }, day);
+    buf.addEmoji(pog, day, null);
+    buf.addEmoji({ ...pog, name: "poggers" }, day, null);
     const drained = buf.drain();
     expect(drained.emojis).toEqual([{ ...pog, name: "poggers" }]);
     expect(drained.emojiCounts).toEqual([{ emoji_key: "111", day: "2026-10-17", count: 2 }]);
+  });
+
+  it("counts each reactor's emoji per UTC day, with the reactor's row", () => {
+    const buf = new ReactionBuffer();
+    buf.addEmoji(thumbs, day, alice);
+    buf.addEmoji(thumbs, day, { ...alice, display_name: "Alice 2" });
+    buf.addEmoji(pog, day, alice);
+    buf.addEmoji(pog, day, null);
+    const drained = buf.drain();
+    expect(drained.memberEmojiCounts).toEqual([
+      { user_id: "a", emoji_key: "👍", day: "2026-10-17", count: 2 },
+      { user_id: "a", emoji_key: "111", day: "2026-10-17", count: 1 },
+    ]);
+    expect(drained.emojiCounts).toEqual([
+      { emoji_key: "👍", day: "2026-10-17", count: 2 },
+      { emoji_key: "111", day: "2026-10-17", count: 2 },
+    ]);
+    expect(drained.members).toEqual([alice]);
   });
 
   it("counts received reactions per author per UTC day, with the author's row", () => {
@@ -98,10 +116,10 @@ describe("ReactionBuffer", () => {
 
   it("restores a failed drain on top of newer reactions", () => {
     const buf = new ReactionBuffer();
-    buf.addEmoji(pog, day);
+    buf.addEmoji(pog, day, null);
     buf.addReceived(alice, day);
     const old = buf.drain();
-    buf.addEmoji({ ...pog, name: "poggers" }, day);
+    buf.addEmoji({ ...pog, name: "poggers" }, day, null);
     buf.restore(old);
     const drained = buf.drain();
     expect(drained.emojis).toEqual([{ ...pog, name: "poggers" }]);
@@ -134,7 +152,7 @@ describe("flushReactions", () => {
       incrementReactions: async () => void order.push("counts"),
     });
     const buf = new ReactionBuffer();
-    buf.addEmoji(thumbs, day);
+    buf.addEmoji(thumbs, day, null);
     buf.addReceived(alice, day);
     await flushReactions(buf, w, () => "b1");
     expect(order).toEqual(["members", "counts"]);
@@ -143,7 +161,7 @@ describe("flushReactions", () => {
 
   it("keeps everything when the members write fails", async () => {
     const buf = new ReactionBuffer();
-    buf.addEmoji(thumbs, day);
+    buf.addEmoji(thumbs, day, alice);
     buf.addReceived(alice, day);
     const w = writer({ upsertMembers: async () => Promise.reject(new Error("down")) });
     await expect(flushReactions(buf, w)).rejects.toThrow("down");
@@ -153,6 +171,7 @@ describe("flushReactions", () => {
       emojis: [thumbs],
       emojiCounts: [{ emoji_key: "👍", day: "2026-10-17", count: 1 }],
       receivedCounts: [{ user_id: "a", day: "2026-10-17", count: 1 }],
+      memberEmojiCounts: [{ user_id: "a", emoji_key: "👍", day: "2026-10-17", count: 1 }],
     });
   });
 
@@ -178,12 +197,12 @@ describe("flushReactions", () => {
     const newId = () => ids.shift()!;
 
     const buf = new ReactionBuffer();
-    buf.addEmoji(thumbs, day);
-    buf.addEmoji(thumbs, day);
+    buf.addEmoji(thumbs, day, null);
+    buf.addEmoji(thumbs, day, null);
     await expect(flushReactions(buf, w, newId)).rejects.toThrow("connection reset");
     expect(buf.pending?.id).toBe("b1");
 
-    buf.addEmoji(thumbs, day);
+    buf.addEmoji(thumbs, day, null);
     await flushReactions(buf, w, newId);
 
     expect(sent.map((b) => b.id)).toEqual(["b1", "b1", "b2"]);

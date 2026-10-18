@@ -1,4 +1,5 @@
-// Proves anonymous visitors reach every stat page without a redirect (#26).
+// Proves anonymous visitors reach the public pages without a redirect (#26), and that the
+// old single-server URLs send them to the server picker (#44).
 // Runs against the production build, so `next build` must have run first.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -13,7 +14,8 @@ if (functions["/_middleware"]) {
   process.exit(1);
 }
 
-const PAGES = ["/", "/leaderboard", "/channels", "/emoji", "/timeline"];
+const PAGES = ["/", "/s", "/about"];
+const LEGACY = ["/leaderboard", "/channels", "/emoji", "/timeline"];
 const port = 3999;
 const base = `http://localhost:${port}`;
 
@@ -39,6 +41,13 @@ try {
     const ok = res.status === 200;
     if (!ok) failed = true;
     console.log(`${ok ? "ok  " : "FAIL"} ${path} -> ${res.status} ${res.headers.get("location") ?? ""}`);
+  }
+  for (const path of LEGACY) {
+    const res = await fetch(base + path, { redirect: "manual" });
+    const location = res.headers.get("location") ?? "";
+    const ok = res.status === 307 && new URL(location, base).pathname === "/s";
+    if (!ok) failed = true;
+    console.log(`${ok ? "ok  " : "FAIL"} ${path} -> ${res.status} ${location}`);
   }
   // Unknown paths get the styled not-found page (#58), not Next's default one.
   const res = await fetch(`${base}/no-such-page`, { redirect: "manual" });

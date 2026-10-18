@@ -150,6 +150,7 @@ function writerFor(guildId: string): ServerWriter {
         counts: batch.counts,
         channel_counts: batch.channelCounts,
         guild: guildId,
+        member_channel_counts: batch.memberChannelCounts,
       });
       if (error) throw new Error(`increment_activity: ${error.message}`);
     },
@@ -160,6 +161,7 @@ function writerFor(guildId: string): ServerWriter {
         emoji_counts: batch.emojiCounts,
         received_counts: batch.receivedCounts,
         guild: guildId,
+        member_emoji_counts: batch.memberEmojiCounts,
       });
       if (error) throw new Error(`increment_reactions: ${error.message}`);
     },
@@ -289,7 +291,9 @@ async function countReaction(
   const emoji = emojiRow(reaction.emoji);
   if (!emoji) return;
   const at = new Date();
-  server.reactions.addEmoji(emoji, at);
+  // The member cache is complete (see UserUpdate), so a miss is someone no longer in the server.
+  const reactor = message.guild?.members.cache.get(user.id);
+  server.reactions.addEmoji(emoji, at, reactor ? memberRow(reactor.user, reactor) : null);
   try {
     // A partial message has no author yet. Fetching it is fine: without the MessageContent
     // intent its text comes back empty, and only the author is read from it.
