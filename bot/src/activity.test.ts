@@ -16,7 +16,7 @@ const GUILD = "g1";
 const human = { guildId: GUILD, authorIsBot: false, webhookId: null, system: false };
 const alice = { user_id: "a", display_name: "Alice", avatar_url: "https://cdn/a.png" };
 const general = { channel_id: "c1", name: "general" };
-const empty = { members: [], channels: [], counts: [], channelCounts: [] };
+const empty = { members: [], channels: [], counts: [], channelCounts: [], memberChannelCounts: [] };
 
 describe("shouldCount", () => {
   it("counts a member message in our guild", () => {
@@ -163,6 +163,21 @@ describe("ActivityBuffer", () => {
     ]);
   });
 
+  it("aggregates into one row per member per channel per UTC day", () => {
+    const buf = new ActivityBuffer();
+    buf.addMessage("a", "c1", new Date("2026-10-17T10:00:00Z"));
+    buf.addMessage("a", "c1", new Date("2026-10-17T23:59:59Z"));
+    buf.addMessage("a", "c2", new Date("2026-10-17T10:00:00Z"));
+    buf.addMessage("b", "c1", new Date("2026-10-17T10:00:00Z"));
+    buf.addMessage("a", "c1", new Date("2026-10-18T00:00:00Z"));
+    expect(buf.drain().memberChannelCounts).toEqual([
+      { user_id: "a", channel_id: "c1", day: "2026-10-17", count: 2 },
+      { user_id: "a", channel_id: "c2", day: "2026-10-17", count: 1 },
+      { user_id: "b", channel_id: "c1", day: "2026-10-17", count: 1 },
+      { user_id: "a", channel_id: "c1", day: "2026-10-18", count: 1 },
+    ]);
+  });
+
   it("keeps the latest channel name", () => {
     const buf = new ActivityBuffer();
     buf.setChannel(general);
@@ -206,6 +221,7 @@ describe("ActivityBuffer", () => {
       channels: [{ ...general, name: "chat" }],
       counts: [{ user_id: "a", day: "2026-10-17", count: 3 }],
       channelCounts: [{ channel_id: "c1", hour: "2026-10-17T10:00:00.000Z", count: 3 }],
+      memberChannelCounts: [{ user_id: "a", channel_id: "c1", day: "2026-10-17", count: 3 }],
     });
   });
 });
@@ -265,6 +281,7 @@ describe("flushActivity", () => {
       channels: [general],
       counts: [{ user_id: "a", day: "2026-10-17", count: 1 }],
       channelCounts: [{ channel_id: "c1", hour: "2026-10-17T10:00:00.000Z", count: 1 }],
+      memberChannelCounts: [{ user_id: "a", channel_id: "c1", day: "2026-10-17", count: 1 }],
     });
   });
 
@@ -278,6 +295,7 @@ describe("flushActivity", () => {
       id: "b1",
       counts: [{ user_id: "a", day: "2026-10-17", count: 1 }],
       channelCounts: [{ channel_id: "c1", hour: "2026-10-17T10:00:00.000Z", count: 1 }],
+      memberChannelCounts: [{ user_id: "a", channel_id: "c1", day: "2026-10-17", count: 1 }],
     });
     expect(buf.drain()).toEqual(empty);
   });
@@ -323,6 +341,7 @@ describe("flushActivity", () => {
       id: "b1",
       counts: [{ user_id: "a", day: "2026-10-17", count: 2 }],
       channelCounts: [{ channel_id: "c1", hour: "2026-10-17T10:00:00.000Z", count: 2 }],
+      memberChannelCounts: [{ user_id: "a", channel_id: "c1", day: "2026-10-17", count: 2 }],
     };
     buf.addMessage("a", "c1", day);
     const sent: string[] = [];

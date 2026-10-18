@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { CircleAlert, Inbox } from "lucide-react";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 export function PageHeader({ title, description }: { title: string; description: string }) {
@@ -63,11 +64,13 @@ export function MemberRankRow({
   name,
   avatarUrl,
   value,
+  href,
 }: {
   rank: number;
   name: string;
   avatarUrl: string | null;
   value: string;
+  href?: string;
 }) {
   return (
     <RankRow rank={rank} value={value}>
@@ -90,7 +93,13 @@ export function MemberRankRow({
           {name.slice(0, 1).toUpperCase()}
         </span>
       )}
-      <span className="min-w-0 flex-1 truncate">{name}</span>
+      {href ? (
+        <Link href={href} className="min-w-0 flex-1 truncate underline-offset-4 hover:text-primary hover:underline">
+          {name}
+        </Link>
+      ) : (
+        <span className="min-w-0 flex-1 truncate">{name}</span>
+      )}
     </RankRow>
   );
 }

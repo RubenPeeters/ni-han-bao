@@ -6,6 +6,7 @@ import {
   type ChannelCountRow,
   type ChannelRow,
   type CountRow,
+  type MemberChannelCountRow,
   type MemberRow,
   type MessageInfo,
 } from "./activity.js";
@@ -100,6 +101,7 @@ export interface Page {
   members: MemberRow[];
   counts: CountRow[];
   channelCounts: ChannelCountRow[];
+  memberChannelCounts: MemberChannelCountRow[];
 }
 
 export interface HistoryIo {
@@ -136,9 +138,9 @@ export async function backfillChannel(
       buffer.setMember(m.author);
       counted++;
     }
-    const { members, counts, channelCounts } = buffer.drain();
+    const { members, counts, channelCounts, memberChannelCounts } = buffer.drain();
     // Refused: the cursor moved under us (a concurrent run), so stop rather than race it.
-    if (!(await io.writePage({ beforeId, nextBeforeId, done, members, counts, channelCounts }))) break;
+    if (!(await io.writePage({ beforeId, nextBeforeId, done, members, counts, channelCounts, memberChannelCounts }))) break;
     total += counted;
     beforeId = nextBeforeId;
   }

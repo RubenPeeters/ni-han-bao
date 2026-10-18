@@ -152,6 +152,7 @@ async function main(): Promise<void> {
             finished: page.done,
             counts: page.counts,
             channel_counts: page.channelCounts,
+            member_channel_counts: page.memberChannelCounts,
           }),
         );
       },
