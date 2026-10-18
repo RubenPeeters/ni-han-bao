@@ -60,16 +60,22 @@ export function newStore(input: { name: string; city: string; link: string | nul
   if (!name || !city) return "Give the store a name and a city.";
   let url: string | null = null;
   if (input.link?.trim()) {
-    try {
-      const parsed = new URL(input.link.trim());
-      // The site renders it as a link: anything but https (javascript:, data:, http) stays out.
-      if (parsed.protocol !== "https:") throw new Error("not https");
-      url = parsed.href;
-    } catch {
-      return "The link must be a full https:// address, like https://playriftbound.com/...";
-    }
+    url = httpsUrl(input.link);
+    if (!url) return LINK_ERROR;
   }
   return { game, name, city, url };
+}
+
+export const LINK_ERROR = "The link must be a full https:// address, like https://playriftbound.com/...";
+
+/** `text` as a normalized https URL, or null. The site renders it as a link: javascript:, data: and http stay out. */
+export function httpsUrl(text: string): string | null {
+  try {
+    const parsed = new URL(text.trim());
+    return parsed.protocol === "https:" ? parsed.href : null;
+  } catch {
+    return null;
+  }
 }
 
 export function storeLabel(store: Pick<Store, "game" | "name" | "city">): string {
@@ -101,6 +107,6 @@ export function storeList(stores: Store[], siteUrl: string | null, guildId: stri
   return text.length <= 2000 ? text : `${text.slice(0, 1997)}...`;
 }
 
-function escapeMarkdown(text: string): string {
+export function escapeMarkdown(text: string): string {
   return text.replace(/[\\*_~`|>[\]()]/g, "\\$&");
 }

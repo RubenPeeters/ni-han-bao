@@ -1,4 +1,5 @@
 import { CountingStatus } from "@/components/counting-status";
+import { EventStats } from "@/components/event-stats";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
 import { StoreStats } from "@/components/store-stats";
 import { memberGuild } from "@/lib/guild";
@@ -7,15 +8,15 @@ import { Suspense } from "react";
 
 export const metadata = {
   title: "Where we play · ni han bao",
-  description: "The local game stores this server plays at.",
+  description: "The local game stores this server plays at, and who is going where.",
 };
 
 export default function StoresPage({ params }: PageProps<"/s/[guildId]/stores">) {
   return (
     <>
-      <PageHeader title="Where we play" description="The local game stores this server plays at." />
+      <PageHeader title="Where we play" description="The local game stores this server plays at, and who is going where." />
       {hasEnvVars ? (
-        <Suspense fallback={<StatsSkeleton cards={1} wide />}>
+        <Suspense fallback={<StatsSkeleton cards={2} wide />}>
           <StoreStatsForMember params={params} />
         </Suspense>
       ) : (
@@ -30,6 +31,7 @@ async function StoreStatsForMember({ params }: { params: Promise<{ guildId: stri
   return (
     <>
       <CountingStatus guild={guild} />
+      <EventStats guild={guild} />
       <StoreStats guild={guild} />
     </>
   );
