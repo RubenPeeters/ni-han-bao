@@ -7,6 +7,7 @@ check: install
 	node scripts/check-design-tokens.mjs
 	pnpm build
 	node scripts/check-public-pages.mjs
+	node --test lib/*.test.mjs
 	pnpm --filter ni-han-bao-bot typecheck
 	pnpm --filter ni-han-bao-bot test
 

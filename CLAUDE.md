@@ -15,7 +15,8 @@ Discord ──gateway──► bot/ (discord.js, container on the Hetzner box)
 - `bot/`: TypeScript package (`pnpm --filter ni-han-bao-bot ...`). Entry `bot/src/index.ts`.
   Deployed from `main` by a timer on the box; see `bot/deploy/`.
 - Website: the Next.js app at the repo root (App Router, `cacheComponents`), deployed by
-  Vercel: `main` to production, every other branch to a preview URL.
+  Vercel, from `main` only (`vercel.json`): other branches get no preview deployment, which
+  keeps the Hobby plan under its daily deploy limit. Check visual changes with `make screenshots`.
 - Database: `supabase/migrations/*.sql`, applied by `.github/workflows/migrate.yml` on push
   to `dev` and `main`. Stack choices: `stack.toml`.
 
@@ -25,7 +26,7 @@ Discord ──gateway──► bot/ (discord.js, container on the Hetzner box)
   not add it. Store counts, timestamps, ids and names only.
 - Every table: RLS enabled, a `select` policy for `anon`, no write policies. Only the bot
   writes, with the secret key. The secret key never appears in website code.
-- `dev` previews and production share **one** database. Migrations must be additive and
+- `dev` (and local runs) and production share **one** database. Migrations must be additive and
   backwards compatible: add tables/columns, never rename or drop in the same release.
 - Per-server tables carry `guild_id`, and every new per-server table must have it. The bot
   writes it explicitly (`DISCORD_GUILD_ID`); every site query filters on it (`lib/guild.ts`).

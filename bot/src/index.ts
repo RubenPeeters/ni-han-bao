@@ -24,6 +24,7 @@ import {
 } from "./activity.js";
 import { Backoff, flushUntil, InFlight } from "./backoff.js";
 import { loadConfig } from "./config.js";
+import { countsLive, loadBeforeId } from "./history.js";
 import { createLogger } from "./log.js";
 import { keyedQueue, syncMembers } from "./membership.js";
 import { nextPresence, PRESENCE_PHRASES } from "./presence.js";
@@ -97,6 +98,8 @@ async function writeHeartbeat(): Promise<void> {
     guild_id: guild.id,
     guild_name: guild.name,
     member_count: guild.memberCount,
+    // Discord's CDN URL, so changing the avatar on Discord changes the site.
+    avatar_url: client.user?.displayAvatarURL({ size: 256 }) ?? null,
     last_seen: new Date().toISOString(),
   });
   if (error) log("error", "heartbeat_failed", { error: error.message });
@@ -257,7 +260,7 @@ client.on(Events.MessageCreate, (message) => {
     config.guildId,
   );
   // inGuild() is implied by shouldCount; it is here to narrow the channel type.
-  if (!counted || !message.inGuild()) return;
+  if (!counted || !message.inGuild() || !countsLive(message.id, liveFrom)) return;
   const { channel } = message;
   const row = channelRow({
     id: channel.id,
@@ -708,4 +711,8 @@ function fatal(event: string, error: unknown): void {
 process.on("unhandledRejection", (reason) => fatal("unhandled_rejection", reason));
 process.on("uncaughtException", (error) => fatal("uncaught_exception", error));
 
+// Before login, so no message is counted without it. Throws (and Docker retries) when the
+// database is unreachable.
+const liveFrom = await loadBeforeId(db, config.guildId);
+log("info", "live_counting_from", { before_id: liveFrom });
 await client.login(config.discordToken);

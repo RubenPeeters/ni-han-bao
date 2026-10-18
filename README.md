@@ -17,6 +17,70 @@
 </p>
 <br/>
 
+## How changes are made
+
+Every change starts as a GitHub issue and is built by **forge**: Claude Code implements,
+Codex, Gemini and Muse review, and the PR merges into `dev` once all reviewers approve and CI
+is green. `main` is what runs in production (the website on Vercel and the bot).
+
+An issue's state is one label:
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    intake: intake
+    approved: approved
+    progress: in-progress
+    review: in-review
+    ready: ready
+    done: done
+    human: needs-human
+    stalled: usage-stalled
+
+    [*] --> intake: suggested by someone else
+    [*] --> approved: filed by the owner
+    intake --> approved: owner approves
+    approved --> progress: forge picks it up
+    progress --> review: PR opened into dev
+    review --> review: blocking findings, implementer fixes, re-review
+    review --> ready: all reviewers approve
+    ready --> review: conflict with dev resolved, re-review
+    ready --> done: CI green, merged into dev
+    progress --> human: stopped
+    review --> human: stopped
+    ready --> human: stopped
+    progress --> stalled: usage limit
+    review --> stalled: usage limit
+    stalled --> progress: retried after the pause
+    human --> approved: owner fixes the cause, re-approves
+    done --> [*]
+```
+
+| Label | Meaning |
+|---|---|
+| `intake` | Suggested, not approved yet; nothing runs. |
+| `approved` | Queued. Lowest issue number first; `priority` jumps the queue. |
+| `in-progress` / `in-review` / `ready` | Being implemented, reviewed, or waiting for CI. |
+| `usage-stalled` | An AI agent hit its usage limit; forge retries by itself. |
+| `needs-human` | forge stopped; the last `forge stopped` comment on the issue or its PR says why. |
+| `done` | Merged into `dev`; reaches production with the next release. |
+
+**Restarting a `needs-human` issue:** fix the cause first (a decision the issue left open
+goes into the issue text), *then* add the `approved` label. Editing the text after
+approving voids the approval. forge starts again on a new branch; close the old PR.
+
+**Releasing:** a release PR from `dev` into `main` merges itself once CI is green. On merge,
+the release notes become a GitHub Release and a post in Discord.
+
+```mermaid
+flowchart LR
+    A[feature branch] -->|PR, reviewed, CI| B(dev)
+    B -->|release PR| C{CI green?}
+    C -->|yes: auto-merge| D(main)
+    D --> E[GitHub Release + Discord post]
+    D --> F[Vercel production, bot redeploy]
+```
+
 ## Features
 
 - Works across the entire [Next.js](https://nextjs.org) stack

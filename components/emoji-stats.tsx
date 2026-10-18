@@ -7,12 +7,12 @@ import {
   StatCard,
   StatGrid,
 } from "@/components/stat-ui";
-import { GUILD_ID } from "@/lib/guild";
-import { createClient } from "@/lib/supabase/server";
+import { createPublicClient } from "@/lib/supabase/public";
+import { cacheLife } from "next/cache";
 
 const TOP = 10;
 
-interface EmojiRow {
+export interface EmojiRow {
   emoji_key: string;
   emoji_id: string | null;
   name: string | null;
@@ -27,11 +27,13 @@ interface MemberRow {
   reaction_count: number;
 }
 
-export async function EmojiStats() {
-  const supabase = await createClient();
+export async function EmojiStats({ guild }: { guild: string }) {
+  "use cache";
+  cacheLife("stats");
+  const supabase = createPublicClient();
   const [emoji, members] = await Promise.all([
-    supabase.rpc("top_emoji", { top: TOP, guild: GUILD_ID }),
-    supabase.rpc("most_reacted_members", { top: TOP, guild: GUILD_ID }),
+    supabase.rpc("top_emoji", { top: TOP, guild }),
+    supabase.rpc("most_reacted_members", { top: TOP, guild }),
   ]);
 
   if (emoji.error || members.error) {
@@ -45,7 +47,7 @@ export async function EmojiStats() {
   );
 }
 
-function Emoji({ row }: { row: EmojiRow }) {
+export function Emoji({ row }: { row: EmojiRow }) {
   if (!row.emoji_id) {
     return <span className="flex size-7 shrink-0 items-center justify-center text-2xl">{row.name}</span>;
   }
