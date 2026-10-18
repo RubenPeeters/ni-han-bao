@@ -26,8 +26,11 @@ Discord ──gateway──► bot/ (discord.js, container on the Hetzner box)
   not add it. Store counts, timestamps, ids and names only.
 - Every table: RLS enabled, a `select` policy for `anon`, no write policies. Only the bot
   writes, with the secret key. The secret key never appears in website code.
-- `dev` (and local runs) and production share **one** database. Migrations must be additive and
-  backwards compatible: add tables/columns, never rename or drop in the same release.
+- Two databases: `dev` migrates the **dev** Supabase project, `main` migrates **production**
+  (`migrate.yml`). A migration reaches production only with the release that carries the
+  code using it, so a breaking change (rename, drop) is allowed when it ships together with
+  its code. Production still runs the previous release until then: never assume production
+  data matches `dev`.
 - Per-server tables carry `guild_id`, and every new per-server table must have it. The bot
   writes it explicitly (`DISCORD_GUILD_ID`); every site query filters on it (`lib/guild.ts`).
 - Migration files are named `YYYYMMDDHHMMSS_description.sql` and are never edited once merged.
