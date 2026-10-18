@@ -27,6 +27,8 @@ Discord ──gateway──► bot/ (discord.js, container on the Hetzner box)
   writes, with the secret key. The secret key never appears in website code.
 - `dev` previews and production share **one** database. Migrations must be additive and
   backwards compatible: add tables/columns, never rename or drop in the same release.
+- Per-server tables carry `guild_id`, and every new per-server table must have it. The bot
+  writes it explicitly (`DISCORD_GUILD_ID`); every site query filters on it (`lib/guild.ts`).
 - Migration files are named `YYYYMMDDHHMMSS_description.sql` and are never edited once merged.
 - The site is public and shows member names. Anything per-member must respect the opt-out
   (once it exists): hidden members appear in no list and no chart.
@@ -34,6 +36,9 @@ Discord ──gateway──► bot/ (discord.js, container on the Hetzner box)
 ## Commands
 
 - `make check`: lint + build the site, typecheck + test the bot. Must pass before pushing.
+- `make screenshots`: build the site and write full-page PNGs of every page (375px and
+  1280px, dark) to `.forge/screenshots/`. Pages are discovered from `app/**/page.tsx`. Look
+  at them after any visible change; forge also attaches them to every review.
 - Bot tests: `bot/src/*.test.ts` (vitest). Keep Discord and Supabase out of unit tests:
   put logic in pure functions and test those.
 

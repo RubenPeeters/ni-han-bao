@@ -1,0 +1,46 @@
+// Proves anonymous visitors reach every stat page without a redirect (#26).
+// Runs against the production build, so `next build` must have run first.
+import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+
+// CI builds without Supabase env vars, and the starter's proxy skipped its redirect in that
+// case, so a 200 below alone would not catch it coming back: also require that no proxy exists.
+const { functions } = JSON.parse(
+  readFileSync(".next/server/functions-config-manifest.json", "utf8"),
+);
+if (functions["/_middleware"]) {
+  console.error("FAIL a proxy/middleware is built; it could redirect anonymous visitors");
+  process.exit(1);
+}
+
+const PAGES = ["/", "/leaderboard", "/channels", "/emoji", "/timeline"];
+const port = 3999;
+const base = `http://localhost:${port}`;
+
+const server = spawn("pnpm", ["exec", "next", "start", "-p", String(port)], {
+  stdio: "ignore",
+  detached: true,
+});
+const stop = () => process.kill(-server.pid);
+
+let failed = false;
+try {
+  for (let i = 0; ; i++) {
+    try {
+      await fetch(base, { redirect: "manual" });
+      break;
+    } catch {
+      if (i >= 60) throw new Error("next start did not come up within 30s");
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+  for (const path of PAGES) {
+    const res = await fetch(base + path, { redirect: "manual" });
+    const ok = res.status === 200;
+    if (!ok) failed = true;
+    console.log(`${ok ? "ok  " : "FAIL"} ${path} -> ${res.status} ${res.headers.get("location") ?? ""}`);
+  }
+} finally {
+  stop();
+}
+process.exit(failed ? 1 : 0);

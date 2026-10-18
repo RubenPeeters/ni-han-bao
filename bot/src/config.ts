@@ -3,6 +3,10 @@ export interface Config {
   guildId: string;
   supabaseUrl: string;
   supabaseSecretKey: string;
+  /** Website base URL for links in command replies; null leaves the links out. */
+  siteUrl: string | null;
+  /** Channel for the weekly report card; null turns the report off. */
+  reportChannelId: string | null;
 }
 
 const REQUIRED = {
@@ -18,7 +22,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (missing.length) {
     throw new Error(`missing environment variables: ${missing.join(", ")}`);
   }
-  return Object.fromEntries(
-    Object.entries(REQUIRED).map(([key, name]) => [key, env[name] as string]),
-  ) as unknown as Config;
+  return {
+    ...Object.fromEntries(Object.entries(REQUIRED).map(([key, name]) => [key, env[name] as string])),
+    // Optional so a box without it keeps counting; only the reply links go missing.
+    siteUrl: env.SITE_URL || null,
+    reportChannelId: env.REPORT_CHANNEL_ID || null,
+  } as unknown as Config;
 }
