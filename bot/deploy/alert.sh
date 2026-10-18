@@ -8,11 +8,12 @@ set -a; . ./.env; set +a
 state="${STATE_DIRECTORY:-/var/lib/ni-han-bao-alert}"
 mkdir -p "$state"
 
-# Every server's row is written in the same heartbeat, so one fresh row means the bot is up.
+# bot_status is members-only (#45); public_totals() gives anon the newest heartbeat. `since`
+# only feeds the message totals, which are not read here.
 cutoff=$(date -u -d '-10 min' +%Y-%m-%dT%H:%M:%SZ)
 fresh=$(curl -fsS --max-time 20 \
   -H "apikey: $SUPABASE_PUBLISHABLE_KEY" -H "Authorization: Bearer $SUPABASE_PUBLISHABLE_KEY" \
-  "$SUPABASE_URL/rest/v1/bot_status?select=guild_id&last_seen=gte.$cutoff&limit=1")
+  "$SUPABASE_URL/rest/v1/rpc/public_totals?since=$(date -u +%F)&select=bot_last_seen&bot_last_seen=gte.$cutoff")
 # An unreadable heartbeat counts as stale: nobody can tell the bot is alive.
 [ -n "$fresh" ] && [ "$fresh" != "[]" ] && bot_up=1 || bot_up=0
 
