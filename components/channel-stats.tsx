@@ -67,7 +67,7 @@ function BusiestChannels({ rows }: { rows: ChannelRow[] }) {
   return (
     <StatCard title="Busiest channels" description={`Messages, last ${BUSIEST_DAYS} days`} wide>
       {rows.length === 0 ? (
-        <EmptyState>No messages counted yet.</EmptyState>
+        <EmptyState>The busiest channels appear here once people send messages.</EmptyState>
       ) : (
         <RankList>
           {rows.map((row, i) => (
@@ -113,7 +113,7 @@ function Heatmap({ grid }: { grid: number[][] }) {
       }
     >
       {max === 0 ? (
-        <EmptyState>No messages counted yet.</EmptyState>
+        <EmptyState>The busiest hours of the week appear here once people send messages.</EmptyState>
       ) : (
         // Fixed layout with fluid cells: 24 columns fit a 375px screen without scrolling.
         <table className="w-full table-fixed border-separate border-spacing-0.5 text-xs text-muted-foreground">

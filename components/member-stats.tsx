@@ -1,3 +1,4 @@
+import { CountingStatus } from "@/components/counting-status";
 import { Emoji, type EmojiRow } from "@/components/emoji-stats";
 import {
   EmptyState,
@@ -61,6 +62,7 @@ export async function MemberStats({ guild, member }: { guild: string; member: st
   return (
     <>
       <PageHeader title={profile.data.display_name} description="Their activity in this server." />
+      <CountingStatus guild={guild} />
       <StatGrid>
         <Activity rows={weeklyCounts(days.data, now, WEEKS)} />
         <TopChannels rows={channels.data} />
@@ -75,7 +77,7 @@ function Activity({ rows }: { rows: { week: string; count: number }[] }) {
   return (
     <StatCard title="Activity" description={`Messages per week (from Monday, UTC), last ${WEEKS} weeks`} wide>
       {max === 0 ? (
-        <EmptyState>No messages in the last {WEEKS} weeks.</EmptyState>
+        <EmptyState>Their messages per week appear here once they send one.</EmptyState>
       ) : (
         <>
           <div className="flex flex-col gap-1" aria-hidden>
@@ -125,7 +127,7 @@ function TopChannels({ rows }: { rows: ChannelRow[] }) {
   return (
     <StatCard title="Top channels" description="Messages, all time">
       {rows.length === 0 ? (
-        <EmptyState>No messages counted yet.</EmptyState>
+        <EmptyState>The channels they talk in most appear here once they send messages.</EmptyState>
       ) : (
         <RankList>
           {rows.map((row, i) => (
@@ -143,7 +145,7 @@ function TopEmoji({ rows }: { rows: EmojiRow[] }) {
   return (
     <StatCard title="Top emoji" description="Reactions they added, all time">
       {rows.length === 0 ? (
-        <EmptyState>No reactions counted yet.</EmptyState>
+        <EmptyState>The emoji they react with most appear here once they react.</EmptyState>
       ) : (
         <RankList>
           {rows.map((row, i) => (

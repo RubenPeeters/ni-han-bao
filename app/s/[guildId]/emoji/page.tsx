@@ -1,4 +1,5 @@
 import { EmojiStats } from "@/components/emoji-stats";
+import { CountingStatus } from "@/components/counting-status";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
 import { memberGuild } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
@@ -25,5 +26,11 @@ export default function EmojiPage({ params }: PageProps<"/s/[guildId]/emoji">) {
 }
 
 async function EmojiStatsForMember({ params }: { params: Promise<{ guildId: string }> }) {
-  return <EmojiStats guild={await memberGuild(params)} />;
+  const guild = await memberGuild(params);
+  return (
+    <>
+      <CountingStatus guild={guild} />
+      <EmojiStats guild={guild} />
+    </>
+  );
 }
