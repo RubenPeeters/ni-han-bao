@@ -52,7 +52,8 @@ async function main() {
     await waitForServer(base);
     const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
     try {
-      for (const route of routesFrom()) {
+      // The not-found page has no page.tsx to discover, so photograph it via an unknown path.
+      for (const route of [...routesFrom(), "/not-found"]) {
         for (const width of WIDTHS) {
           const ctx = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: "dark" });
           const page = await ctx.newPage();
