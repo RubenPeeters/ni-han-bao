@@ -69,6 +69,9 @@ export default function RootLayout({
                 <Link href="/about" className="hover:text-foreground">
                   About &amp; privacy
                 </Link>
+                <Link href="/terms" className="hover:text-foreground">
+                  Terms
+                </Link>
               </span>
               {hasEnvVars && (
                 <Suspense fallback={<span>Bot status…</span>}>
