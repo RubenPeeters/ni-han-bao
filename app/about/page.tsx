@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/stat-ui";
+import { RIOT_DISCLAIMER } from "@/lib/utils";
 import type { ReactNode } from "react";
 
 export const metadata = {
@@ -104,6 +105,7 @@ export default function AboutPage() {
           </a>
           . The code is public there too.
         </p>
+        <p>{RIOT_DISCLAIMER}</p>
       </Section>
     </>
   );

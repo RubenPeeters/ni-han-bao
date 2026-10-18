@@ -7,7 +7,7 @@ import { AuthButton } from "@/components/auth-button";
 import { BotStatusDot } from "@/components/bot-status";
 import { SiteNav } from "@/components/site-nav";
 import { ThemeSwitcher } from "@/components/theme-switcher";
-import { hasEnvVars } from "@/lib/utils";
+import { hasEnvVars, RIOT_DISCLAIMER } from "@/lib/utils";
 import "./globals.css";
 
 // Link previews need absolute image URLs that unfurlers can fetch. VERCEL_URL is the
@@ -86,6 +86,7 @@ export default function RootLayout({
                   <BotStatusDot />
                 </Suspense>
               )}
+              <p className="basis-full">{RIOT_DISCLAIMER}</p>
             </footer>
           </div>
         </ThemeProvider>
