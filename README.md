@@ -81,6 +81,21 @@ flowchart LR
     D --> F[Vercel production, bot redeploy]
 ```
 
+## Numbers
+
+The website uses [Vercel Web Analytics](https://vercel.com/docs/analytics) in production
+(cookieless, so no banner; turn it on in the Vercel project's Analytics tab). Member ids are
+cut from the URLs it reports; server ids stay. What is tracked and why is also on `/about`.
+
+Metrics to check once a month (Ruben):
+
+| Metric | Where |
+|---|---|
+| Servers with the bot | `select count(*) from guilds;` |
+| Servers with ≥1 site visit per week | Vercel Analytics → Pages, last 7 days: distinct ids among `/s/<id>/...` paths |
+| `/setup` completion rate | `select count(*) from guild_settings s join guilds g using (guild_id);` ÷ servers with the bot |
+| Recap posts per month | `select month, count(*) from monthly_recaps where posted_at is not null group by 1 order by 1;` |
+
 ## Features
 
 - Works across the entire [Next.js](https://nextjs.org) stack

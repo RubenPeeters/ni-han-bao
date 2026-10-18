@@ -23,6 +23,14 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image" },
 };
 
+// Vercel Web Analytics, cookieless. The script is served by Vercel itself, so it is only
+// added in production; member ids are cut from the URLs it reports, server ids are kept for
+// the "servers with a visit per week" metric (README).
+const analytics =
+  process.env.VERCEL_ENV === "production"
+    ? `window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments)};window.va("beforeSend",function(e){return Object.assign({},e,{url:e.url.replace(/\\/member\\/[^/?#]+/,"/member/[userId]")})});`
+    : null;
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   display: "swap",
@@ -81,6 +89,12 @@ export default function RootLayout({
             </footer>
           </div>
         </ThemeProvider>
+        {analytics && (
+          <>
+            <script dangerouslySetInnerHTML={{ __html: analytics }} />
+            <script defer src="/_vercel/insights/script.js" />
+          </>
+        )}
       </body>
     </html>
   );

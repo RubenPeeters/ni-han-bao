@@ -80,6 +80,19 @@ export default function AboutPage() {
           if you want them deleted.
         </p>
       </Section>
+      <Section title="Numbers about the site">
+        <p>
+          To learn whether anyone visits and which pages matter, the website uses Vercel Web
+          Analytics. It sets no cookies and does not follow you across sites or days: it counts
+          page views per page, with the referring site, country, browser and device type. Server
+          ids in the address are kept, so we can see how many servers are looked at each week;
+          member ids are cut out first.
+        </p>
+        <p>
+          From the bot&apos;s own data we also watch, once a month: how many servers have the
+          bot, how many set it up with <Cmd>/setup</Cmd>, and how many monthly recaps it posts.
+        </p>
+      </Section>
       <Section title="Who runs it">
         <p>
           ni han bao is a hobby project by Ruben. Questions, or a request to delete data?{" "}
