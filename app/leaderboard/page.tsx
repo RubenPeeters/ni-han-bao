@@ -1,5 +1,6 @@
 import { Leaderboard } from "@/components/leaderboard";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
+import { GUILD_ID } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
@@ -11,7 +12,7 @@ export default function LeaderboardPage() {
       <PageHeader title="Leaderboard" description="Who talks the most." />
       {hasEnvVars ? (
         <Suspense fallback={<StatsSkeleton cards={2} />}>
-          <Leaderboard />
+          <Leaderboard guild={GUILD_ID} />
         </Suspense>
       ) : (
         <NotConfigured />

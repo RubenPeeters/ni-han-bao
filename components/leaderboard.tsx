@@ -6,8 +6,8 @@ import {
   StatCard,
   StatGrid,
 } from "@/components/stat-ui";
-import { GUILD_ID } from "@/lib/guild";
-import { createClient } from "@/lib/supabase/server";
+import { createPublicClient } from "@/lib/supabase/public";
+import { cacheLife } from "next/cache";
 
 const TOP = 10;
 
@@ -27,12 +27,14 @@ export function utcWeekStart(now: Date): string {
   return monday.toISOString().slice(0, 10);
 }
 
-export async function Leaderboard() {
-  const supabase = await createClient();
+export async function Leaderboard({ guild }: { guild: string }) {
+  "use cache";
+  cacheLife("stats");
+  const supabase = createPublicClient();
   const weekStart = utcWeekStart(new Date());
   const [week, allTime] = await Promise.all([
-    supabase.rpc("leaderboard", { since: weekStart, top: TOP, guild: GUILD_ID }),
-    supabase.rpc("leaderboard", { top: TOP, guild: GUILD_ID }),
+    supabase.rpc("leaderboard", { since: weekStart, top: TOP, guild }),
+    supabase.rpc("leaderboard", { top: TOP, guild }),
   ]);
 
   if (week.error || allTime.error) {
