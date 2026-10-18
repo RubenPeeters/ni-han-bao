@@ -18,7 +18,7 @@ function setup() {
     `#!/bin/sh
 case "$*" in
   *hook.test*) [ -n "$FAIL_POST" ] && exit 22; for a; do [ "$prev" = -d ] && echo "$a" >> "${dir}/posts"; prev=$a; done ;;
-  *db.test*) [ -n "$HEARTBEAT" ] || exit 7; printf '%s' "$HEARTBEAT" ;;
+  *db.test/rest/v1/rpc/public_totals*) [ -n "$HEARTBEAT" ] || exit 7; printf '%s' "$HEARTBEAT" ;;
   *site.test*) printf '%s' "$CODE" ;;
 esac
 `,
@@ -39,7 +39,7 @@ esac
   return { run, posts };
 }
 
-const UP = { HEARTBEAT: '[{"guild_id":"1"}]', CODE: "200" };
+const UP = { HEARTBEAT: '[{"bot_last_seen":"2026-10-18T12:00:00+00:00"}]', CODE: "200" };
 
 describe("alert.sh", () => {
   it("stays quiet while everything is up", () => {
