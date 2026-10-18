@@ -42,6 +42,10 @@ begin
         insert into public.store_regulars (guild_id, store_id, user_id) values (g, s, 'rls-user');
     end loop;
     insert into public.guild_members (guild_id, user_id) values ('rls-mine', 'rls-user');
+    -- A member who ran /hide-me: none of their regulars may show.
+    insert into public.members (guild_id, user_id, display_name, hidden) values ('rls-mine', 'rls-hidden', 'x', true);
+    insert into public.store_regulars (guild_id, store_id, user_id)
+    select 'rls-mine', id, 'rls-hidden' from public.stores where guild_id = 'rls-mine';
     -- anon cannot read keys itself, so hand it one for the recap checks below.
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
@@ -90,6 +94,12 @@ begin
         if mine = 0 then raise exception 'a member reads no rows of their own server from %', t; end if;
         if other <> 0 then raise exception 'a member reads % rows of other servers from %', other, t; end if;
     end loop;
+    if exists (select from public.store_regulars where user_id = 'rls-hidden') then
+        raise exception 'a member reads the regulars of a hidden member';
+    end if;
+    if (select sum(regulars) from public.store_regular_counts('rls-mine')) <> 1 then
+        raise exception 'store_regular_counts() does not count just the visible regular';
+    end if;
     if (select count(*) from public.my_guilds()) <> 1 then raise exception 'my_guilds() is not just mine'; end if;
     if public.monthly_recap('rls-mine', '2025-12-01') is null then raise exception 'a member cannot read their recap'; end if;
     if public.monthly_recap('rls-other', '2025-12-01') is not null then raise exception 'a member reads another server''s recap'; end if;

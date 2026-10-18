@@ -31,14 +31,42 @@ create table if not exists public.store_regulars (
 
 alter table public.store_regulars enable row level security;
 
+-- Security definer because the members policy hides hidden rows, so a policy subquery
+-- could never find them. Answers only for servers the caller is a member of.
+create or replace function public.is_hidden_member(g text, member text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+    select public.is_guild_member(g) and exists (
+        select from public.members m where m.guild_id = g and m.user_id = member and m.hidden
+    );
+$$;
+
+revoke execute on function public.is_hidden_member(text, text) from public;
+grant execute on function public.is_hidden_member(text, text) to authenticated, service_role;
+
 -- Opt-out: a member hidden in this server is not counted. Members without a members row
 -- (never posted) are not hidden, so they count.
 create policy "members read" on public.store_regulars for select to authenticated using (
-    public.is_guild_member(guild_id) and not exists (
-        select from public.members m
-        where m.guild_id = store_regulars.guild_id and m.user_id = store_regulars.user_id and m.hidden
-    )
+    public.is_guild_member(guild_id) and not public.is_hidden_member(guild_id, user_id)
 );
+
+-- Regulars per store, counted in the database: one row per regular would hit PostgREST's
+-- row limit. Security invoker, so the policy above leaves out hidden members.
+create or replace function public.store_regular_counts(guild text)
+returns table (store_id bigint, regulars bigint)
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+    select r.store_id, count(*) from public.store_regulars r where r.guild_id = guild group by r.store_id;
+$$;
+
+grant execute on function public.store_regular_counts(text) to authenticated;
 
 create trigger skip_forgotten before insert on public.store_regulars
     for each row execute function public.skip_forgotten();
