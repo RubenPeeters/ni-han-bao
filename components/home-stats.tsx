@@ -2,39 +2,51 @@ import { loadStatus } from "@/components/bot-status";
 import { Emoji, type EmojiRow } from "@/components/emoji-stats";
 import { utcWeekStart } from "@/components/leaderboard";
 import { ErrorState } from "@/components/stat-ui";
-import { GUILD_ID } from "@/lib/guild";
-import { createClient } from "@/lib/supabase/server";
+import { createPublicClient } from "@/lib/supabase/public";
+import { cacheLife } from "next/cache";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
-export async function HomeStats() {
-  const supabase = await createClient();
+// Cached apart from loadStatus(), which must stay live. Returns null on a query error.
+async function loadWeekStats(guild: string) {
+  "use cache";
+  cacheLife("stats");
+  const supabase = createPublicClient();
   const weekStart = utcWeekStart(new Date());
-  const [status, messages, channel, emoji] = await Promise.all([
-    loadStatus(),
-    supabase.rpc("message_total", { since: weekStart, guild: GUILD_ID }),
+  const [messages, channel, emoji] = await Promise.all([
+    supabase.rpc("message_total", { since: weekStart, guild }),
     supabase.rpc("busiest_channels", {
       since: `${weekStart}T00:00:00Z`,
       top: 1,
-      guild: GUILD_ID,
+      guild,
     }),
-    supabase.rpc("top_emoji", { since: weekStart, top: 1, guild: GUILD_ID }),
+    supabase.rpc("top_emoji", { since: weekStart, top: 1, guild }),
   ]);
 
-  if (status.error || messages.error || channel.error || emoji.error) {
+  if (messages.error || channel.error || emoji.error) return null;
+  return {
+    messages: (messages.data as number | null) ?? 0,
+    busiest: channel.data[0] as { name: string; message_count: number } | undefined,
+    topEmoji: emoji.data[0] as EmojiRow | undefined,
+  };
+}
+
+export async function HomeStats({ guild }: { guild: string }) {
+  const [status, week] = await Promise.all([loadStatus(), loadWeekStats(guild)]);
+
+  if (status.error || !week) {
     return <ErrorState title="Could not load server stats">Try again in a minute.</ErrorState>;
   }
-  const busiest = channel.data[0] as { name: string; message_count: number } | undefined;
-  const topEmoji = emoji.data[0] as EmojiRow | undefined;
+  const { messages, busiest, topEmoji } = week;
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <HomeStat href="/timeline" label="Members">
         {status.data ? fmt(status.data.member_count) : <Empty>Not seen yet</Empty>}
       </HomeStat>
       <HomeStat href="/leaderboard" label="Messages this week">
-        {fmt(messages.data ?? 0)}
+        {fmt(messages)}
       </HomeStat>
       <HomeStat href="/channels" label="Busiest channel this week">
         {busiest ? <span className="block truncate" title={`#${busiest.name}`}>#{busiest.name}</span> : <Empty>No messages yet</Empty>}

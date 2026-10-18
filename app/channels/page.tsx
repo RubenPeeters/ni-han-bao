@@ -1,5 +1,6 @@
 import { ChannelStats } from "@/components/channel-stats";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
+import { GUILD_ID } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
@@ -11,7 +12,7 @@ export default function ChannelsPage() {
       <PageHeader title="Channels" description="Where and when it is busy." />
       {hasEnvVars ? (
         <Suspense fallback={<StatsSkeleton cards={2} wide />}>
-          <ChannelStats />
+          <ChannelStats guild={GUILD_ID} />
         </Suspense>
       ) : (
         <NotConfigured />

@@ -2,6 +2,7 @@ import { BotAvatar, HeroAvatar, HeroStatus, StatusPill } from "@/components/bot-
 import { HomeStats, HomeStatsSkeleton } from "@/components/home-stats";
 import { NotConfigured } from "@/components/stat-ui";
 import { Button } from "@/components/ui/button";
+import { GUILD_ID } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -36,7 +37,7 @@ export default function Home() {
       </section>
       {hasEnvVars ? (
         <Suspense fallback={<HomeStatsSkeleton />}>
-          <HomeStats />
+          <HomeStats guild={GUILD_ID} />
         </Suspense>
       ) : (
         <NotConfigured />
