@@ -4,7 +4,10 @@ import { memberGuild } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
-export const metadata = { title: "Timeline · ni han bao" };
+export const metadata = {
+  title: "Timeline · ni han bao",
+  description: "How the server grows, and who hangs out in voice.",
+};
 
 export default function TimelinePage({ params }: PageProps<"/s/[guildId]/timeline">) {
   return (

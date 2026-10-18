@@ -10,14 +10,17 @@ import { ThemeSwitcher } from "@/components/theme-switcher";
 import { hasEnvVars } from "@/lib/utils";
 import "./globals.css";
 
-const defaultUrl = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : "http://localhost:3000";
+// Link previews need absolute image URLs that unfurlers can fetch. VERCEL_URL is the
+// per-deployment host, which Vercel's deployment protection hides; the production one is not.
+const host = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL;
+const defaultUrl = host ? `https://${host}` : "http://localhost:3000";
 
 export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
-  title: "Next.js and Supabase Starter Kit",
-  description: "The fastest way to build apps with Next.js and Supabase",
+  title: "ni han bao",
+  description: "A Discord bot that counts messages, emoji and voice time, and shows the stats.",
+  openGraph: { siteName: "ni han bao", type: "website" },
+  twitter: { card: "summary_large_image" },
 };
 
 const geistSans = Geist({

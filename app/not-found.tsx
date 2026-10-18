@@ -2,7 +2,10 @@ import { PageHeader } from "@/components/stat-ui";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
-export const metadata = { title: "Page not found · ni han bao" };
+export const metadata = {
+  title: "Page not found · ni han bao",
+  description: "Nobody has said anything here. Not even once.",
+};
 
 export default function NotFound() {
   return (

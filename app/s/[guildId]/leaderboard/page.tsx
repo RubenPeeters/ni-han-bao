@@ -4,7 +4,10 @@ import { memberGuild } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
-export const metadata = { title: "Leaderboard · ni han bao" };
+export const metadata = {
+  title: "Leaderboard · ni han bao",
+  description: "Who talks the most.",
+};
 
 export default function LeaderboardPage({ params }: PageProps<"/s/[guildId]/leaderboard">) {
   return (
