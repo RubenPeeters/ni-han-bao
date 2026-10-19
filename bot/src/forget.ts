@@ -9,7 +9,7 @@ export const FORGET_CANCEL_ID = "forget-me:cancel";
 
 export const FORGET_PROMPT =
   "This deletes everything ni han bao has stored about you, in every server: your message, " +
-  "reaction, voice and game time counts, your name and avatar, your membership, your regular stores, the events you are going to, your linked League account, your profile visibility and your /hide-me setting. " +
+  "reaction, voice and game time counts, your name and avatar, your membership, your regular stores, the events you are going to, your linked League account and its ranks, your profile visibility and your /hide-me setting. " +
   "It cannot be undone. The bot stops counting you until you use /show-me. " +
   "You also lose access to the servers' pages on the website until then.";
 

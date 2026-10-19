@@ -4,6 +4,16 @@ export const READ_PAGE = 1000;
 export const WRITE_CHUNK = 200;
 
 /** What to add and remove so the stored member ids become the current ones. */
+/** Every row of a read, `page(from, to)` returning rows `from`..`to` inclusive in a stable order. */
+export async function readAll<T>(page: (from: number, to: number) => Promise<T[]>): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += READ_PAGE) {
+    const batch = await page(from, from + READ_PAGE - 1);
+    rows.push(...batch);
+    if (batch.length < READ_PAGE) return rows;
+  }
+}
+
 export function membershipDiff(
   stored: Iterable<string>,
   current: Iterable<string>,
@@ -28,12 +38,7 @@ export async function syncMembers(
   current: Iterable<string>,
   store: MembershipStore,
 ): Promise<{ added: number; removed: number }> {
-  const stored: string[] = [];
-  for (let from = 0; ; from += READ_PAGE) {
-    const page = await store.storedPage(from, from + READ_PAGE - 1);
-    stored.push(...page);
-    if (page.length < READ_PAGE) break;
-  }
+  const stored = await readAll((from, to) => store.storedPage(from, to));
   const { add, remove } = membershipDiff(stored, current);
   for (let i = 0; i < add.length; i += WRITE_CHUNK) await store.add(add.slice(i, i + WRITE_CHUNK));
   for (let i = 0; i < remove.length; i += WRITE_CHUNK) await store.remove(remove.slice(i, i + WRITE_CHUNK));
