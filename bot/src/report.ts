@@ -60,6 +60,25 @@ function growthText(joins: number, leaves: number): string {
   return `${sign}${n(net)} (${n(joins)} joined, ${n(leaves)} left)\n${quip}`;
 }
 
+/** One linked member's week, as lol_week() returns it; hidden members are already left out. */
+export interface LeagueWeek {
+  display_name: string;
+  games: number;
+  champion: string | null;
+}
+
+/** The League field: the three who played most. Null when nobody here linked an account. */
+export function leagueField(league: readonly LeagueWeek[]): string | null {
+  if (!league.length) return null;
+  const played = league.filter((p) => p.games > 0);
+  if (!played.length) return "Not one game of League. Did someone finally touch grass?";
+  const total = played.reduce((sum, p) => sum + p.games, 0);
+  return [
+    ...played.slice(0, 3).map((p) => `${p.display_name}: ${times(p.games, "game", "games")}${p.champion ? `, mostly ${p.champion}` : ""}`),
+    `${times(total, "game", "games")} between you. Ranked and normals only.`,
+  ].join("\n");
+}
+
 const reportTitle = (week: string) => `Weekly report card: week of ${week}`;
 
 /** Whether `embeds` (of a message the bot posted) are the report card for `week`. */
@@ -97,6 +116,7 @@ export function reportEmbed(
   siteUrl: string | null,
   timeZone: string,
   events: UpcomingEvent[] = [],
+  league: readonly LeagueWeek[] = [],
 ): APIEmbed {
   const medals = ["🥇", "🥈", "🥉"];
   const talkers = data.top_talkers.length
@@ -113,6 +133,7 @@ export function reportEmbed(
   const intro = data.top_talkers.length
     ? "Report card's in. Sit down, we need to talk."
     : "Report card's in. There isn't much on it.";
+  const lol = leagueField(league);
   return {
     title: reportTitle(week),
     ...(siteUrl && { url: siteUrl }),
@@ -122,6 +143,7 @@ export function reportEmbed(
       { name: "Busiest channel", value: channel, inline: true },
       { name: "Top emoji", value: emoji, inline: true },
       { name: "Member growth", value: growthText(data.joins, data.leaves) },
+      ...(lol ? [{ name: "League", value: lol }] : []),
       { name: "Coming up this week", value: eventsField(events, timeZone) },
     ],
     footer: { text: `Monday ${week} to Sunday ${addDays(week, 6)} (${timeZone})` },

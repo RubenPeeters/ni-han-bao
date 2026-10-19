@@ -56,6 +56,7 @@ import {
   postedSince,
   reportEmbed,
   reportSlot,
+  type LeagueWeek,
   type ReportData,
 } from "./report.js";
 import {
@@ -83,12 +84,13 @@ import {
 } from "./stores.js";
 import { challengeText, GAME, LOL_COMMAND, startLink, verifyLink, type Platform, type RiotLookup } from "./lol.js";
 import { PROFILE_COMMAND, setProfileVisibility } from "./profile.js";
+import { KEEP_MS, MATCH_TYPES, matchIdsPath, matchRegion, matchRow, type Match, type MatchRow } from "./matches.js";
 import { rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
-import { dayStart, localDay, weekStart } from "./zone.js";
+import { dayStart, fromWallClock, localDay, weekStart } from "./zone.js";
 
 const HEARTBEAT_MS = 60_000;
 const FLUSH_MS = 10_000;
@@ -98,6 +100,7 @@ const SHUTDOWN_KILL_MS = 9_500;
 const PRESENCE_MS = 5 * 60_000;
 const REPORT_CHECK_MS = 60_000;
 const RANKS_MS = 3 * 60 * 60_000;
+const MATCHES_MS = 6 * 60 * 60_000;
 
 const config = loadConfig();
 const log = createLogger();
@@ -897,6 +900,7 @@ async function lolCommand(interaction: ChatInputCommandInteraction<"cached">): P
       if (done) {
         log("info", "lol_linked", {});
         void tracked("lol_ranks", refreshRank(userId, challenge.puuid, challenge.platform));
+        void tracked("lol_matches", refreshMatches(userId, challenge.puuid, challenge.platform));
         return;
       }
     }
@@ -1421,6 +1425,77 @@ async function refreshRanks(): Promise<void> {
   for (const guild of client.guilds.cache.values()) await tracked("rank_roles", syncRankRoles(guild));
 }
 
+// One games refresh at a time per user, as for ranks.
+const matchRefreshes = keyedQueue();
+
+/** Stores the account's new ranked and normal games since KEEP_MS ago, and drops older ones. */
+function refreshMatches(userId: string, puuid: string, platform: string): Promise<void> {
+  return matchRefreshes(userId, () => refreshMatchesNow(userId, puuid, platform));
+}
+
+async function refreshMatchesNow(userId: string, puuid: string, platform: string): Promise<void> {
+  if (!riot) return;
+  const region = matchRegion(platform);
+  const since = Date.now() - KEEP_MS;
+  const stored = await db.from("lol_matches").select("match_id").eq("user_id", userId).eq("puuid", puuid);
+  if (stored.error) throw new Error(`lol_matches: ${stored.error.message}`);
+  const known = new Set(stored.data.map((m) => m.match_id));
+  const ids = new Set<string>();
+  for (const type of MATCH_TYPES) {
+    for (const id of (await riot.get<string[]>(region, matchIdsPath(puuid, type, since))) ?? []) if (!known.has(id)) ids.add(id);
+  }
+  const rows: MatchRow[] = [];
+  for (const id of ids) {
+    const match = await riot.get<Match>(region, `/lol/match/v5/matches/${encodeURIComponent(id)}`);
+    const row = match && matchRow(userId, puuid, match);
+    if (row) rows.push(row);
+  }
+  if (rows.length) {
+    // Fails on the foreign key when the account was unlinked meanwhile, which is what we want.
+    const { error } = await db.from("lol_matches").upsert(rows, { onConflict: "user_id,match_id" });
+    if (error) throw new Error(`lol_matches upsert: ${error.message}`);
+  }
+  const { error } = await db.from("lol_matches").delete().eq("user_id", userId).lt("played_at", new Date(since).toISOString());
+  if (error) throw new Error(`lol_matches delete: ${error.message}`);
+}
+
+let refreshingMatches = false;
+
+/**
+ * Every 6 hours: every linked account's new games. Small steps all week through the Riot
+ * queue, rather than every member's week at once when the report is due.
+ */
+async function refreshAllMatches(): Promise<void> {
+  if (!riot || refreshingMatches) return;
+  refreshingMatches = true;
+  try {
+    const accounts = await readAll(async (from, to) => {
+      const { data, error } = await db
+        .from("game_accounts")
+        .select("user_id, external_id, region")
+        .eq("game", GAME)
+        .order("user_id")
+        .range(from, to);
+      if (error) throw new Error(`game_accounts: ${error.message}`);
+      return data;
+    });
+    let failed = 0;
+    for (const a of accounts) {
+      try {
+        await refreshMatches(a.user_id, a.external_id, a.region);
+      } catch (err) {
+        failed++;
+        log("warn", "lol_matches_account_failed", { error: err });
+      }
+    }
+    log("info", "lol_matches_refreshed", { accounts: accounts.length, failed });
+  } catch (err) {
+    log("error", "lol_matches_failed", { error: err });
+  } finally {
+    refreshingMatches = false;
+  }
+}
+
 /** The server's existing rank roles, by tier: the roles named after a tier. */
 function rankRolesOf(guild: Guild) {
   const names = new Map(TIERS.map((t) => [tierName(t), t]));
@@ -1559,9 +1634,15 @@ async function weeklyReport(guild: string): Promise<void> {
       });
       if (error) throw new Error(`report_card: ${error.message}`);
       const events = await upcomingEvents(guild, new Date(Date.now() + 7 * 24 * 60 * 60_000));
+      const league = await db.rpc("lol_week", {
+        g: guild,
+        since: new Date(fromWallClock(Date.parse(week), timezone)).toISOString(),
+        until: new Date(fromWallClock(Date.parse(addDays(week, 7)), timezone)).toISOString(),
+      });
+      if (league.error) throw new Error(`lol_week: ${league.error.message}`);
       // The nonce makes Discord drop a second send of the same week from a concurrent bot.
       await channel.send({
-        embeds: [reportEmbed(week, data as ReportData, config.siteUrl, timezone, events)],
+        embeds: [reportEmbed(week, data as ReportData, config.siteUrl, timezone, events, league.data as LeagueWeek[])],
         nonce: `report-${week}`,
         enforceNonce: true,
       });
@@ -1763,6 +1844,8 @@ client.once(Events.ClientReady, async (c) => {
   monthlyRecaps();
   setInterval(monthlyRecaps, REPORT_CHECK_MS);
   setInterval(() => void refreshRanks(), RANKS_MS);
+  setInterval(() => void refreshAllMatches(), MATCHES_MS);
+  void refreshAllMatches();
   for (const guild of c.guilds.cache.values()) await startServer(guild);
   // After startServer: the role sync needs every server's members cached.
   void refreshRanks();
