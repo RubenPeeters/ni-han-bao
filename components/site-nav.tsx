@@ -73,6 +73,28 @@ export function SiteNav() {
   return <MainNav pathname={usePathname()} />;
 }
 
+/** A profile's two tabs: activity in shared servers, and the Riftbound collection. */
+export function ProfileNav({ user }: { user: string }) {
+  const pathname = usePathname();
+  const tabs = [
+    { href: `/u/${user}`, label: "Activity" },
+    { href: `/u/${user}/collection`, label: "Collection" },
+  ];
+  return (
+    <nav aria-label="Profile">
+      <ul className="flex gap-1">
+        {tabs.map(({ href, label }) => (
+          <li key={href}>
+            <Link href={href} aria-current={pathname === href ? "page" : undefined} className={tab(pathname === href)}>
+              {label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
 /** The row on top of server pages: which server this is, and its tabs. */
 export function ServerNav({ guild, guilds }: { guild: Guild | null; guilds: Guild[] }) {
   const pathname = usePathname();

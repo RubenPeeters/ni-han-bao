@@ -88,6 +88,7 @@ import { PROFILE_COMMAND, setProfileVisibility } from "./profile.js";
 import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type Match, type MatchRow } from "./matches.js";
 import { rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
+import { addToCollection, COLLECTION_COMMAND, setLending } from "./collection.js";
 import { CARD_COMMAND, cardChoices, cardEmbed, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
@@ -691,13 +692,59 @@ async function cardCommand(interaction: ChatInputCommandInteraction<"cached">): 
   }
 }
 
+/** /collection add and /collection lending: the caller's own rows, replies only they see. */
+async function collectionCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  try {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const writer = {
+      async add(userId: string, printingId: string, count: number) {
+        const { data, error } = await db.rpc("add_riftbound_copies", { member: userId, p_printing: printingId, n: count });
+        if (error) throw new Error(`add_riftbound_copies: ${error.message}`);
+        // skip_forgotten() drops a forgotten user's row without an error.
+        return data as number | null;
+      },
+      async setLending(userId: string, lends: boolean, lendAll: boolean | null) {
+        const { data, error } = await db
+          .from("profiles")
+          .upsert(
+            { user_id: userId, lends_cards: lends, ...(lendAll === null ? {} : { lend_all: lendAll }), updated_at: new Date().toISOString() },
+            { onConflict: "user_id" },
+          )
+          .select("lend_all, visibility");
+        if (error) throw new Error(`profiles upsert: ${error.message}`);
+        return data[0] ? { lendAll: data[0].lend_all as boolean, visibility: data[0].visibility as string } : null;
+      },
+    };
+    const reply =
+      interaction.options.getSubcommand() === "add"
+        ? await addToCollection(
+            writer,
+            catalogue,
+            interaction.user.id,
+            interaction.options.getString("card", true),
+            interaction.options.getInteger("count") ?? 1,
+          )
+        : await setLending(
+            writer,
+            interaction.user.id,
+            interaction.options.getString("state", true),
+            interaction.options.getString("default"),
+            config.siteUrl,
+          );
+    await interaction.editReply(reply);
+  } catch (err) {
+    log("error", "command_failed", { command: COLLECTION_COMMAND.name, error: err });
+  }
+}
+
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (interaction.isAutocomplete() && interaction.commandName === CARD_COMMAND.name) {
+  const cardCommands = [CARD_COMMAND.name, COLLECTION_COMMAND.name] as string[];
+  if (interaction.isAutocomplete() && cardCommands.includes(interaction.commandName)) {
     await tracked(
       "command",
       interaction
         .respond(cardChoices(catalogue, interaction.options.getFocused()))
-        .catch((err: unknown) => log("error", "autocomplete_failed", { command: CARD_COMMAND.name, error: err })),
+        .catch((err: unknown) => log("error", "autocomplete_failed", { command: interaction.commandName, error: err })),
     );
     return;
   }
@@ -770,6 +817,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
   if (interaction.commandName === CARD_COMMAND.name) {
     await tracked("command", cardCommand(interaction));
+    return;
+  }
+  if (interaction.commandName === COLLECTION_COMMAND.name) {
+    await tracked("command", collectionCommand(interaction));
     return;
   }
   const hidden = hiddenFor(interaction.commandName);
@@ -1856,6 +1907,7 @@ async function startServer(guild: Guild): Promise<void> {
       STORE_COMMAND,
       EVENT_COMMAND,
       CARD_COMMAND,
+      COLLECTION_COMMAND,
     ]);
   } catch (err) {
     log("error", "command_registration_failed", { guild: guild.id, error: err });

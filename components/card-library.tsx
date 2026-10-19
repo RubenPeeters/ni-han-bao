@@ -1,6 +1,7 @@
 import { CardGrid, CardImage, type LibraryCard } from "@/components/card-grid";
 import { LogInPrompt } from "@/components/server-picker";
-import { ErrorState, StatCard } from "@/components/stat-ui";
+import { EmptyState, ErrorState, MemberRankRow, RankList, StatCard } from "@/components/stat-ui";
+import type { OwnedRow } from "@/lib/collection";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
@@ -42,12 +43,17 @@ export async function CardLibrary() {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims) return <LogInPrompt text={LOG_IN} />;
-  const { data, error } = await supabase
-    .from("riftbound_cards")
-    .select("*, printings:riftbound_printings(*)")
-    .order("id")
-    .limit(MAX_CARDS);
-  if (error) return <ErrorState title="Could not load the cards">Try again in a minute.</ErrorState>;
+  const [{ data, error }, me, owned] = await Promise.all([
+    supabase.from("riftbound_cards").select("*, printings:riftbound_printings(*)").order("id").limit(MAX_CARDS),
+    supabase.rpc("current_discord_id"),
+    // RLS returns the visitor's own rows only. shortcut: capped at 1000 rows like the cards; page it when collections get that big.
+    supabase.from("riftbound_collection").select("printing_id, finish, condition, quantity, for_trade, lendable"),
+  ]);
+  if (error || me.error || owned.error) return <ErrorState title="Could not load the cards">Try again in a minute.</ErrorState>;
+  // Logged in, but not with Discord: no collection to edit.
+  if (!me.data) return <LogInPrompt text={LOG_IN} />;
+  const lending = await supabase.from("profiles").select("lends_cards, lend_all").eq("user_id", me.data).maybeSingle();
+  if (lending.error) return <ErrorState title="Could not load the cards">Try again in a minute.</ErrorState>;
   const cards = (data as Card[]).map((c) => ({ ...c, printings: c.printings.toSorted(byNumber) }));
   // Collector order, as in a binder; a card without printings goes last.
   const first = (c: Card) => c.printings[0]?.collector_number ?? Infinity;
@@ -63,9 +69,20 @@ export async function CardLibrary() {
       placeholder: c.placeholder,
       sets: [...new Set(c.printings.map((p) => p.set_code))],
       codes: c.printings.map((p) => p.collector_code),
+      printings: c.printings.map(({ id, set_code, collector_code }) => ({ id, set_code, collector_code })),
       image_url: c.printings.find((p) => p.image_url)?.image_url ?? null,
     }));
-  return <CardGrid cards={library} />;
+  return (
+    <CardGrid
+      cards={library}
+      mine={{
+        userId: me.data as string,
+        owned: owned.data as OwnedRow[],
+        lends: lending.data?.lends_cards ?? false,
+        lendAll: lending.data?.lend_all ?? false,
+      }}
+    />
+  );
 }
 
 /** One card with every printing of it. */
@@ -73,11 +90,10 @@ export async function CardDetail({ id }: { id: string }) {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims) return <LogInPrompt text={LOG_IN} />;
-  const { data, error } = await supabase
-    .from("riftbound_cards")
-    .select("*, printings:riftbound_printings(*)")
-    .eq("id", id)
-    .maybeSingle<Card>();
+  const [{ data, error }, lenders] = await Promise.all([
+    supabase.from("riftbound_cards").select("*, printings:riftbound_printings(*)").eq("id", id).maybeSingle<Card>(),
+    supabase.rpc("card_lenders", { p_card: id }),
+  ]);
   if (error) return <ErrorState title="Could not load this card">Try again in a minute.</ErrorState>;
   if (!data) notFound();
   const printings = data.printings.toSorted(byNumber);
@@ -141,6 +157,49 @@ export async function CardDetail({ id }: { id: string }) {
           ))}
         </ul>
       </StatCard>
+      {/* Decoration of the card page: a failed lookup drops the section, not the card. */}
+      {!lenders.error && <WhoHasIt lenders={lenders.data as Lender[]} />}
     </>
+  );
+}
+
+interface Lender {
+  guild_id: string;
+  guild_name: string;
+  user_id: string;
+  display_name: string;
+  avatar_url: string | null;
+  copies: number;
+}
+
+/** Per server the visitor is in, who has copies to lend; card_lenders() decides who may show. */
+function WhoHasIt({ lenders }: { lenders: Lender[] }) {
+  const guilds = [...new Map(lenders.map((l) => [l.guild_id, l.guild_name])).entries()];
+  return (
+    <StatCard title="Who has it?" description="Members of your servers with copies to lend">
+      {guilds.length === 0 ? (
+        <EmptyState>Nobody in your servers lends this card yet.</EmptyState>
+      ) : (
+        guilds.map(([guildId, name]) => (
+          <div key={guildId} className="flex min-w-0 flex-col gap-2">
+            <h3 className="truncate text-sm font-medium">{name}</h3>
+            <RankList>
+              {lenders
+                .filter((l) => l.guild_id === guildId)
+                .map((l, i) => (
+                  <MemberRankRow
+                    key={l.user_id}
+                    rank={i + 1}
+                    name={l.display_name}
+                    avatarUrl={l.avatar_url}
+                    value={`${l.copies} to lend`}
+                    href={`/u/${l.user_id}`}
+                  />
+                ))}
+            </RankList>
+          </div>
+        ))
+      )}
+    </StatCard>
   );
 }
