@@ -1,14 +1,11 @@
 import { EmojiStats } from "@/components/emoji-stats";
 import { CountingStatus } from "@/components/counting-status";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
-import { memberGuild } from "@/lib/guild";
+import { memberGuild, serverMetadata } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
-export const metadata = {
-  title: "Emoji · ni han bao",
-  description: "What everyone reacts with.",
-};
+export const generateMetadata = serverMetadata("Emoji", "What everyone reacts with.");
 
 export default function EmojiPage({ params }: PageProps<"/s/[guildId]/emoji">) {
   return (

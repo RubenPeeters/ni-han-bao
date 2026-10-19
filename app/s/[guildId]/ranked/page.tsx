@@ -1,13 +1,10 @@
 import { GuildLolWeek, GuildRanks } from "@/components/lol-ranks";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
-import { memberGuild } from "@/lib/guild";
+import { memberGuild, serverMetadata } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
-export const metadata = {
-  title: "Ranked · ni han bao",
-  description: "League ranks and games of the members who linked their account.",
-};
+export const generateMetadata = serverMetadata("Ranked", "League ranks and games of the members who linked their account.");
 
 export default function RankedPage({ params }: PageProps<"/s/[guildId]/ranked">) {
   return (

@@ -5,8 +5,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { AuthButton } from "@/components/auth-button";
 import { BotStatusDot } from "@/components/bot-status";
-import { SiteNav } from "@/components/site-nav";
-import { ThemeSwitcher } from "@/components/theme-switcher";
+import { ServersLink, SiteNav } from "@/components/site-nav";
 import { hasEnvVars, RIOT_DISCLAIMER } from "@/lib/utils";
 import "./globals.css";
 
@@ -52,23 +51,19 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-10 px-5 py-6">
-            <header className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center">
-              <div className="flex items-center justify-between sm:contents">
-                <Link
-                  href="/"
-                  className="rounded-md text-lg font-semibold transition-colors hover:text-primary active:text-primary/80"
-                >
-                  ni han bao
-                </Link>
-                <div className="flex min-w-0 items-center gap-2 sm:order-last sm:ml-auto">
-                  <AuthButton />
-                  <ThemeSwitcher />
-                </div>
-              </div>
-              {/* Server pages know their guildId only at request time; same height, so no jump. */}
-              <Suspense fallback={<div className="h-8" />}>
+            <header className="flex items-center gap-2 border-b pb-4">
+              <Link
+                href="/"
+                className="whitespace-nowrap rounded-md text-lg font-semibold transition-colors hover:text-primary active:text-primary/80"
+              >
+                ni han bao
+              </Link>
+              <Suspense fallback={<ServersLink current={false} />}>
                 <SiteNav />
               </Suspense>
+              <div className="ml-auto flex items-center">
+                <AuthButton />
+              </div>
             </header>
             <main className="flex flex-1 flex-col gap-8">{children}</main>
             <footer className="flex flex-wrap items-center justify-between gap-2 border-t pt-4 text-xs text-muted-foreground">

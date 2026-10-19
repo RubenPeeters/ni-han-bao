@@ -33,6 +33,21 @@ export function gameKeys(activities: readonly { type: number; name: string }[]):
   return [...keys];
 }
 
+/**
+ * Game name to its Discord application id, for the icons on the site (#141). Games only, not
+ * streams, and only activities Discord sends an application id with.
+ */
+export function gameApps(
+  activities: readonly { type: number; name: string; applicationId: string | null }[],
+): Map<string, string> {
+  const apps = new Map<string, string>();
+  for (const { type, name, applicationId } of activities) {
+    const trimmed = name.trim().slice(0, MAX_NAME);
+    if ((type === 0 || type === 5) && trimmed && applicationId) apps.set(trimmed, applicationId);
+  }
+  return apps;
+}
+
 const toSeconds = (at: Date) => Math.floor(at.getTime() / 1000);
 
 interface Session {

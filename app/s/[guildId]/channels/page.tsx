@@ -1,14 +1,11 @@
 import { ChannelStats } from "@/components/channel-stats";
 import { CountingStatus } from "@/components/counting-status";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
-import { memberGuild } from "@/lib/guild";
+import { memberGuild, serverMetadata } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
-export const metadata = {
-  title: "Channels · ni han bao",
-  description: "Where and when it is busy.",
-};
+export const generateMetadata = serverMetadata("Channels", "Where and when it is busy.");
 
 export default function ChannelsPage({ params }: PageProps<"/s/[guildId]/channels">) {
   return (

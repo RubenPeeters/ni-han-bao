@@ -47,6 +47,7 @@ begin
     insert into public.guild_members (guild_id, user_id) values ('rls-mine', 'rls-user');
     -- A member who ran /hide-me: none of their regulars may show.
     insert into public.members (guild_id, user_id, display_name, hidden) values ('rls-mine', 'rls-hidden', 'x', true);
+    insert into public.message_counts (guild_id, user_id, day, count) values ('rls-mine', 'rls-hidden', '2026-01-01', 1);
     insert into public.store_regulars (guild_id, store_id, user_id)
     select 'rls-mine', id, 'rls-hidden' from public.stores where guild_id = 'rls-mine';
     insert into public.event_attendees (guild_id, event_id, user_id)
@@ -64,6 +65,8 @@ begin
     insert into public.activity_seconds (user_id, day, kind, name, seconds, live_at)
     select u, current_date, 'playing', 'Game', 3600, now()
     from unnest(array['rls-user', 'rls-rls-mine', 'rls-hidden', 'rls-public']) u;
+    -- Game icons (#141): read through guild_games() only.
+    insert into public.games (name, application_id, icon) values ('Game', '1', 'i');
     -- Linked game accounts (#102): the bot's only, read by nobody else.
     insert into public.game_accounts (user_id, game, external_id, region) values ('rls-user', 'lol', 'p', 'euw1');
     -- League ranks (#103): read through functions only, per profile and per server.
@@ -96,14 +99,18 @@ begin
         if n <> 0 then raise exception 'anon reads % rows from %', n, t; end if;
     end loop;
     if exists (select from public.activity_seconds) then raise exception 'anon reads game time'; end if;
+    if exists (select from public.games) then raise exception 'anon reads game icons'; end if;
     if exists (select from public.game_accounts) then raise exception 'anon reads linked accounts'; end if;
     if exists (select from public.lol_ranks) or exists (select from public.profile_ranks('rls-rls-mine')) then
         raise exception 'anon reads a rank';
     end if;
-    if exists (select from public.lol_matches) then raise exception 'anon reads League games'; end if;
+    if exists (select from public.lol_matches) or public.profile_lol_champion('rls-rls-mine') is not null then
+        raise exception 'anon reads League games';
+    end if;
     if exists (select from public.profiles) or exists (select from public.profile('rls-public')) then
         raise exception 'anon reads a profile';
     end if;
+    if public.message_total('2026-01-01', 'rls-mine') <> 0 then raise exception 'anon reads a server''s message_total()'; end if;
     if (select servers from public.public_totals('2026-01-01')) < 2 then
         raise exception 'anon cannot read public_totals()';
     end if;
@@ -207,6 +214,14 @@ begin
         or exists (select from public.profile_ranks('rls-hidden')) then
         raise exception 'profile_ranks() does not follow the profile';
     end if;
+    if public.profile_lol_champion('rls-rls-mine') is distinct from 'Ahri' or public.profile_lol_champion('rls-rls-other') is not null
+        or public.profile_lol_champion('rls-hidden') is not null then
+        raise exception 'profile_lol_champion() does not follow the profile';
+    end if;
+    if exists (select from public.games) then raise exception 'a member reads game icons directly'; end if;
+    if (select icon from public.guild_games('rls-mine', current_date)) is distinct from 'i' then
+        raise exception 'guild_games() does not return the game icon';
+    end if;
     if (select players from public.guild_games('rls-mine', current_date)) <> 2 then
         raise exception 'guild_games() does not count just the visible members';
     end if;
@@ -221,6 +236,13 @@ begin
     if not exists (select from public.profile_games('rls-rls-mine')) or exists (select from public.profile_games('rls-public'))
         or exists (select from public.profile_games('rls-hidden')) then
         raise exception 'profile_games() does not follow the profile and shared servers';
+    end if;
+    -- A hidden member's messages count towards the total without being readable one by one.
+    if public.message_total('2026-01-01', 'rls-mine') <> 2 then
+        raise exception 'message_total() leaves out hidden members';
+    end if;
+    if public.message_total('2026-01-01', 'rls-other') <> 0 then
+        raise exception 'a member reads another server''s message_total()';
     end if;
     if (select count(*) from public.my_guilds()) <> 1 then raise exception 'my_guilds() is not just mine'; end if;
     if public.monthly_recap('rls-mine', '2025-12-01') is null then raise exception 'a member cannot read their recap'; end if;
