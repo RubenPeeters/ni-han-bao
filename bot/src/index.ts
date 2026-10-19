@@ -88,7 +88,7 @@ import { PROFILE_COMMAND, setProfileVisibility } from "./profile.js";
 import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type Match, type MatchRow } from "./matches.js";
 import { rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
-import type { Catalogue } from "./riftbound.js";
+import { CARD_COMMAND, cardChoices, cardEmbed, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
@@ -672,7 +672,35 @@ async function statsReply(interaction: ChatInputCommandInteraction<"cached">) {
   return { embeds: [channelEmbed(target.name, data, config.siteUrl, timezone)] };
 }
 
+// The committed placeholder catalogue (#148), one level above both src/ and dist/.
+const catalogue = JSON.parse(readFileSync(new URL("../riftbound-catalogue.json", import.meta.url), "utf8")) as Catalogue;
+
+/** /card: one card from the catalogue, for everyone in the channel. */
+async function cardCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  const typed = interaction.options.getString("name", true);
+  const found = lookupCard(catalogue.cards, typed);
+  try {
+    if (found && "card" in found) {
+      const printings = catalogue.printings.filter((p) => p.card_id === found.card.id);
+      await interaction.reply({ embeds: [cardEmbed(found.card, printings, config.siteUrl)] });
+    } else {
+      await interaction.reply({ content: cardMiss(typed, found?.ambiguous ?? null), flags: MessageFlags.Ephemeral });
+    }
+  } catch (err) {
+    log("error", "command_failed", { command: CARD_COMMAND.name, error: err });
+  }
+}
+
 client.on(Events.InteractionCreate, async (interaction) => {
+  if (interaction.isAutocomplete() && interaction.commandName === CARD_COMMAND.name) {
+    await tracked(
+      "command",
+      interaction
+        .respond(cardChoices(catalogue.cards, interaction.options.getFocused()))
+        .catch((err: unknown) => log("error", "autocomplete_failed", { command: CARD_COMMAND.name, error: err })),
+    );
+    return;
+  }
   const autocompleted = [STORE_COMMAND.name, EVENT_COMMAND.name] as string[];
   if (interaction.isAutocomplete() && interaction.inCachedGuild() && autocompleted.includes(interaction.commandName)) {
     const focused = interaction.options.getFocused(true);
@@ -738,6 +766,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
   if (interaction.commandName === EVENT_COMMAND.name) {
     await tracked("command", eventCommand(interaction));
+    return;
+  }
+  if (interaction.commandName === CARD_COMMAND.name) {
+    await tracked("command", cardCommand(interaction));
     return;
   }
   const hidden = hiddenFor(interaction.commandName);
@@ -1823,6 +1855,7 @@ async function startServer(guild: Guild): Promise<void> {
       RECAP_COMMAND,
       STORE_COMMAND,
       EVENT_COMMAND,
+      CARD_COMMAND,
     ]);
   } catch (err) {
     log("error", "command_registration_failed", { guild: guild.id, error: err });
@@ -1866,10 +1899,7 @@ async function startServer(guild: Guild): Promise<void> {
 
 /** The committed placeholder catalogue (#148), upserted on every start: only the bot writes it. */
 async function loadCatalogue(): Promise<void> {
-  // One level above both src/ and dist/: bot/riftbound-catalogue.json.
-  const { cards, printings } = JSON.parse(
-    readFileSync(new URL("../riftbound-catalogue.json", import.meta.url), "utf8"),
-  ) as Catalogue;
+  const { cards, printings } = catalogue;
   // shortcut: a card dropped from the file stays in the table; delete it by hand until the real API (#96) replaces them all.
   const updated_at = new Date().toISOString();
   const written = await db.from("riftbound_cards").upsert(cards.map((r) => ({ ...r, updated_at })), { onConflict: "id" });

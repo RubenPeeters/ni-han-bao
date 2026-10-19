@@ -2,6 +2,8 @@
 // (#96), and the name lookup every command that takes a card uses. Rows have the columns of
 // riftbound_cards and riftbound_printings, so the real API can fill the same tables later.
 
+import { ApplicationCommandOptionType, type APIEmbed } from "discord.js";
+
 export interface Card {
   id: string;
   name: string;
@@ -154,4 +156,65 @@ export function resolveCard(cards: Card[], typed: string): Resolved {
       (c.type === "Legend" && c.tags.some((t) => normal(t) === q || normal(`${t}, ${c.name}`) === q)),
   );
   return found.length === 0 ? null : found.length === 1 ? { card: found[0] } : { ambiguous: found };
+}
+
+export const CARD_COMMAND = {
+  name: "card",
+  description: "Look up a Riftbound card",
+  options: [
+    {
+      type: ApplicationCommandOptionType.String,
+      name: "name",
+      description: "The card's name, or a legend's champion",
+      required: true,
+      autocomplete: true,
+    },
+  ],
+} as const;
+
+// Legends are named by epithet, so the champion goes in the label: typing "ahri" finds hers.
+const choiceLabel = (c: Card) => `${c.name} (${c.type === "Legend" ? `${c.tags.join(", ")} legend` : c.type})`;
+
+/** Autocomplete: up to Discord's 25, names starting with what was typed first. The value is the card id. */
+export function cardChoices(cards: Card[], typed: string): { name: string; value: string }[] {
+  const q = normal(typed);
+  const starts = (c: Card) => (normal(c.name).startsWith(q) || c.tags.some((t) => normal(t).startsWith(q)) ? 0 : 1);
+  return cards
+    .filter((c) => normal(choiceLabel(c)).includes(q))
+    .sort((a, b) => starts(a) - starts(b) || a.name.localeCompare(b.name))
+    .slice(0, 25)
+    .map((c) => ({ name: choiceLabel(c).slice(0, 100), value: c.id }));
+}
+
+/** The /card option: a picked suggestion is a card id, anything else is a typed name. */
+export function lookupCard(cards: Card[], value: string): Resolved {
+  const picked = cards.find((c) => c.id === value);
+  return picked ? { card: picked } : resolveCard(cards, value);
+}
+
+export function cardEmbed(card: Card, printings: Printing[], siteUrl: string | null): APIEmbed {
+  // Discord renders no SVG and no relative URL, so the generated spell and gear art stays on the site.
+  const image = printings.find((p) => p.image_url?.startsWith("https://"))?.image_url;
+  const dash = (n: number | null) => (n === null ? "-" : String(n));
+  // Made up until Riot approves the API key: nobody may mistake it for a real card.
+  const footer = [card.placeholder && "Placeholder card", ...printings.map((p) => p.collector_code)].filter(Boolean).join(" · ");
+  return {
+    title: card.name,
+    url: siteUrl ? `${siteUrl.replace(/\/$/, "")}/cards/${card.id}` : undefined,
+    description: card.rules_text ?? undefined,
+    fields: [
+      { name: "Type", value: [...card.supertypes, card.type].join(" "), inline: true },
+      { name: "Cost", value: dash(card.energy), inline: true },
+      { name: "Might", value: dash(card.might), inline: true },
+      { name: "Domains", value: card.domains.join(", ") || "-", inline: true },
+    ],
+    image: image ? { url: image } : undefined,
+    footer: footer ? { text: footer } : undefined,
+  };
+}
+
+/** The reply to a name that is not exactly one card. */
+export function cardMiss(typed: string, ambiguous: Card[] | null): string {
+  if (!ambiguous) return `No card called "${typed.slice(0, 100)}". Pick one from the suggestions.`;
+  return `More than one card is called that: ${ambiguous.slice(0, 10).map(choiceLabel).join(", ")}. Pick one from the suggestions.`;
 }

@@ -6,7 +6,6 @@ export const SERVER_PAGES = [
   { page: "timeline", label: "Timeline" },
   { page: "stores", label: "Where we play" },
   { page: "games", label: "What we play" },
-  { page: "cards", label: "Cards" },
   { page: "ranked", label: "Ranked" },
 ];
 
