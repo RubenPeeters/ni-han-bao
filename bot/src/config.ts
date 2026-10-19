@@ -6,6 +6,8 @@ export interface Config {
   supabaseSecretKey: string;
   /** Website base URL for links in command replies; null leaves the links out. */
   siteUrl: string | null;
+  /** Riot API key for /lol link; null leaves League linking off. */
+  riotApiKey: string | null;
 }
 
 const REQUIRED = {
@@ -25,5 +27,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     // Optional so a box without it keeps counting; only the reply links go missing.
     guildId: env.DISCORD_GUILD_ID || null,
     siteUrl: env.SITE_URL || null,
+    riotApiKey: env.RIOT_API_KEY || null,
   } as unknown as Config;
 }

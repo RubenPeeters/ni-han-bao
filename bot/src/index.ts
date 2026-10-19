@@ -81,7 +81,9 @@ import {
   storeList,
   type Store,
 } from "./stores.js";
+import { challengeText, GAME, LOL_COMMAND, startLink, verifyLink, type Platform, type RiotLookup } from "./lol.js";
 import { PROFILE_COMMAND, setProfileVisibility } from "./profile.js";
+import { RiotApi } from "./riot.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
@@ -101,6 +103,8 @@ const log = createLogger();
 const db = createClient(config.supabaseUrl, config.supabaseSecretKey, {
   auth: { persistSession: false },
 });
+
+const riot = config.riotApiKey ? new RiotApi(config.riotApiKey) : null;
 
 // No MessageContent intent on purpose: message events still arrive (enough for counting),
 // but without their text, so the bot cannot store what people write.
@@ -685,6 +689,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     await tracked("command", profileCommand(interaction));
     return;
   }
+  if (interaction.commandName === LOL_COMMAND.name) {
+    await tracked("command", lolCommand(interaction));
+    return;
+  }
   if (interaction.commandName === SETUP_COMMAND.name) {
     await tracked("command", setupCommand(interaction));
     return;
@@ -795,6 +803,104 @@ async function profileCommand(interaction: ChatInputCommandInteraction<"cached">
     config.siteUrl,
   );
   await interaction.editReply(reply);
+}
+
+// Interaction tokens last 15 minutes; this leaves time for the last edit.
+const LOL_VERIFY_MS = 14 * 60_000;
+const LOL_VERIFY_ID = "lol:verify";
+
+function riotLookup(api: RiotApi): RiotLookup {
+  return {
+    account: (regional, gameName, tagLine) =>
+      api.get(regional, `/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`),
+    icon: async (platform: Platform, puuid) =>
+      (await api.get<{ profileIconId: number }>(platform, `/lol/summoner/v4/summoners/by-puuid/${encodeURIComponent(puuid)}`))
+        ?.profileIconId ?? null,
+  };
+}
+
+/** The icon's picture from Data Dragon, Riot's public CDN; null if its version list is down. */
+async function iconUrl(icon: number): Promise<string | null> {
+  try {
+    const res = await fetch("https://ddragon.leagueoflegends.com/api/versions.json", { signal: AbortSignal.timeout(5_000) });
+    const [version] = (await res.json()) as string[];
+    return `https://ddragon.leagueoflegends.com/cdn/${version}/img/profileicon/${icon}.png`;
+  } catch {
+    return null;
+  }
+}
+
+/** /lol link proves ownership with a profile icon the caller sets, then stores the PUUID; /lol unlink deletes it. */
+async function lolCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  if (!riot) {
+    await interaction.editReply("League linking is not set up on this bot.");
+    return;
+  }
+  const userId = interaction.user.id;
+  try {
+    if (interaction.options.getSubcommand() === "unlink") {
+      const { data, error } = await db.from("game_accounts").delete().eq("user_id", userId).eq("game", GAME).select("user_id");
+      if (error) throw new Error(`game_accounts delete: ${error.message}`);
+      await interaction.editReply(data.length ? "Unlinked: your League account is deleted." : "You have no League account linked.");
+      return;
+    }
+    const lookup = riotLookup(riot);
+    const challenge = await startLink(lookup, interaction.options.getString("riot-id", true), interaction.options.getString("region", true));
+    if (typeof challenge === "string") {
+      await interaction.editReply(challenge);
+      return;
+    }
+    const url = await iconUrl(challenge.icon);
+    const button = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(LOL_VERIFY_ID).setLabel("Verify").setStyle(ButtonStyle.Primary),
+    );
+    const message = await interaction.editReply({
+      content: challengeText(challenge),
+      embeds: url ? [{ image: { url } }] : [],
+      components: [button],
+    });
+    const deadline = Date.now() + LOL_VERIFY_MS;
+    for (;;) {
+      const click = await message
+        .awaitMessageComponent({ filter: (i) => i.user.id === userId, time: Math.max(0, deadline - Date.now()) })
+        .catch(() => null);
+      if (!click) {
+        await interaction.editReply({ content: "Timed out, nothing was linked. Run /lol link again.", embeds: [], components: [] });
+        return;
+      }
+      await click.deferUpdate();
+      const { done, reply } = await verifyLink(
+        lookup,
+        {
+          async link(id, c) {
+            const { data, error } = await db
+              .from("game_accounts")
+              .upsert(
+                { user_id: id, game: GAME, external_id: c.puuid, region: c.platform, verified_at: new Date().toISOString() },
+                { onConflict: "user_id,game" },
+              )
+              .select("user_id");
+            if (error) throw new Error(`game_accounts upsert: ${error.message}`);
+            // skip_forgotten() drops a forgotten user's row without an error.
+            return data.length > 0;
+          },
+        },
+        userId,
+        challenge,
+      );
+      await interaction.editReply(done ? { content: reply, embeds: [], components: [] } : { content: reply });
+      if (done) {
+        log("info", "lol_linked", {});
+        return;
+      }
+    }
+  } catch (err) {
+    log("error", "command_failed", { command: LOL_COMMAND.name, error: err });
+    await interaction
+      .editReply({ content: "Something went wrong, nothing was changed. Please try again later.", embeds: [], components: [] })
+      .catch(() => {});
+  }
 }
 
 /** /setup: only members with Manage Server see it (default_member_permissions). */
@@ -1428,6 +1534,7 @@ async function startServer(guild: Guild): Promise<void> {
       ...VISIBILITY_COMMANDS,
       FORGET_COMMAND,
       PROFILE_COMMAND,
+      LOL_COMMAND,
       ...STATS_COMMANDS,
       SETUP_COMMAND,
       RECAP_COMMAND,

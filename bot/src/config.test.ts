@@ -15,11 +15,16 @@ describe("loadConfig", () => {
       supabaseUrl: "https://x.supabase.co",
       supabaseSecretKey: "s",
       siteUrl: null,
+      riotApiKey: null,
     });
   });
 
   it("reads the optional site url", () => {
     expect(loadConfig({ ...full, SITE_URL: "https://x.example" }).siteUrl).toBe("https://x.example");
+  });
+
+  it("reads the optional riot api key", () => {
+    expect(loadConfig({ ...full, RIOT_API_KEY: "r" }).riotApiKey).toBe("r");
   });
 
   it("reads the optional guild id", () => {
