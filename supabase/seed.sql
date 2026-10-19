@@ -128,6 +128,13 @@ begin
         select users[i], d::date, 'streaming', 'League of Legends', 3600 * (1 + abs(hashtext('s' || d::text)) % 3)
         from generate_series(2, 3) i, generate_series(today - 59, today, '1 day') d
         where abs(hashtext('st' || users[i] || d::text)) % 5 = 0;
+    -- Real Discord applications and icon hashes, so the screenshots show icons; Riftbound has
+    -- none, for the initial fallback. Not per server: upserted, not deleted above.
+    insert into public.games (name, application_id, icon) values
+        ('League of Legends', '401518684763586560', '2c1781b672e14e86b7bec677eee2fbde'),
+        ('Teamfight Tactics', '1544195652903247973', 'd3565d3ac6d570e99928b1a3f1c02d04'),
+        ('Valorant', '700136079562375258', 'e55fc8259df1548328f977d302779ab7')
+    on conflict (name) do update set application_id = excluded.application_id, icon = excluded.icon;
 
     -- League: eight members linked, one per tier band, both queues for some.
     insert into public.game_accounts (user_id, game, external_id, region)

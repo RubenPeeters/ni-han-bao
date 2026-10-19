@@ -40,7 +40,7 @@ import {
   type UpcomingEvent,
 } from "./events.js";
 import { Backoff, flushUntil, InFlight } from "./backoff.js";
-import { flushGames, GameBuffer, gameKeys, GameSessions } from "./games.js";
+import { flushGames, gameApps, GameBuffer, gameKeys, GameSessions } from "./games.js";
 import { loadConfig } from "./config.js";
 import { countsLive, loadBeforeId } from "./history.js";
 import { createLogger } from "./log.js";
@@ -584,7 +584,31 @@ const sharesServer = (userId: string) => client.guilds.cache.some((g) => g.membe
 client.on(Events.PresenceUpdate, (_old, presence) => {
   if (presence.user?.bot) return;
   gameBuffer.add(games.update(presence.userId, gameKeys(presence.activities), new Date()));
+  for (const [name, id] of gameApps(presence.activities)) {
+    if (gameIconsLooked.has(name)) continue;
+    gameIconsLooked.add(name);
+    void storeGameIcon(name, id);
+  }
 });
+
+// Game names whose icon this process already looked up: once per game per run, the games
+// table is the cache the site reads (#141).
+const gameIconsLooked = new Set<string>();
+
+async function storeGameIcon(name: string, applicationId: string): Promise<void> {
+  // Discord documents no lookup of another application, only app-icons/<id>/<icon>.png on its
+  // CDN; this public endpoint (what the client uses for activities) returns the icon hash.
+  let icon: string | null | undefined;
+  try {
+    ({ icon } = (await client.rest.get(`/applications/${applicationId}/rpc`)) as { icon: string | null });
+  } catch (err) {
+    log("warn", "game_icon_failed", { game: name, error: err });
+  }
+  // Without `icon` the upsert leaves an icon stored earlier alone.
+  const row = icon === undefined ? { name, application_id: applicationId } : { name, application_id: applicationId, icon };
+  const { error } = await db.from("games").upsert({ ...row, updated_at: new Date().toISOString() });
+  if (error) log("warn", "game_icon_failed", { game: name, error: error.message });
+}
 
 // shortcut: rank needs every member's total, fetched via leaderboard() up to this many rows
 // (and PostgREST's max-rows, 1000 by default); add a rank function if the server outgrows it.

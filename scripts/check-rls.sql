@@ -65,6 +65,8 @@ begin
     insert into public.activity_seconds (user_id, day, kind, name, seconds, live_at)
     select u, current_date, 'playing', 'Game', 3600, now()
     from unnest(array['rls-user', 'rls-rls-mine', 'rls-hidden', 'rls-public']) u;
+    -- Game icons (#141): read through guild_games() only.
+    insert into public.games (name, application_id, icon) values ('Game', '1', 'i');
     -- Linked game accounts (#102): the bot's only, read by nobody else.
     insert into public.game_accounts (user_id, game, external_id, region) values ('rls-user', 'lol', 'p', 'euw1');
     -- League ranks (#103): read through functions only, per profile and per server.
@@ -97,6 +99,7 @@ begin
         if n <> 0 then raise exception 'anon reads % rows from %', n, t; end if;
     end loop;
     if exists (select from public.activity_seconds) then raise exception 'anon reads game time'; end if;
+    if exists (select from public.games) then raise exception 'anon reads game icons'; end if;
     if exists (select from public.game_accounts) then raise exception 'anon reads linked accounts'; end if;
     if exists (select from public.lol_ranks) or exists (select from public.profile_ranks('rls-rls-mine')) then
         raise exception 'anon reads a rank';
@@ -214,6 +217,10 @@ begin
     if public.profile_lol_champion('rls-rls-mine') is distinct from 'Ahri' or public.profile_lol_champion('rls-rls-other') is not null
         or public.profile_lol_champion('rls-hidden') is not null then
         raise exception 'profile_lol_champion() does not follow the profile';
+    end if;
+    if exists (select from public.games) then raise exception 'a member reads game icons directly'; end if;
+    if (select icon from public.guild_games('rls-mine', current_date)) is distinct from 'i' then
+        raise exception 'guild_games() does not return the game icon';
     end if;
     if (select players from public.guild_games('rls-mine', current_date)) <> 2 then
         raise exception 'guild_games() does not count just the visible members';
