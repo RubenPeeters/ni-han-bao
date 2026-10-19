@@ -49,6 +49,8 @@ begin
     delete from public.lol_ranks where user_id = any (users);
     delete from public.game_accounts where user_id = any (users);
     delete from public.activity_seconds where user_id = any (users);
+    delete from public.riftbound_collection where user_id = any (users);
+    delete from public.riftbound_lending where user_id = any (users);
     delete from public.profiles where user_id = any (users);
     delete from public.guild_members where guild_id = g;
     delete from public.members where guild_id = g;
@@ -174,6 +176,20 @@ begin
     insert into public.event_attendees (guild_id, event_id, user_id)
         select g, ev.id, users[i] from public.events ev, generate_series(1, 12) i
         where ev.guild_id = g and abs(hashtext(ev.name || users[i])) % 3 <> 0;
+
+    -- Riftbound collections: about a quarter of the placeholder catalogue each, a few copies
+    -- for trade. Bram lends everything, Chloé only the Ahri legend she marked, Elise owns it but
+    -- keeps hers, and Daan lends but is private: Who has it? on Ahri lists Bram and Chloé.
+    insert into public.riftbound_collection (user_id, printing_id, finish, quantity, for_trade)
+        select users[i], p.id, case when abs(hashtext('f' || users[i] || p.id)) % 9 = 0 then 'foil' else 'normal' end,
+               1 + abs(hashtext('q' || users[i] || p.id)) % 3, abs(hashtext('t' || users[i] || p.id)) % 2
+        from generate_series(1, 12) i, public.riftbound_printings p
+        where p.set_code = 'PLH' and (abs(hashtext('c' || users[i] || p.id)) % 4 = 0
+            or (p.id = 'PLH-L103' and i in (2, 3, 4, 5)));
+    update public.riftbound_collection set lendable = 1 where user_id = users[3] and printing_id = 'PLH-L103';
+    insert into public.riftbound_lending (user_id, lends, lend_default) values
+        (users[1], false, null), (users[2], true, 'everything'), (users[3], true, 'nothing'),
+        (users[4], true, 'everything'), (users[5], false, 'everything');
 
     -- Last month's recap, as if the bot posted it.
     insert into public.monthly_recaps (guild_id, month, posted_at)

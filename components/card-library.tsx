@@ -1,6 +1,8 @@
 import { CardGrid, CardImage, type LibraryCard } from "@/components/card-grid";
+import { CopiesEditor } from "@/components/card-copies";
+import type { Collection } from "@/components/collection-sync";
 import { LogInPrompt } from "@/components/server-picker";
-import { ErrorState, StatCard } from "@/components/stat-ui";
+import { EmptyState, ErrorState, MemberRankRow, RankList, StatCard } from "@/components/stat-ui";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
@@ -37,16 +39,48 @@ const byNumber = (a: Printing, b: Printing) =>
   a.collector_number - b.collector_number || a.collector_code.localeCompare(b.collector_code);
 const LOG_IN = "Log in to look through the Riftbound cards.";
 
+type Client = Awaited<ReturnType<typeof createClient>>;
+
+/**
+ * The visitor's own copies and lending setting, for the editors; null when they are not
+ * logged in with Discord (nothing to save under) or it cannot be read.
+ * shortcut: PostgREST's 1000 rows cap a collection at 1000 printing/finish/condition rows; page it if someone gets there.
+ */
+async function myCollection(supabase: Client): Promise<Collection | null> {
+  const me = await supabase.rpc("current_discord_id");
+  if (me.error || !me.data) return null;
+  const [copies, lending] = await Promise.all([
+    supabase
+      .from("riftbound_collection")
+      .select("printing:printing_id, finish, condition, quantity, for_trade, lendable")
+      .eq("user_id", me.data as string),
+    supabase.from("riftbound_lending").select("lends, lend_default").maybeSingle(),
+  ]);
+  if (copies.error || lending.error) return null;
+  return {
+    me: me.data as string,
+    copies: copies.data,
+    lends: lending.data?.lends ?? false,
+    lendAll: lending.data?.lend_default === "everything",
+  };
+}
+
+interface Lender {
+  user_id: string;
+  display_name: string;
+  avatar_url: string | null;
+  copies: number;
+}
+
 /** The global Riftbound catalogue: not per server, so no guild filter; RLS lets anyone logged in read it. */
 export async function CardLibrary() {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims) return <LogInPrompt text={LOG_IN} />;
-  const { data, error } = await supabase
-    .from("riftbound_cards")
-    .select("*, printings:riftbound_printings(*)")
-    .order("id")
-    .limit(MAX_CARDS);
+  const [{ data, error }, collection] = await Promise.all([
+    supabase.from("riftbound_cards").select("*, printings:riftbound_printings(*)").order("id").limit(MAX_CARDS),
+    myCollection(supabase),
+  ]);
   if (error) return <ErrorState title="Could not load the cards">Try again in a minute.</ErrorState>;
   const cards = (data as Card[]).map((c) => ({ ...c, printings: c.printings.toSorted(byNumber) }));
   // Collector order, as in a binder; a card without printings goes last.
@@ -63,9 +97,10 @@ export async function CardLibrary() {
       placeholder: c.placeholder,
       sets: [...new Set(c.printings.map((p) => p.set_code))],
       codes: c.printings.map((p) => p.collector_code),
+      printings: c.printings.map((p) => ({ id: p.id, set_code: p.set_code })),
       image_url: c.printings.find((p) => p.image_url)?.image_url ?? null,
     }));
-  return <CardGrid cards={library} />;
+  return <CardGrid cards={library} collection={collection} />;
 }
 
 /** One card with every printing of it. */
@@ -73,11 +108,11 @@ export async function CardDetail({ id }: { id: string }) {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims) return <LogInPrompt text={LOG_IN} />;
-  const { data, error } = await supabase
-    .from("riftbound_cards")
-    .select("*, printings:riftbound_printings(*)")
-    .eq("id", id)
-    .maybeSingle<Card>();
+  const [{ data, error }, collection, lenders] = await Promise.all([
+    supabase.from("riftbound_cards").select("*, printings:riftbound_printings(*)").eq("id", id).maybeSingle<Card>(),
+    myCollection(supabase),
+    supabase.rpc("riftbound_lenders", { card: id }),
+  ]);
   if (error) return <ErrorState title="Could not load this card">Try again in a minute.</ErrorState>;
   if (!data) notFound();
   const printings = data.printings.toSorted(byNumber);
@@ -140,6 +175,27 @@ export async function CardDetail({ id }: { id: string }) {
             </li>
           ))}
         </ul>
+      </StatCard>
+      {collection && <CopiesEditor printings={printings.map((p) => ({ id: p.id, code: p.collector_code }))} collection={collection} />}
+      <StatCard title="Who has it?" description="People in your servers with copies to lend">
+        {lenders.error ? (
+          <p className="text-sm text-muted-foreground">Could not load who has it. Try again in a minute.</p>
+        ) : lenders.data.length === 0 ? (
+          <EmptyState>Nobody in your servers lends this card yet.</EmptyState>
+        ) : (
+          <RankList>
+            {(lenders.data as Lender[]).map((l, i) => (
+              <MemberRankRow
+                key={l.user_id}
+                rank={i + 1}
+                name={l.display_name}
+                avatarUrl={l.avatar_url}
+                href={`/u/${l.user_id}`}
+                value={`${l.copies} to lend`}
+              />
+            ))}
+          </RankList>
+        )}
       </StatCard>
     </>
   );

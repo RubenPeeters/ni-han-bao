@@ -88,6 +88,7 @@ import { PROFILE_COMMAND, setProfileVisibility } from "./profile.js";
 import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type Match, type MatchRow } from "./matches.js";
 import { rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
+import { addToCollection, COLLECTION_COMMAND, setLending, type LendDefault } from "./collection.js";
 import { CARD_COMMAND, cardChoices, cardEmbed, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
@@ -692,12 +693,12 @@ async function cardCommand(interaction: ChatInputCommandInteraction<"cached">): 
 }
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (interaction.isAutocomplete() && interaction.commandName === CARD_COMMAND.name) {
+  if (interaction.isAutocomplete() && ([CARD_COMMAND.name, COLLECTION_COMMAND.name] as string[]).includes(interaction.commandName)) {
     await tracked(
       "command",
       interaction
         .respond(cardChoices(catalogue, interaction.options.getFocused()))
-        .catch((err: unknown) => log("error", "autocomplete_failed", { command: CARD_COMMAND.name, error: err })),
+        .catch((err: unknown) => log("error", "autocomplete_failed", { command: interaction.commandName, error: err })),
     );
     return;
   }
@@ -770,6 +771,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
   if (interaction.commandName === CARD_COMMAND.name) {
     await tracked("command", cardCommand(interaction));
+    return;
+  }
+  if (interaction.commandName === COLLECTION_COMMAND.name) {
+    await tracked("command", collectionCommand(interaction));
     return;
   }
   const hidden = hiddenFor(interaction.commandName);
@@ -845,6 +850,37 @@ async function forgetCommand(interaction: ChatInputCommandInteraction<"cached">)
   );
   if (confirmed) log("info", "user_forgotten", {});
   await interaction.editReply({ content: reply, components: [] });
+}
+
+/** /collection add and /collection lending, for the caller only: one binder across servers. */
+async function collectionCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const writer = {
+    async add(userId: string, printingId: string, count: number) {
+      const { data, error } = await db.rpc("riftbound_collection_add", { member: userId, printing: printingId, n: count });
+      if (error) throw new Error(`riftbound_collection_add: ${error.message}`);
+      return data as number | null;
+    },
+    async lendDefault(userId: string) {
+      const { data, error } = await db.from("riftbound_lending").select("lend_default").eq("user_id", userId).maybeSingle();
+      if (error) throw new Error(`riftbound_lending: ${error.message}`);
+      return (data?.lend_default ?? null) as LendDefault | null;
+    },
+    async setLending(userId: string, lends: boolean, lendDefault: LendDefault | null) {
+      // Without a new default the stored one stays.
+      const row = { user_id: userId, lends, updated_at: new Date().toISOString(), ...(lendDefault && { lend_default: lendDefault }) };
+      const { data, error } = await db.from("riftbound_lending").upsert(row, { onConflict: "user_id" }).select("user_id");
+      if (error) throw new Error(`riftbound_lending upsert: ${error.message}`);
+      // skip_forgotten() drops a forgotten user's row without an error.
+      return data.length > 0;
+    },
+  };
+  const userId = interaction.user.id;
+  const reply =
+    interaction.options.getSubcommand() === "add"
+      ? await addToCollection(writer, catalogue, userId, interaction.options.getString("card", true), interaction.options.getInteger("count") ?? 1)
+      : await setLending(writer, userId, interaction.options.getString("state", true), interaction.options.getString("default"));
+  await interaction.editReply(config.siteUrl ? `${reply} ${config.siteUrl}/u/${userId}/collection` : reply);
 }
 
 /** /profile visibility: who can see the caller's /u/[userId] page. */
@@ -1856,6 +1892,7 @@ async function startServer(guild: Guild): Promise<void> {
       STORE_COMMAND,
       EVENT_COMMAND,
       CARD_COMMAND,
+      COLLECTION_COMMAND,
     ]);
   } catch (err) {
     log("error", "command_registration_failed", { guild: guild.id, error: err });

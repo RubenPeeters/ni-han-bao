@@ -1,6 +1,7 @@
 import { setVisibility } from "@/app/u/[userId]/actions";
 import { Emoji } from "@/components/emoji-stats";
 import { ProfileRanks, type Rank } from "@/components/lol-ranks";
+import { ProfileTabs } from "@/components/profile-collection";
 import { EmptyState, ErrorState, RankList, RankRow, StatCard } from "@/components/stat-ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -99,6 +100,7 @@ export async function ProfileStats({ user }: { user: string }) {
           </p>
         </div>
       </div>
+      <ProfileTabs user={user} current="activity" />
       {badge && (
         <ul className="flex flex-wrap gap-2" aria-label="Badges">
           {badge.channel_name && (

@@ -1,6 +1,6 @@
 -- Proves per-server data is readable only by members of that server (#45): anon reads zero
 -- rows from every table with a guild_id, and a logged-in user reads rows of their own
--- servers only; that profiles follow their visibility (#100); then that /forget-me deletes
+-- servers only; that profiles and collections follow their visibility (#100, #150); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`. Run against a local Supabase or the dev project
 -- (never production); everything is rolled back:
@@ -81,6 +81,12 @@ begin
     insert into public.riftbound_cards (id, name, type) values ('rls-card', 'x', 'Spell');
     insert into public.riftbound_printings (id, card_id, set_code, collector_code, collector_number)
     values ('rls-printing', 'rls-card', 'RLS', 'RLS-001', 1);
+    -- Riftbound collections (#150): two copies each, everything lendable; rls-public shares no
+    -- server with the test user, rls-hidden is hidden, rls-rls-other is members-only elsewhere.
+    insert into public.riftbound_collection (user_id, printing_id, quantity)
+    select u, 'rls-printing', 2 from unnest(array['rls-rls-mine', 'rls-rls-other', 'rls-hidden', 'rls-public']) u;
+    insert into public.riftbound_lending (user_id, lends, lend_default)
+    select u, true, 'everything' from unnest(array['rls-rls-mine', 'rls-rls-other', 'rls-hidden', 'rls-public']) u;
     -- anon cannot read keys itself, so hand it one for the recap checks below.
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
@@ -113,6 +119,9 @@ begin
     end if;
     if exists (select from public.lol_matches) or public.profile_lol_champion('rls-rls-mine') is not null then
         raise exception 'anon reads League games';
+    end if;
+    if exists (select from public.riftbound_collection) or exists (select from public.riftbound_lending) then
+        raise exception 'anon reads a collection';
     end if;
     if exists (select from public.profiles) or exists (select from public.profile('rls-public')) then
         raise exception 'anon reads a profile';
@@ -230,6 +239,31 @@ begin
         or not exists (select from public.riftbound_printings where id = 'rls-printing') then
         raise exception 'a logged-in user cannot read the card catalogue';
     end if;
+    -- Riftbound collections (#150): they follow the profile; lending is opt-in per person.
+    if (select array_agg(user_id order by user_id) from public.riftbound_collection) <> array['rls-public', 'rls-rls-mine'] then
+        raise exception 'riftbound_collection does not follow the profile';
+    end if;
+    if exists (select from public.riftbound_lending) then raise exception 'a member reads others'' lending settings'; end if;
+    if (select array_agg(user_id || ':' || copies) from public.riftbound_lenders('rls-card')) <> array['rls-rls-mine:2'] then
+        raise exception 'riftbound_lenders() is not just the visible lenders in shared servers';
+    end if;
+    perform public.riftbound_collection_set('rls-printing', 'foil', 'LP', 3, 9, null);
+    if (select for_trade || ':' || coalesce(lendable, -1) from public.riftbound_collection
+        where user_id = 'rls-user' and finish = 'foil' and condition = 'LP') <> '3:-1' then
+        raise exception 'riftbound_collection_set() does not cap trade copies or keep a null lendable';
+    end if;
+    perform public.riftbound_collection_set('rls-printing', 'foil', 'LP', 0, 0, 0);
+    if exists (select from public.riftbound_collection where user_id = 'rls-user') then
+        raise exception 'riftbound_collection_set() with 0 copies does not delete the row';
+    end if;
+    if public.riftbound_playset('RLS') <> 1 or (select quantity from public.riftbound_collection where user_id = 'rls-user') <> 3 then
+        raise exception 'riftbound_playset() does not add three of each card';
+    end if;
+    perform public.riftbound_set_lending(true, 'everything');
+    perform public.riftbound_set_lending(false, null);
+    if (select lends::text || lend_default from public.riftbound_lending) <> 'falseeverything' then
+        raise exception 'riftbound_set_lending() does not save, or forgets the default';
+    end if;
     if (select icon from public.guild_games('rls-mine', current_date)) is distinct from 'i' then
         raise exception 'guild_games() does not return the game icon';
     end if;
@@ -258,6 +292,17 @@ begin
     if (select count(*) from public.my_guilds()) <> 1 then raise exception 'my_guilds() is not just mine'; end if;
     if public.monthly_recap('rls-mine', '2025-12-01') is null then raise exception 'a member cannot read their recap'; end if;
     if public.monthly_recap('rls-other', '2025-12-01') is not null then raise exception 'a member reads another server''s recap'; end if;
+end $$;
+
+-- Lending turned off hides a member from Who has it? at once (#150).
+reset role;
+update public.riftbound_lending set lends = false where user_id = 'rls-rls-mine';
+set local role authenticated;
+do $$
+begin
+    if exists (select from public.riftbound_lenders('rls-card')) then
+        raise exception 'riftbound_lenders() lists a member who stopped lending';
+    end if;
 end $$;
 
 -- Your own profile still shows your stats in a server where you ran /hide-me (#100).
