@@ -1,13 +1,8 @@
 import { LoginButton } from "@/components/auth-button";
 import { EmptyState, ErrorState } from "@/components/stat-ui";
 import { createClient } from "@/lib/supabase/server";
+import { GuildIcon, ServerNav, type Guild } from "@/components/site-nav";
 import Link from "next/link";
-
-interface Guild {
-  guild_id: string;
-  name: string;
-  icon_url: string | null;
-}
 
 export function LogInPrompt() {
   return (
@@ -38,28 +33,19 @@ export async function ServerPicker() {
             href={`/s/${g.guild_id}/leaderboard`}
             className="card flex min-w-0 items-center gap-3 active:bg-secondary"
           >
-            {g.icon_url ? (
-              // Discord CDN icons are already small; same reasoning as member avatars.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={g.icon_url}
-                alt=""
-                width={40}
-                height={40}
-                className="size-10 shrink-0 rounded-full bg-muted object-cover"
-              />
-            ) : (
-              <span
-                aria-hidden
-                className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted font-semibold text-muted-foreground"
-              >
-                {g.name.slice(0, 1).toUpperCase()}
-              </span>
-            )}
+            <GuildIcon guild={g} className="size-10" />
             <span className="min-w-0 flex-1 truncate font-medium">{g.name}</span>
           </Link>
         </li>
       ))}
     </ul>
   );
+}
+
+/** The header's server row; the visitor's servers feed its switcher. Anon gets none. */
+export async function ServerBar() {
+  const supabase = await createClient();
+  // The header must not take the page down with it: without the list the tabs still work.
+  const { data } = await supabase.rpc("my_guilds");
+  return <ServerNav guilds={(data ?? []) as Guild[]} />;
 }
