@@ -72,6 +72,24 @@ describe("GameSessions", () => {
     expect(rows.every((r) => !r.live)).toBe(true);
     expect(s.size).toBe(0);
   });
+
+  it("closes sessions only for users who no longer share a server", () => {
+    const s = new GameSessions();
+    s.update("a", ["playing:A"], at("10:00:00"));
+    s.update("b", ["playing:B"], at("10:00:00"));
+    // a left their last shared server; b left one of two.
+    expect(s.closeUnless((u) => u === "b", at("10:10:00"))).toMatchObject([{ user_id: "a", seconds: 600, live: false }]);
+    expect(s.collect(at("10:20:00"))).toMatchObject([{ user_id: "b", seconds: 1200, live: true }]);
+  });
+
+  it("drops a user's sessions uncounted and counts again from a restart", () => {
+    const s = new GameSessions();
+    s.update("a", ["playing:A"], at("10:00:00"));
+    s.drop("a");
+    expect(s.collect(at("10:30:00"))).toEqual([]);
+    s.update("a", ["playing:A"], at("10:30:00"));
+    expect(s.collect(at("10:40:00"))).toMatchObject([{ seconds: 600 }]);
+  });
 });
 
 describe("GameBuffer", () => {
@@ -109,5 +127,17 @@ describe("flushGames", () => {
       { id: "3", games: [{ ...row, seconds: 5 }] },
     ]);
     expect(b.seconds).toBe(0);
+  });
+
+  it("never sends time dropped by a hide or show, not even in a retried batch", async () => {
+    const b = new GameBuffer();
+    b.add([row, { ...row, user_id: "b" }]);
+    const fail = { incrementGames: vi.fn(async () => Promise.reject(new Error("down"))) };
+    await expect(flushGames(b, fail, () => "1")).rejects.toThrow("down");
+    b.add([{ ...row, seconds: 5 }]);
+    b.drop("a");
+    const sent: GameBatch[] = [];
+    await flushGames(b, { incrementGames: async (batch) => void sent.push(batch) }, () => "2");
+    expect(sent).toEqual([{ id: "1", games: [{ ...row, user_id: "b" }] }]);
   });
 });

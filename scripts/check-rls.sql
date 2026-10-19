@@ -169,6 +169,8 @@ begin
         raise exception 'set_profile_visibility() does not save your own setting';
     end if;
     -- Game time (#101): read through functions only, per shared server, hidden members left out.
+    -- Private again, so guild_playing_now() must count rls-user without naming them.
+    perform public.set_profile_visibility('private');
     if exists (select from public.activity_seconds) then raise exception 'a member reads game time directly'; end if;
     if (select players from public.guild_games('rls-mine', current_date)) <> 2 then
         raise exception 'guild_games() does not count just the visible members';

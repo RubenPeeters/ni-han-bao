@@ -416,6 +416,7 @@ client.on(Events.GuildMemberAdd, (member) => {
 
 client.on(Events.GuildMemberRemove, (member) => {
   servers.get(member.guild.id)?.timeline.addLeave(new Date());
+  gameBuffer.add(games.closeUnless((u) => u !== member.id || sharesServer(u), new Date()));
   void tracked("member_remove", membership(member.guild.id, () => removeMembers(member.guild.id, [member.id])));
 });
 
@@ -541,6 +542,7 @@ client.on(Events.GuildDelete, (guild) => {
   const server = servers.get(guild.id);
   // Otherwise every flush would keep adding voice time for sessions nobody can end.
   server?.timeline.addVoice(server.voice.closeAll(new Date()));
+  gameBuffer.add(games.closeUnless(sharesServer, new Date()));
   void tracked(
     "guild_delete",
     membership(guild.id, async () => {
@@ -565,6 +567,9 @@ client.on(Events.VoiceStateUpdate, (_old, state) => {
   server.timeline.setMember(memberRow(state.member.user, state.member));
   server.voice.update(state.id, true, new Date());
 });
+
+// discord.js drops the member or guild from its cache before emitting the leave or delete.
+const sharesServer = (userId: string) => client.guilds.cache.some((g) => g.members.cache.has(userId));
 
 // Arrives once per shared server; GameSessions counts the user once. Offline presences have no activities.
 client.on(Events.PresenceUpdate, (_old, presence) => {
@@ -720,6 +725,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
             { onConflict: "guild_id,user_id" },
           );
           if (error) throw new Error(`members upsert: ${error.message}`);
+          // Game time restarts now: nothing buffered across a hide or show may reach the database,
+          // which drops only what arrives while the member is hidden.
+          games.drop(row.user_id);
+          gameBuffer.drop(row.user_id);
+          gameBuffer.add(games.update(row.user_id, gameKeys(interaction.member.presence?.activities ?? []), new Date()));
         },
       },
       memberRow(interaction.user, interaction.member),

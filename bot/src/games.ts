@@ -83,6 +83,16 @@ export class GameSessions {
     return [...this.open.keys()].flatMap((id) => this.counted(id, at));
   }
 
+  /** Ends the sessions of users `keep` rejects: they no longer share a server, so no presence will end them. */
+  closeUnless(keep: (userId: string) => boolean, at: Date): GameSecondsRow[] {
+    return [...this.open].filter(([, s]) => !keep(s.userId)).flatMap(([id]) => this.close(id, at));
+  }
+
+  /** Forgets a user's open sessions without counting them (/hide-me, /show-me). */
+  drop(userId: string): void {
+    for (const [id, s] of this.open) if (s.userId === userId) this.open.delete(id);
+  }
+
   closeAll(at: Date): GameSecondsRow[] {
     return [...this.open.keys()].flatMap((id) => this.close(id, at));
   }
@@ -136,6 +146,12 @@ export class GameBuffer {
   /** Buffered rows plus the failed batch, for the log. */
   get seconds(): number {
     return [...this.rows.values(), ...(this.pending?.games ?? [])].reduce((n, r) => n + r.seconds, 0);
+  }
+
+  /** Forgets a user's unwritten time, the failed batch's too: it must not be written after /show-me. */
+  drop(userId: string): void {
+    for (const [key, r] of this.rows) if (r.user_id === userId) this.rows.delete(key);
+    if (this.pending) this.pending.games = this.pending.games.filter((r) => r.user_id !== userId);
   }
 
   drain(): GameSecondsRow[] {
