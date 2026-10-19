@@ -25,12 +25,15 @@ jobs:
       - run: supabase link --project-ref "$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD"
       - run: supabase db push -p "$SUPABASE_DB_PASSWORD" --yes
       # Not `db push --include-seed`: it skips a seed file that changed after its first run.
-      # seed.sql is idempotent, so it simply runs on every push, through the Management API's
-      # query endpoint (the access token is enough, as for `db push`).
+      # seed.sql is idempotent, so it simply runs on every push. `link` saved the pooler URL with
+      # an empty password, which would override PGPASSWORD, so the password goes into the URL.
       - if: github.ref_name != 'main'
         run: |
-          set -o pipefail
-          jq -Rs '{query: .}' supabase/seed.sql \
-            | curl -sS --fail-with-body -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
-                -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" -d @- \
-            | head -c 500
+          url=$(python3 - "$(cat supabase/.temp/pooler-url)" <<'PY'
+          import os, sys, urllib.parse as u
+          p = u.urlsplit(sys.argv[1])
+          pw = u.quote(os.environ["SUPABASE_DB_PASSWORD"], safe="")
+          print(p._replace(netloc=f"{p.username}:{pw}@{p.hostname}:{p.port}").geturl())
+          PY
+          )
+          psql "$url" -v ON_ERROR_STOP=1 -q -f supabase/seed.sql
