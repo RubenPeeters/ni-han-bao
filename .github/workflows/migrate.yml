@@ -1,10 +1,11 @@
 name: Migrate
 # Applies supabase/migrations: a push to `dev` migrates the dev project, a push to `main`
 # migrates production (#67). A manual run migrates the project of the branch it runs on.
+# Every project except production also gets supabase/seed.sql, the demo server for screenshots.
 on:
   push:
     branches: [dev, main]
-    paths: ["supabase/migrations/**"]
+    paths: ["supabase/migrations/**", "supabase/seed.sql"]
   workflow_dispatch:
 concurrency:
   group: migrate
@@ -23,3 +24,17 @@ jobs:
           version: 2.121.0
       - run: supabase link --project-ref "$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD"
       - run: supabase db push -p "$SUPABASE_DB_PASSWORD" --yes
+      # Not `db push --include-seed`: it skips a seed file that changed after its first run.
+      # seed.sql is idempotent, so it simply runs on every push. Same login as `db push`: a
+      # short-lived role from the Management API (the access token is enough), on the pooler
+      # host `link` saved, switched to postgres as the CLI does.
+      - if: github.ref_name != 'main'
+        run: |
+          set -o pipefail
+          login=$(curl -sS --fail-with-body -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/cli/login-role" \
+                    -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" -d '{"read_only": false}')
+          host=$(sed -E 's|.*@([^:/]+).*|\1|' supabase/.temp/pooler-url)
+          export PGPASSWORD=$(jq -r .password <<<"$login")
+          echo "::add-mask::$PGPASSWORD"
+          { echo "set role postgres;"; cat supabase/seed.sql; } \
+            | psql -h "$host" -p 5432 -U "$(jq -r .role <<<"$login").$PROJECT_REF" -d postgres -v ON_ERROR_STOP=1 -q

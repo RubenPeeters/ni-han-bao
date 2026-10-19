@@ -41,6 +41,9 @@ Discord ──gateway──► bot/ (discord.js, container on the Hetzner box)
   writes it explicitly; every site query filters on the route's `guildId`, after
   `memberGuild()` (`lib/guild.ts`) has checked the visitor is a member, in every page.
 - Migration files are named `YYYYMMDDHHMMSS_description.sql` and are never edited once merged.
+- A migration that adds a table a page reads also adds demo rows for it to `supabase/seed.sql`
+  (the demo server on the dev database), in the same PR. Otherwise the page is empty in every
+  screenshot.
 - The site is no longer fully public, but members see each other's names. Anything
   per-member must respect the opt-out: hidden members appear in no list and no chart.
   Logged-out pages show totals only: no server names, member names or anything per person.
@@ -49,8 +52,11 @@ Discord ──gateway──► bot/ (discord.js, container on the Hetzner box)
 
 - `make check`: lint + build the site, typecheck + test the bot. Must pass before pushing.
 - `make screenshots`: build the site and write full-page PNGs of every page (375px and
-  1280px, dark) to `.forge/screenshots/`. Pages are discovered from `app/**/page.tsx`. Look
-  at them after any visible change; forge also attaches them to every review.
+  1280px, dark) to `.forge/screenshots/`. Pages are discovered from `app/**/page.tsx`;
+  `[param]` segments are filled from `DEMO` in `scripts/screenshots.mjs` (a new param needs
+  an entry there). With `SCREENSHOT_EMAIL`/`SCREENSHOT_PASSWORD` set (forge sets them) it signs
+  in as the demo server's member, so member pages show demo data. Look at them after any
+  visible change; forge also attaches them to every review.
 - Bot tests: `bot/src/*.test.ts` (vitest). Keep Discord and Supabase out of unit tests:
   put logic in pure functions and test those.
 
