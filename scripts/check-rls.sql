@@ -147,6 +147,17 @@ begin
     if (select longest_streak from public.profile_badges('rls-user')) <> 1 then
         raise exception 'profile_badges() does not count the streak';
     end if;
+    if not exists (select from public.profile_badges('rls-rls-mine')) then
+        raise exception 'profile_badges() is empty for a members profile in a shared server';
+    end if;
+    if exists (select from public.profile_badges('rls-public')) then
+        raise exception 'profile_badges() covers servers the visitor is not in';
+    end if;
+    begin
+        perform public.set_profile_visibility('everyone');
+        raise exception 'set_profile_visibility() accepts a value that is not a visibility';
+    exception when check_violation then null;
+    end;
     perform public.set_profile_visibility('public');
     if (select visibility from public.profiles where user_id = 'rls-user') <> 'public' then
         raise exception 'set_profile_visibility() does not save your own setting';
@@ -154,6 +165,22 @@ begin
     if (select count(*) from public.my_guilds()) <> 1 then raise exception 'my_guilds() is not just mine'; end if;
     if public.monthly_recap('rls-mine', '2025-12-01') is null then raise exception 'a member cannot read their recap'; end if;
     if public.monthly_recap('rls-other', '2025-12-01') is not null then raise exception 'a member reads another server''s recap'; end if;
+end $$;
+
+-- Your own profile still shows your stats in a server where you ran /hide-me (#100).
+reset role;
+update public.members set hidden = true where guild_id = 'rls-mine' and user_id = 'rls-user';
+set local role authenticated;
+do $$
+begin
+    if (select message_count from public.profile_servers('rls-user')) <> 1
+        or (select voice_seconds from public.profile_servers('rls-user')) <> 60 then
+        raise exception 'profile_servers() drops your own counts where you are hidden';
+    end if;
+    if (select longest_streak from public.profile_badges('rls-user')) <> 1
+        or (select channel_name from public.profile_badges('rls-user')) is null then
+        raise exception 'profile_badges() drops your own badges where you are hidden';
+    end if;
 end $$;
 
 -- /forget-me (#72): no row about the user is left anywhere, and none can be written again
@@ -179,6 +206,12 @@ begin
     if exists (select from public.members where user_id = 'rls-user') then
         raise exception 'a forgotten user is written again';
     end if;
+    begin
+        perform public.set_profile_visibility('members');
+        raise exception 'set_profile_visibility() reports a save for a forgotten user';
+    exception when raise_exception then
+        if sqlerrm not like '%/show-me%' then raise; end if;
+    end;
     perform public.remember_user('rls-user');
     insert into public.members (guild_id, user_id, display_name) values ('rls-mine', 'rls-user', 'x');
     if not exists (select from public.members where user_id = 'rls-user') then

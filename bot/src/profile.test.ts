@@ -12,16 +12,21 @@ describe("PROFILE_COMMAND", () => {
 
 describe("setProfileVisibility", () => {
   it.each(VISIBILITIES)("writes %s for the caller and links their page", async (level) => {
-    const setVisibility = vi.fn(async () => {});
+    const setVisibility = vi.fn(async () => true);
     const reply = await setProfileVisibility({ setVisibility }, "a", level, "https://site");
     expect(setVisibility).toHaveBeenCalledWith("a", level);
     expect(reply).toContain("https://site/u/a");
   });
 
   it("writes nothing for a value that is not a visibility", async () => {
-    const setVisibility = vi.fn(async () => {});
+    const setVisibility = vi.fn(async () => true);
     expect(await setProfileVisibility({ setVisibility }, "a", "everyone", null)).toMatch(/nothing was changed/);
     expect(setVisibility).not.toHaveBeenCalled();
+  });
+
+  it("tells a forgotten user nothing was saved", async () => {
+    const reply = await setProfileVisibility({ setVisibility: async () => false }, "a", "public", null);
+    expect(reply).toMatch(/\/show-me/);
   });
 
   it("tells the caller when the write fails", async () => {

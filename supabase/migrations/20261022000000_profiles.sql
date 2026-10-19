@@ -70,20 +70,24 @@ $$;
 revoke execute on function public.profile(text) from public;
 grant execute on function public.profile(text) to anon, authenticated;
 
--- One row per server both the visitor and `u` are in. Security invoker: RLS limits it to the
--- visitor's servers and leaves hidden members out of the counts and the rank.
+-- One row per server both the visitor and `u` are in. Security definer, so the owner sees
+-- their own counts where they are hidden; others get nothing then (can_see_profile()).
+-- Hidden members stay out of the rank.
 create or replace function public.profile_servers(u text)
 returns table (guild_id text, name text, icon_url text, message_count bigint, voice_seconds bigint, rank bigint)
 language sql
 stable
-security invoker
+security definer
 set search_path = ''
 as $$
     select g.guild_id, g.name, g.icon_url, s.message_count, s.voice_seconds,
         case when s.message_count > 0 then (
             select count(*) + 1 from (
                 select from public.message_counts c
-                where c.guild_id = g.guild_id
+                where c.guild_id = g.guild_id and not exists (
+                    select from public.members m
+                    where m.guild_id = c.guild_id and m.user_id = c.user_id and m.hidden
+                )
                 group by c.user_id
                 having sum(c.count) > s.message_count
             ) ahead
@@ -102,10 +106,12 @@ as $$
     order by s.message_count desc, g.name;
 $$;
 
+revoke execute on function public.profile_servers(text) from public;
 grant execute on function public.profile_servers(text) to anon, authenticated;
 
 -- Badges over the same shared servers, all time: busiest channel, most used reaction and the
--- longest run of days with a message. Security invoker, like profile_servers().
+-- longest run of days with a message. Security definer, like profile_servers(). Only shared
+-- servers, also for a 'public' profile: badges name a channel and its server.
 create or replace function public.profile_badges(u text)
 returns table (
     channel_name text, channel_guild text,
@@ -114,7 +120,7 @@ returns table (
 )
 language sql
 stable
-security invoker
+security definer
 set search_path = ''
 as $$
     with shared as (
@@ -161,6 +167,7 @@ as $$
     where exists (select from shared);
 $$;
 
+revoke execute on function public.profile_badges(text) from public;
 grant execute on function public.profile_badges(text) to anon, authenticated;
 
 -- The profile page's setting: the visitor's own row only, never anyone else's. Security
@@ -179,6 +186,10 @@ begin
     end if;
     insert into public.profiles (user_id, visibility) values (me, v)
     on conflict (user_id) do update set visibility = excluded.visibility, updated_at = now();
+    -- skip_forgotten() drops the row silently; say so instead of reporting a save.
+    if not found then
+        raise exception 'you asked to be forgotten: use /show-me in Discord first';
+    end if;
 end;
 $$;
 

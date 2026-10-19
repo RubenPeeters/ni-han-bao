@@ -36,7 +36,7 @@ interface Badges {
 const VISIBILITIES = [
   { value: "private", label: "Private", hint: "Only you." },
   { value: "members", label: "Server members", hint: "People who share a server with you see the servers you share." },
-  { value: "public", label: "Public", hint: "Anyone logged in sees your name and badges, and the servers you share." },
+  { value: "public", label: "Public", hint: "Anyone logged in sees your name; people who share a server with you also see your stats and badges there." },
 ];
 
 function formatSeconds(seconds: number): string {

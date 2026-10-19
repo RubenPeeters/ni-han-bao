@@ -54,7 +54,8 @@ export default function AboutPage() {
         <p>
           Your profile page, which brings your servers together, is private until you change it
           there or with <Cmd>/profile visibility</Cmd>: only you, people who share a server
-          with you (for the servers you share), or anyone logged in. While you are hidden with{" "}
+          with you (for the servers you share), or anyone logged in (your name; stats only for
+          the servers you share). While you are hidden with{" "}
           <Cmd>/hide-me</Cmd> in a server, nobody else sees it.
         </p>
         <p>

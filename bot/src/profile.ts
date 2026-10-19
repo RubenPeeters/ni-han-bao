@@ -37,8 +37,8 @@ export const PROFILE_COMMAND = {
 } as const;
 
 export interface ProfileWriter {
-  /** Create or update the user's profiles row. */
-  setVisibility(userId: string, visibility: Visibility): Promise<void>;
+  /** Create or update the user's profiles row; false when the database skipped it (forgotten user). */
+  setVisibility(userId: string, visibility: Visibility): Promise<boolean>;
 }
 
 /** Apply the choice and return the (ephemeral) reply; `level` is the raw option value. */
@@ -52,7 +52,9 @@ export async function setProfileVisibility(
   const visibility = VISIBILITIES.find((v) => v === level);
   if (!visibility) return "Unknown visibility, nothing was changed.";
   try {
-    await writer.setVisibility(userId, visibility);
+    if (!(await writer.setVisibility(userId, visibility))) {
+      return "You asked to be forgotten, so nothing was saved. Use /show-me first.";
+    }
   } catch (err) {
     console.error("profile visibility update failed:", err);
     return "Something went wrong, nothing was changed. Please try again later.";

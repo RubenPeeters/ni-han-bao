@@ -743,10 +743,13 @@ async function profileCommand(interaction: ChatInputCommandInteraction<"cached">
   const reply = await setProfileVisibility(
     {
       async setVisibility(userId, visibility) {
-        const { error } = await db
+        const { data, error } = await db
           .from("profiles")
-          .upsert({ user_id: userId, visibility, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+          .upsert({ user_id: userId, visibility, updated_at: new Date().toISOString() }, { onConflict: "user_id" })
+          .select("user_id");
         if (error) throw new Error(`profiles upsert: ${error.message}`);
+        // skip_forgotten() drops a forgotten user's row without an error.
+        return data.length > 0;
       },
     },
     interaction.user.id,
