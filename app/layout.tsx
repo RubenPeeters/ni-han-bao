@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { AuthButton } from "@/components/auth-button";
 import { BotStatusDot } from "@/components/bot-status";
-import { ServersLink, SiteNav } from "@/components/site-nav";
+import { MainNav, SiteNav } from "@/components/site-nav";
 import { hasEnvVars, RIOT_DISCLAIMER } from "@/lib/utils";
 import "./globals.css";
 
@@ -58,7 +58,7 @@ export default function RootLayout({
               >
                 ni han bao
               </Link>
-              <Suspense fallback={<ServersLink current={false} />}>
+              <Suspense fallback={<MainNav pathname={null} />}>
                 <SiteNav />
               </Suspense>
               <div className="ml-auto flex items-center">

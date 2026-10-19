@@ -7,10 +7,10 @@ import { weekStart } from "@/lib/time";
 import { GuildIcon, ServerNav, type Guild } from "@/components/site-nav";
 import Link from "next/link";
 
-export function LogInPrompt() {
+export function LogInPrompt({ text = "Log in to see the stats of the servers you are in." }: { text?: string }) {
   return (
     <div className="flex flex-col items-start gap-4">
-      <p className="text-muted-foreground">Log in to see the stats of the servers you are in.</p>
+      <p className="text-muted-foreground">{text}</p>
       <LoginButton size="lg" />
     </div>
   );

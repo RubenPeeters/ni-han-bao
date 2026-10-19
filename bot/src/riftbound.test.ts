@@ -1,6 +1,16 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { catalogueJson, placeholderCatalogue, placeholderSvg, resolveCard, type Card } from "./riftbound.js";
+import {
+  cardChoices,
+  cardEmbed,
+  cardMiss,
+  catalogueJson,
+  lookupCard,
+  placeholderCatalogue,
+  placeholderSvg,
+  resolveCard,
+  type Card,
+} from "./riftbound.js";
 
 const champions = [
   { id: "Ahri", key: "103", name: "Ahri" },
@@ -97,5 +107,49 @@ describe("resolveCard", () => {
     expect(id("zed")).toEqual(["u-zed", "l-zed"]);
     expect(id("Teemo")).toBeNull();
     expect(id("   ")).toBeNull();
+  });
+});
+
+describe("/card", () => {
+  const { cards, printings } = placeholderCatalogue(champions);
+  const legend = cards.find((c) => c.id === "placeholder-legend-ahri")!;
+  const spell = cards.find((c) => c.name === "Quick Thought")!;
+  const printed = (card: Card) => printings.filter((p) => p.card_id === card.id);
+
+  it("suggests by name or champion, prefix matches first, at most 25, valued by id", () => {
+    const ahri = cardChoices(cards, "ahri");
+    expect(ahri.map((c) => c.value)).toEqual(expect.arrayContaining(["placeholder-legend-ahri", "placeholder-unit-ahri"]));
+    expect(ahri.find((c) => c.value === legend.id)!.name).toBe(`${legend.name} (Ahri legend)`);
+    expect(cardChoices(cards, "quick")[0]).toEqual({ name: "Quick Thought (Spell)", value: spell.id });
+    expect(cardChoices(cards, "").length).toBe(25);
+    expect(cardChoices(cards, "zzzz")).toEqual([]);
+  });
+
+  it("takes a picked id or a typed name", () => {
+    expect(lookupCard(cards, legend.id)).toEqual({ card: legend });
+    expect(lookupCard(cards, "quick thought")).toEqual({ card: spell });
+    expect(lookupCard(cards, "nothing like this")).toBeNull();
+  });
+
+  it("shows the stats, the art when Discord can load it, and the placeholder label", () => {
+    const embed = cardEmbed(legend, printed(legend), "https://site.test/");
+    expect(embed.title).toBe(legend.name);
+    expect(embed.url).toBe("https://site.test/cards/placeholder-legend-ahri");
+    expect(embed.image?.url).toMatch(/^https:\/\/ddragon\.leagueoflegends\.com\//);
+    expect(embed.fields?.map((f) => [f.name, f.value])).toEqual([
+      ["Type", "Legend"],
+      ["Cost", "-"],
+      ["Might", "-"],
+      ["Domains", legend.domains.join(", ")],
+    ]);
+    expect(embed.footer?.text).toBe("Placeholder card · PLH-L103");
+    // The generated SVG is relative, and Discord shows no SVG anyway.
+    expect(cardEmbed(spell, printed(spell), null)).toMatchObject({ url: undefined, image: undefined });
+    expect(cardEmbed({ ...spell, placeholder: false }, [], null).footer).toBeUndefined();
+  });
+
+  it("explains a miss", () => {
+    expect(cardMiss("Teemo", null)).toBe('No card called "Teemo". Pick one from the suggestions.');
+    expect(cardMiss("twin", [spell])).toContain("Quick Thought (Spell)");
   });
 });
