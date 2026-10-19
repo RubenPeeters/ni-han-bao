@@ -44,7 +44,7 @@ import { flushGames, GameBuffer, gameKeys, GameSessions } from "./games.js";
 import { loadConfig } from "./config.js";
 import { countsLive, loadBeforeId } from "./history.js";
 import { createLogger } from "./log.js";
-import { keyedQueue, memberFetchRetryMs, syncMembers } from "./membership.js";
+import { keyedQueue, memberFetchRetryMs, readAll, syncMembers } from "./membership.js";
 import { dueRecapMonth, isRecapFor, lastMonth, RECAP_COMMAND, recapMessage, recapNonce, recapSlot, recapUrls } from "./recap.js";
 import { nextPresence, PRESENCE_PHRASES } from "./presence.js";
 import { emojiRow, receivesReaction } from "./reactions.js";
@@ -746,6 +746,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       hidden,
     );
     await interaction.editReply(reply);
+    if (hidden) void tracked("rank_roles", clearRankRoles(interaction.user.id, [interaction.guild]));
   } catch (err) {
     log("error", "command_failed", { command: interaction.commandName, error: err });
   }
@@ -845,6 +846,7 @@ async function lolCommand(interaction: ChatInputCommandInteraction<"cached">): P
       const { data, error } = await db.from("game_accounts").delete().eq("user_id", userId).eq("game", GAME).select("user_id");
       if (error) throw new Error(`game_accounts delete: ${error.message}`);
       await interaction.editReply(data.length ? "Unlinked: your League account is deleted." : "You have no League account linked.");
+      if (data.length) void tracked("rank_roles", clearRankRoles(userId, client.guilds.cache.values()));
       return;
     }
     const lookup = riotLookup(riot);
@@ -1348,10 +1350,27 @@ async function rotatePresence(): Promise<void> {
   }
 }
 
+// One rank refresh at a time per user, so an old account's refresh cannot finish after a relink's.
+const rankRefreshes = keyedQueue();
+
 /** Stores one account's official ranks; Riot's entries replace the stored ones. */
-async function refreshRank(userId: string, puuid: string, platform: string): Promise<void> {
+function refreshRank(userId: string, puuid: string, platform: string): Promise<void> {
+  return rankRefreshes(userId, () => refreshRankNow(userId, puuid, platform));
+}
+
+async function refreshRankNow(userId: string, puuid: string, platform: string): Promise<void> {
   if (!riot) return;
   const entries = (await riot.get<LeagueEntry[]>(platform, `/lol/league/v4/entries/by-puuid/${encodeURIComponent(puuid)}`)) ?? [];
+  // Riot's queue may have held this for minutes: write only if this is still the linked account.
+  const linked = await db
+    .from("game_accounts")
+    .select("user_id")
+    .eq("user_id", userId)
+    .eq("game", GAME)
+    .eq("external_id", puuid)
+    .eq("region", platform);
+  if (linked.error) throw new Error(`game_accounts: ${linked.error.message}`);
+  if (!linked.data.length) return;
   const rows = rankRows(userId, entries).map((r) => ({ ...r, updated_at: new Date().toISOString() }));
   if (rows.length) {
     // Fails on the foreign key when the account was unlinked meanwhile, which is what we want.
@@ -1367,31 +1386,39 @@ async function refreshRank(userId: string, puuid: string, platform: string): Pro
 
 let refreshingRanks = false;
 
-/** Every 3 hours: every linked account's ranks, then the rank roles. */
+/** Every 3 hours: every linked account's ranks, then the rank roles, which need no Riot key. */
 async function refreshRanks(): Promise<void> {
-  if (!riot || refreshingRanks) return;
-  refreshingRanks = true;
-  try {
-    // shortcut: PostgREST returns at most 1000 rows, and the development key's 100 requests
-    // per 2 minutes take 1000 accounts 20 minutes; page this and get a production key first.
-    const { data, error } = await db.from("game_accounts").select("user_id, external_id, region").eq("game", GAME);
-    if (error) throw new Error(`game_accounts: ${error.message}`);
-    let failed = 0;
-    for (const a of data) {
-      try {
-        await refreshRank(a.user_id, a.external_id, a.region);
-      } catch (err) {
-        failed++;
-        log("warn", "lol_rank_failed", { error: err });
+  if (riot && !refreshingRanks) {
+    refreshingRanks = true;
+    try {
+      // shortcut: the development key's 100 requests per 2 minutes take 1000 accounts 20 minutes; get a production key first.
+      const accounts = await readAll(async (from, to) => {
+        const { data, error } = await db
+          .from("game_accounts")
+          .select("user_id, external_id, region")
+          .eq("game", GAME)
+          .order("user_id")
+          .range(from, to);
+        if (error) throw new Error(`game_accounts: ${error.message}`);
+        return data;
+      });
+      let failed = 0;
+      for (const a of accounts) {
+        try {
+          await refreshRank(a.user_id, a.external_id, a.region);
+        } catch (err) {
+          failed++;
+          log("warn", "lol_rank_failed", { error: err });
+        }
       }
+      log("info", "lol_ranks_refreshed", { accounts: accounts.length, failed });
+    } catch (err) {
+      log("error", "lol_ranks_failed", { error: err });
+    } finally {
+      refreshingRanks = false;
     }
-    log("info", "lol_ranks_refreshed", { accounts: data.length, failed });
-    for (const guild of client.guilds.cache.values()) await tracked("rank_roles", syncRankRoles(guild));
-  } catch (err) {
-    log("error", "lol_ranks_failed", { error: err });
-  } finally {
-    refreshingRanks = false;
   }
+  for (const guild of client.guilds.cache.values()) await tracked("rank_roles", syncRankRoles(guild));
 }
 
 /** The server's existing rank roles, by tier: the roles named after a tier. */
@@ -1400,13 +1427,30 @@ function rankRolesOf(guild: Guild) {
   return [...guild.roles.cache.values()].filter((r) => names.has(r.name)).map((r) => ({ role: r, tier: names.get(r.name)! }));
 }
 
+/** Takes a user's rank roles away in these servers now (/lol unlink, /hide-me), not at the next refresh. */
+async function clearRankRoles(userId: string, guilds: Iterable<Guild>): Promise<void> {
+  for (const guild of guilds) {
+    const member = guild.members.cache.get(userId);
+    if (!member || !settingsFor(guild.id).rank_roles) continue;
+    const { remove } = roleChanges(new Set(member.roles.cache.keys()), null, rankRolesOf(guild).map(({ role }) => role.id));
+    if (remove.length) await member.roles.remove(remove, "ni han bao rank roles");
+  }
+}
+
 /** Why the bot cannot keep rank roles in this server, or null. */
 function rankRolesCheck(guild: Guild): string | null {
   const me = guild.members.me;
   return rankRolesProblem(
     !!me?.permissions.has(PermissionFlagsBits.ManageRoles),
     me?.roles.highest.position ?? 0,
-    rankRolesOf(guild).map(({ role }) => ({ name: role.name, position: role.position })),
+    rankRolesOf(guild).map(({ role }) => ({
+      name: role.name,
+      position: role.position,
+      managed: role.managed,
+      grantsAccess:
+        role.permissions.bitfield !== 0n ||
+        guild.channels.cache.some((c) => "permissionOverwrites" in c && c.permissionOverwrites.cache.has(role.id)),
+    })),
   );
 }
 
@@ -1428,22 +1472,42 @@ async function syncRankRoles(guild: Guild): Promise<void> {
     const role = await guild.roles.create({ name: tierName(tier), permissions: [], reason: "ni han bao rank roles (/setup rank-roles)" });
     byTier.set(tier, role.id);
   }
-  // shortcut: PostgREST returns at most 1000 rows; page these past that many linked accounts.
+  // Read in full before any change: a missing row would take a member's role away.
   const [ranks, hidden] = await Promise.all([
-    db.from("lol_ranks").select("user_id, queue, tier"),
-    db.from("members").select("user_id").eq("guild_id", guild.id).eq("hidden", true),
+    readAll(async (from, to) => {
+      const { data, error } = await db.from("lol_ranks").select("user_id, queue, tier").order("user_id").order("queue").range(from, to);
+      if (error) throw new Error(`lol_ranks: ${error.message}`);
+      return data;
+    }),
+    readAll(async (from, to) => {
+      const { data, error } = await db
+        .from("members")
+        .select("user_id")
+        .eq("guild_id", guild.id)
+        .eq("hidden", true)
+        .order("user_id")
+        .range(from, to);
+      if (error) throw new Error(`members: ${error.message}`);
+      return data;
+    }),
   ]);
-  if (ranks.error) throw new Error(`lol_ranks: ${ranks.error.message}`);
-  if (hidden.error) throw new Error(`members: ${hidden.error.message}`);
-  const hiddenIds = new Set(hidden.data.map((m) => m.user_id));
+  const hiddenIds = new Set(hidden.map((m) => m.user_id));
   const rankIds = [...byTier.values()];
+  let failed = 0;
   for (const member of guild.members.cache.values()) {
     if (member.user.bot) continue;
-    const tier = hiddenIds.has(member.id) ? null : roleTier(ranks.data.filter((r) => r.user_id === member.id));
+    const tier = hiddenIds.has(member.id) ? null : roleTier(ranks.filter((r) => r.user_id === member.id));
     const { add, remove } = roleChanges(new Set(member.roles.cache.keys()), tier && byTier.get(tier)!, rankIds);
-    if (add.length) await member.roles.add(add, "ni han bao rank roles");
-    if (remove.length) await member.roles.remove(remove, "ni han bao rank roles");
+    // Per member: one Discord refuses (the owner, say) must not stop the rest.
+    try {
+      if (add.length) await member.roles.add(add, "ni han bao rank roles");
+      if (remove.length) await member.roles.remove(remove, "ni han bao rank roles");
+    } catch (err) {
+      failed++;
+      log("warn", "rank_role_failed", { guild: guild.id, member: member.id, error: err });
+    }
   }
+  if (failed) log("warn", "rank_roles_partial", { guild: guild.id, failed });
 }
 
 // Week last seen posted per server, so the database is asked once per week rather than every check.

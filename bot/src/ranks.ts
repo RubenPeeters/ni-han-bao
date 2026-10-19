@@ -46,13 +46,28 @@ export function roleTier(ranks: readonly Pick<RankRow, "queue" | "tier">[]): str
   return (ranks.find((r) => r.queue === "RANKED_SOLO_5x5") ?? ranks.find((r) => r.queue === "RANKED_FLEX_SR"))?.tier ?? null;
 }
 
+/** An existing role named after a tier, as rank roles would take it over. */
+export interface RankRole {
+  name: string;
+  position: number;
+  /** Managed by an integration: no one can give or take it. */
+  managed: boolean;
+  /** Grants server permissions or has channel permission overrides. */
+  grantsAccess: boolean;
+}
+
 /**
  * Why the bot cannot keep rank roles here, or null when it can. A bot only manages roles
- * below its own highest role, so every existing rank role must sit under it.
+ * below its own highest role, so every existing rank role must sit under it. An existing
+ * role that grants access is refused: rank roles would hand it out and take it away by rank.
  */
-export function rankRolesProblem(canManageRoles: boolean, botPosition: number, rankRoles: readonly { name: string; position: number }[]): string | null {
+export function rankRolesProblem(canManageRoles: boolean, botPosition: number, rankRoles: readonly RankRole[]): string | null {
   if (!canManageRoles) {
     return "I need the Manage Roles permission for rank roles. Give my role that permission and try again; until then, ranks stay on the website.";
+  }
+  const unsafe = rankRoles.filter((r) => r.managed || r.grantsAccess).map((r) => r.name);
+  if (unsafe.length) {
+    return `Rank roles give and take the roles named after a tier, and ${unsafe.join(", ")} ${unsafe.length === 1 ? "is" : "are"} managed by an integration or ${unsafe.length === 1 ? "grants" : "grant"} permissions or channel access. Rename ${unsafe.length === 1 ? "it" : "them"}, or remove those permissions, and try again; until then, ranks stay on the website.`;
   }
   const above = rankRoles.filter((r) => r.position >= botPosition).map((r) => r.name);
   if (above.length) {

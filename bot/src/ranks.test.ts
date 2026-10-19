@@ -31,13 +31,20 @@ describe("roleTier", () => {
 });
 
 describe("rankRolesProblem", () => {
+  const role = (name: string, position: number) => ({ name, position, managed: false, grantsAccess: false });
+
   it("needs Manage Roles", () => {
     expect(rankRolesProblem(false, 10, [])).toMatch(/Manage Roles/);
   });
 
   it("needs the bot's role above every rank role", () => {
-    expect(rankRolesProblem(true, 5, [{ name: "Gold", position: 5 }, { name: "Iron", position: 2 }])).toMatch(/Gold is not below/);
-    expect(rankRolesProblem(true, 5, [{ name: "Gold", position: 4 }])).toBeNull();
+    expect(rankRolesProblem(true, 5, [role("Gold", 5), role("Iron", 2)])).toMatch(/Gold is not below/);
+    expect(rankRolesProblem(true, 5, [role("Gold", 4)])).toBeNull();
+  });
+
+  it("refuses an existing tier-named role that grants access or is managed", () => {
+    expect(rankRolesProblem(true, 5, [{ ...role("Gold", 1), grantsAccess: true }])).toMatch(/Gold is managed by an integration or grants/);
+    expect(rankRolesProblem(true, 5, [{ ...role("Gold", 1), managed: true }, { ...role("Iron", 1), grantsAccess: true }])).toMatch(/Gold, Iron are/);
   });
 });
 

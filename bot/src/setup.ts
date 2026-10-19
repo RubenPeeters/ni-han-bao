@@ -117,7 +117,9 @@ export function settingsText(s: GuildSettings): string {
   const report = s.report_channel_id ? `<#${s.report_channel_id}>` : "off (turn it on with /setup report-channel)";
   const totals = s.public_totals_opt_out ? "left out" : "included";
   // Off leaves the roles in place: deleting them is the server's call.
-  const roles = s.rank_roles ? "on" : "off (existing rank roles stay until you delete them)";
+  const roles = s.rank_roles
+    ? "on (I give and take the roles named after a tier, Iron to Challenger, by each linked member's rank)"
+    : "off (existing rank roles stay until you delete them)";
   return `Weekly report card: ${report}\nTime zone: ${s.timezone}\nPublic totals: ${totals}\nRank roles: ${roles}`;
 }
 
