@@ -9,7 +9,8 @@
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "placeholders": "tsx src/placeholders.ts"
+    "placeholders": "tsx src/placeholders.ts",
+    "icons": "tsx src/icons.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

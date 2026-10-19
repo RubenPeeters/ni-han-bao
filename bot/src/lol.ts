@@ -1,4 +1,5 @@
 import { ApplicationCommandOptionType } from "discord.js";
+import { STARTER_ICON_NAMES } from "./starter-icons.js";
 
 /**
  * League platforms (Summoner-V4) and the regional route Account-V1 is asked through. Riot
@@ -89,9 +90,11 @@ export async function startLink(riot: RiotLookup, riotId: string, region: string
 
 export function challengeText(challenge: Challenge): string {
   return (
-    `To prove ${challenge.riotId} is yours, set your League profile icon to the one shown ` +
-    `(icon ${challenge.icon}, a starter icon), then press Verify. ` +
-    "It can take a minute to show up. You can change it back afterwards."
+    `To prove ${challenge.riotId} is yours, set your League profile icon to ` +
+    `**${STARTER_ICON_NAMES[challenge.icon]}** (icon ${challenge.icon}, a starter icon), then press Verify. ` +
+    // The names are English: a client in another language shows translated ones.
+    "Search for it by name in the client's icon picker, or pick the icon shown below. " +
+    "It can take up to 5 minutes to show up. You can change it back afterwards."
   );
 }
 
@@ -109,7 +112,7 @@ export async function verifyLink(
 ): Promise<{ done: boolean; reply: string }> {
   const icon = await riot.icon(challenge.platform, challenge.puuid);
   if (icon !== challenge.icon) {
-    return { done: false, reply: `${challengeText(challenge)}\n\nYour icon is not icon ${challenge.icon} yet. Try again in a minute.` };
+    return { done: false, reply: `${challengeText(challenge)}\n\nYour icon is not **${STARTER_ICON_NAMES[challenge.icon]}** (icon ${challenge.icon}) yet. It can take up to 5 minutes to show up, so try again in a minute or two.` };
   }
   if (!(await writer.link(userId, challenge))) {
     return { done: true, reply: "You asked to be forgotten, so nothing was saved. Use /show-me first." };
