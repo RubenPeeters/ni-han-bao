@@ -99,12 +99,17 @@ export function CardGrid({ cards, collection }: { cards: LibraryCard[]; collecti
     setPlayset("Adding…");
     const { error: failed } = await createClient().rpc("riftbound_playset", { set_code: playsetSet });
     if (failed) return setPlayset(`Not saved: ${failed.message}`);
-    // What riftbound_playset() wrote: three of each, one legend, never fewer than before.
+    // What riftbound_playset() wrote: three of each printing in the set, one legend, never fewer than before.
     merge(
-      cards.flatMap((c) => {
-        const copy = c.printings[0]?.set_code === playsetSet ? tileCopy(c, copies) : null;
-        return copy ? [{ ...copy, quantity: Math.max(copy.quantity, c.type === "Legend" ? 1 : 3) }] : [];
-      }),
+      cards.flatMap((c) =>
+        c.printings
+          .filter((p) => p.set_code === playsetSet)
+          .map((p) => {
+            const blank = { printing: p.id, finish: "normal", condition: "NM", quantity: 0, for_trade: 0, lendable: null };
+            const copy = copies.get(copyKey(blank)) ?? blank;
+            return { ...copy, quantity: Math.max(copy.quantity, c.type === "Legend" ? 1 : 3) };
+          }),
+      ),
     );
     setPlayset(`Playset of ${playsetSet} added.`);
   };
