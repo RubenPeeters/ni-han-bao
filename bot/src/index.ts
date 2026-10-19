@@ -91,7 +91,8 @@ import { RiotApi } from "./riot.js";
 import { addToCollection, COLLECTION_COMMAND, setLending } from "./collection.js";
 import { CARD_COMMAND, cardChoices, cardEmbed, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
-import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
+import { hiddenFor, setVisibility } from "./visibility.js";
+import { COMMANDS } from "./commands.js";
 import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
 import { dayStart, fromWallClock, localDay, weekStart } from "./zone.js";
 
@@ -1896,19 +1897,7 @@ async function backfillServer(guildId: string): Promise<void> {
 async function startServer(guild: Guild): Promise<void> {
   // Guild commands, not global ones: they apply instantly.
   try {
-    await guild.commands.set([
-      ...VISIBILITY_COMMANDS,
-      FORGET_COMMAND,
-      PROFILE_COMMAND,
-      LOL_COMMAND,
-      ...STATS_COMMANDS,
-      SETUP_COMMAND,
-      RECAP_COMMAND,
-      STORE_COMMAND,
-      EVENT_COMMAND,
-      CARD_COMMAND,
-      COLLECTION_COMMAND,
-    ]);
+    await guild.commands.set(COMMANDS);
   } catch (err) {
     log("error", "command_registration_failed", { guild: guild.id, error: err });
   }

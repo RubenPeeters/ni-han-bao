@@ -1,4 +1,4 @@
-.PHONY: install check screenshots
+.PHONY: install check screenshots docs-images
 install:
 	pnpm install --frozen-lockfile
 # Builds without Supabase env vars (the example shows a setup notice instead), so CI needs no secrets.
@@ -18,3 +18,9 @@ check: install
 screenshots: install
 	pnpm build
 	node scripts/screenshots.mjs
+
+# The docs' images (DOCS_SHOTS in scripts/screenshots.mjs) into public/docs/shots/, committed.
+# Signs in as the demo member like `make screenshots`, so it needs the same env vars.
+docs-images: install
+	pnpm build
+	node scripts/screenshots.mjs --docs

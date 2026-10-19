@@ -164,7 +164,11 @@ function Landing() {
           Integrations. It stops counting straight away.
         </Faq>
         <p className="text-sm text-muted-foreground">
-          More in{" "}
+          More in the{" "}
+          <Link href="/docs" className="font-medium underline underline-offset-4 hover:text-primary">
+            docs
+          </Link>{" "}
+          and in{" "}
           <Link href="/about" className="font-medium underline underline-offset-4 hover:text-primary">
             About &amp; privacy
           </Link>
