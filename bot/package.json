@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "placeholders": "tsx src/placeholders.ts",
-    "icons": "tsx src/icons.ts"
+    "icons": "tsx src/icons.ts",
+    "commands": "tsx src/command-reference.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
