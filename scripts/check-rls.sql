@@ -59,6 +59,11 @@ begin
     insert into public.guild_members (guild_id, user_id) values ('rls-other', 'rls-public');
     insert into public.profiles (user_id, visibility)
     values ('rls-rls-mine', 'members'), ('rls-rls-other', 'members'), ('rls-public', 'public'), ('rls-hidden', 'public');
+    -- Game time (#101): one row each, all playing now. rls-hidden is a member of rls-mine.
+    insert into public.guild_members (guild_id, user_id) values ('rls-mine', 'rls-hidden');
+    insert into public.activity_seconds (user_id, day, kind, name, seconds, live_at)
+    select u, current_date, 'playing', 'Game', 3600, now()
+    from unnest(array['rls-user', 'rls-rls-mine', 'rls-hidden', 'rls-public']) u;
     -- anon cannot read keys itself, so hand it one for the recap checks below.
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
@@ -80,6 +85,7 @@ begin
         execute format('select count(*) from public.%I', t) into n;
         if n <> 0 then raise exception 'anon reads % rows from %', n, t; end if;
     end loop;
+    if exists (select from public.activity_seconds) then raise exception 'anon reads game time'; end if;
     if exists (select from public.profiles) or exists (select from public.profile('rls-public')) then
         raise exception 'anon reads a profile';
     end if;
@@ -161,6 +167,25 @@ begin
     perform public.set_profile_visibility('public');
     if (select visibility from public.profiles where user_id = 'rls-user') <> 'public' then
         raise exception 'set_profile_visibility() does not save your own setting';
+    end if;
+    -- Game time (#101): read through functions only, per shared server, hidden members left out.
+    -- Private again, so guild_playing_now() must count rls-user without naming them.
+    perform public.set_profile_visibility('private');
+    if exists (select from public.activity_seconds) then raise exception 'a member reads game time directly'; end if;
+    if (select players from public.guild_games('rls-mine', current_date)) <> 2 then
+        raise exception 'guild_games() does not count just the visible members';
+    end if;
+    if exists (select from public.guild_games('rls-other', current_date))
+        or exists (select from public.guild_playing_now('rls-other')) then
+        raise exception 'a member reads another server''s games';
+    end if;
+    if (select players from public.guild_playing_now('rls-mine')) <> array['x']
+        or (select others from public.guild_playing_now('rls-mine')) <> 1 then
+        raise exception 'guild_playing_now() names a private profile or a hidden member';
+    end if;
+    if not exists (select from public.profile_games('rls-rls-mine')) or exists (select from public.profile_games('rls-public'))
+        or exists (select from public.profile_games('rls-hidden')) then
+        raise exception 'profile_games() does not follow the profile and shared servers';
     end if;
     if (select count(*) from public.my_guilds()) <> 1 then raise exception 'my_guilds() is not just mine'; end if;
     if public.monthly_recap('rls-mine', '2025-12-01') is null then raise exception 'a member cannot read their recap'; end if;

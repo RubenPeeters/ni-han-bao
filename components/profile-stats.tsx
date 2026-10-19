@@ -1,6 +1,6 @@
 import { setVisibility } from "@/app/u/[userId]/actions";
 import { Emoji } from "@/components/emoji-stats";
-import { EmptyState, ErrorState } from "@/components/stat-ui";
+import { EmptyState, ErrorState, RankList, RankRow, StatCard } from "@/components/stat-ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
@@ -39,7 +39,13 @@ const VISIBILITIES = [
   { value: "public", label: "Public", hint: "Anyone logged in sees your name; people who share a server with you also see your stats and badges there." },
 ];
 
-function formatSeconds(seconds: number): string {
+interface GameTime {
+  /** Null for the streaming total. */
+  name: string | null;
+  seconds: number;
+}
+
+export function formatSeconds(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const h = Math.floor(minutes / 60);
   return h ? `${h.toLocaleString("en-US")} h ${minutes % 60} min` : `${minutes} min`;
@@ -51,12 +57,13 @@ function formatSeconds(seconds: number): string {
  */
 export async function ProfileStats({ user }: { user: string }) {
   const supabase = await createClient();
-  const [profile, servers, badges] = await Promise.all([
+  const [profile, servers, badges, games] = await Promise.all([
     supabase.rpc("profile", { u: user }).maybeSingle<Profile>(),
     supabase.rpc("profile_servers", { u: user }),
     supabase.rpc("profile_badges", { u: user }).maybeSingle<Badges>(),
+    supabase.rpc("profile_games", { u: user }),
   ]);
-  if (profile.error || servers.error || badges.error) {
+  if (profile.error || servers.error || badges.error || games.error) {
     return <ErrorState title="Could not load this profile">Try again in a minute.</ErrorState>;
   }
   // Private, hidden, forgotten or unknown: the same 404 as a page that does not exist.
@@ -64,6 +71,9 @@ export async function ProfileStats({ user }: { user: string }) {
   const { display_name, avatar_url, visibility, mine } = profile.data;
   const name = display_name ?? "You";
   const badge = badges.data;
+  const gameRows = games.data as GameTime[];
+  const topGames = gameRows.filter((g) => g.name !== null && g.seconds >= 60).slice(0, 5);
+  const streaming = gameRows.find((g) => g.name === null)?.seconds ?? 0;
   return (
     <>
       <div className="flex min-w-0 items-center gap-4">
@@ -121,6 +131,24 @@ export async function ProfileStats({ user }: { user: string }) {
         </ul>
       )}
       {mine && <VisibilityForm current={visibility ?? "private"} />}
+      {(topGames.length > 0 || streaming >= 60) && (
+        <StatCard title="Games" description="Last 30 days, from Discord's Playing and Streaming status">
+          {topGames.length > 0 && (
+            <RankList>
+              {topGames.map((g, i) => (
+                <RankRow key={g.name} rank={i + 1} value={formatSeconds(g.seconds)}>
+                  <span className="min-w-0 flex-1 truncate">{g.name}</span>
+                </RankRow>
+              ))}
+            </RankList>
+          )}
+          {streaming >= 60 && (
+            <p className="text-sm">
+              Streaming: <span className="font-medium tabular-nums">{formatSeconds(streaming)}</span>
+            </p>
+          )}
+        </StatCard>
+      )}
       {servers.data.length === 0 ? (
         <EmptyState>{mine ? "The bot is not in any of your servers yet." : "You share no servers with them."}</EmptyState>
       ) : (
