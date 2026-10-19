@@ -64,6 +64,8 @@ begin
     insert into public.activity_seconds (user_id, day, kind, name, seconds, live_at)
     select u, current_date, 'playing', 'Game', 3600, now()
     from unnest(array['rls-user', 'rls-rls-mine', 'rls-hidden', 'rls-public']) u;
+    -- Linked game accounts (#102): the bot's only, read by nobody else.
+    insert into public.game_accounts (user_id, game, external_id, region) values ('rls-user', 'lol', 'p', 'euw1');
     -- anon cannot read keys itself, so hand it one for the recap checks below.
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
@@ -86,6 +88,7 @@ begin
         if n <> 0 then raise exception 'anon reads % rows from %', n, t; end if;
     end loop;
     if exists (select from public.activity_seconds) then raise exception 'anon reads game time'; end if;
+    if exists (select from public.game_accounts) then raise exception 'anon reads linked accounts'; end if;
     if exists (select from public.profiles) or exists (select from public.profile('rls-public')) then
         raise exception 'anon reads a profile';
     end if;
@@ -172,6 +175,7 @@ begin
     -- Private again, so guild_playing_now() must count rls-user without naming them.
     perform public.set_profile_visibility('private');
     if exists (select from public.activity_seconds) then raise exception 'a member reads game time directly'; end if;
+    if exists (select from public.game_accounts) then raise exception 'a member reads linked accounts'; end if;
     if (select players from public.guild_games('rls-mine', current_date)) <> 2 then
         raise exception 'guild_games() does not count just the visible members';
     end if;
