@@ -6,10 +6,11 @@ export interface GuildSettings {
   report_channel_id: string | null;
   timezone: string;
   public_totals_opt_out: boolean;
+  rank_roles: boolean;
 }
 
 /** A server that never used /setup; matches the table's defaults. */
-export const DEFAULT_SETTINGS: GuildSettings = { report_channel_id: null, timezone: "UTC", public_totals_opt_out: false };
+export const DEFAULT_SETTINGS: GuildSettings = { report_channel_id: null, timezone: "UTC", public_totals_opt_out: false, rank_roles: false };
 
 export const SETUP_COMMAND = {
   name: "setup",
@@ -57,6 +58,23 @@ export const SETUP_COMMAND = {
         },
       ],
     },
+    {
+      type: ApplicationCommandOptionType.Subcommand,
+      name: "rank-roles",
+      description: "Give linked members a role for their League tier; needs Manage Roles",
+      options: [
+        {
+          type: ApplicationCommandOptionType.String,
+          name: "state",
+          description: "On keeps a role per tier in sync",
+          required: true,
+          choices: [
+            { name: "on", value: "on" },
+            { name: "off", value: "off" },
+          ],
+        },
+      ],
+    },
     { type: ApplicationCommandOptionType.Subcommand, name: "show", description: "Show this server's settings" },
   ],
 } as const;
@@ -68,6 +86,10 @@ export interface SetupInput {
   canSend: boolean;
   timezone: string | null;
   include: boolean | null;
+  /** The rank-roles state asked for: "on" or "off". */
+  state: string | null;
+  /** Why the bot cannot keep rank roles (rankRolesProblem()), or null when it can. */
+  rankRolesProblem: string | null;
 }
 
 /** The change a /setup subcommand asks for, a reply explaining why there is none, or null for show. */
@@ -84,13 +106,21 @@ export function setupChange(input: SetupInput): Partial<GuildSettings> | string 
     return { timezone };
   }
   if (input.subcommand === "public-totals") return { public_totals_opt_out: input.include === false };
+  if (input.subcommand === "rank-roles") {
+    if (input.state === "on" && input.rankRolesProblem) return input.rankRolesProblem;
+    return { rank_roles: input.state === "on" };
+  }
   return null;
 }
 
 export function settingsText(s: GuildSettings): string {
   const report = s.report_channel_id ? `<#${s.report_channel_id}>` : "off (turn it on with /setup report-channel)";
   const totals = s.public_totals_opt_out ? "left out" : "included";
-  return `Weekly report card: ${report}\nTime zone: ${s.timezone}\nPublic totals: ${totals}`;
+  // Off leaves the roles in place: deleting them is the server's call.
+  const roles = s.rank_roles
+    ? "on (I give and take the roles named after a tier, Iron to Challenger, by each linked member's rank)"
+    : "off (existing rank roles stay until you delete them)";
+  return `Weekly report card: ${report}\nTime zone: ${s.timezone}\nPublic totals: ${totals}\nRank roles: ${roles}`;
 }
 
 export interface SetupWriter {

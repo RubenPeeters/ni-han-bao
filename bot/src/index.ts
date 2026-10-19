@@ -44,7 +44,7 @@ import { flushGames, GameBuffer, gameKeys, GameSessions } from "./games.js";
 import { loadConfig } from "./config.js";
 import { countsLive, loadBeforeId } from "./history.js";
 import { createLogger } from "./log.js";
-import { keyedQueue, memberFetchRetryMs, syncMembers } from "./membership.js";
+import { keyedQueue, memberFetchRetryMs, readAll, syncMembers } from "./membership.js";
 import { dueRecapMonth, isRecapFor, lastMonth, RECAP_COMMAND, recapMessage, recapNonce, recapSlot, recapUrls } from "./recap.js";
 import { nextPresence, PRESENCE_PHRASES } from "./presence.js";
 import { emojiRow, receivesReaction } from "./reactions.js";
@@ -56,6 +56,7 @@ import {
   postedSince,
   reportEmbed,
   reportSlot,
+  type LeagueWeek,
   type ReportData,
 } from "./report.js";
 import {
@@ -81,11 +82,15 @@ import {
   storeList,
   type Store,
 } from "./stores.js";
+import { challengeText, GAME, LOL_COMMAND, startLink, verifyLink, type Platform, type RiotLookup } from "./lol.js";
 import { PROFILE_COMMAND, setProfileVisibility } from "./profile.js";
+import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type Match, type MatchRow } from "./matches.js";
+import { rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
+import { RiotApi } from "./riot.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
-import { dayStart, localDay, weekStart } from "./zone.js";
+import { dayStart, fromWallClock, localDay, weekStart } from "./zone.js";
 
 const HEARTBEAT_MS = 60_000;
 const FLUSH_MS = 10_000;
@@ -94,6 +99,8 @@ const SHUTDOWN_DEADLINE_MS = 8_000;
 const SHUTDOWN_KILL_MS = 9_500;
 const PRESENCE_MS = 5 * 60_000;
 const REPORT_CHECK_MS = 60_000;
+const RANKS_MS = 3 * 60 * 60_000;
+const MATCHES_MS = 6 * 60 * 60_000;
 
 const config = loadConfig();
 const log = createLogger();
@@ -101,6 +108,8 @@ const log = createLogger();
 const db = createClient(config.supabaseUrl, config.supabaseSecretKey, {
   auth: { persistSession: false },
 });
+
+const riot = config.riotApiKey ? new RiotApi(config.riotApiKey) : null;
 
 // No MessageContent intent on purpose: message events still arrive (enough for counting),
 // but without their text, so the bot cannot store what people write.
@@ -685,6 +694,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     await tracked("command", profileCommand(interaction));
     return;
   }
+  if (interaction.commandName === LOL_COMMAND.name) {
+    await tracked("command", lolCommand(interaction));
+    return;
+  }
   if (interaction.commandName === SETUP_COMMAND.name) {
     await tracked("command", setupCommand(interaction));
     return;
@@ -736,6 +749,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       hidden,
     );
     await interaction.editReply(reply);
+    if (hidden) void tracked("rank_roles", clearRankRoles(interaction.user.id, [interaction.guild]));
   } catch (err) {
     log("error", "command_failed", { command: interaction.commandName, error: err });
   }
@@ -797,6 +811,107 @@ async function profileCommand(interaction: ChatInputCommandInteraction<"cached">
   await interaction.editReply(reply);
 }
 
+// Interaction tokens last 15 minutes; this leaves time for the last edit.
+const LOL_VERIFY_MS = 14 * 60_000;
+const LOL_VERIFY_ID = "lol:verify";
+
+function riotLookup(api: RiotApi): RiotLookup {
+  return {
+    account: (regional, gameName, tagLine) =>
+      api.get(regional, `/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`),
+    icon: async (platform: Platform, puuid) =>
+      (await api.get<{ profileIconId: number }>(platform, `/lol/summoner/v4/summoners/by-puuid/${encodeURIComponent(puuid)}`))
+        ?.profileIconId ?? null,
+  };
+}
+
+/** The icon's picture from Data Dragon, Riot's public CDN; null if its version list is down. */
+async function iconUrl(icon: number): Promise<string | null> {
+  try {
+    const res = await fetch("https://ddragon.leagueoflegends.com/api/versions.json", { signal: AbortSignal.timeout(5_000) });
+    const [version] = (await res.json()) as string[];
+    return `https://ddragon.leagueoflegends.com/cdn/${version}/img/profileicon/${icon}.png`;
+  } catch {
+    return null;
+  }
+}
+
+/** /lol link proves ownership with a profile icon the caller sets, then stores the PUUID; /lol unlink deletes it. */
+async function lolCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  if (!riot) {
+    await interaction.editReply("League linking is not set up on this bot.");
+    return;
+  }
+  const userId = interaction.user.id;
+  try {
+    if (interaction.options.getSubcommand() === "unlink") {
+      const { data, error } = await db.from("game_accounts").delete().eq("user_id", userId).eq("game", GAME).select("user_id");
+      if (error) throw new Error(`game_accounts delete: ${error.message}`);
+      await interaction.editReply(data.length ? "Unlinked: your League account is deleted." : "You have no League account linked.");
+      if (data.length) void tracked("rank_roles", clearRankRoles(userId, client.guilds.cache.values()));
+      return;
+    }
+    const lookup = riotLookup(riot);
+    const challenge = await startLink(lookup, interaction.options.getString("riot-id", true), interaction.options.getString("region", true));
+    if (typeof challenge === "string") {
+      await interaction.editReply(challenge);
+      return;
+    }
+    const url = await iconUrl(challenge.icon);
+    const button = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(LOL_VERIFY_ID).setLabel("Verify").setStyle(ButtonStyle.Primary),
+    );
+    const message = await interaction.editReply({
+      content: challengeText(challenge),
+      embeds: url ? [{ image: { url } }] : [],
+      components: [button],
+    });
+    const deadline = Date.now() + LOL_VERIFY_MS;
+    for (;;) {
+      const click = await message
+        .awaitMessageComponent({ filter: (i) => i.user.id === userId, time: Math.max(0, deadline - Date.now()) })
+        .catch(() => null);
+      if (!click) {
+        await interaction.editReply({ content: "Timed out, nothing was linked. Run /lol link again.", embeds: [], components: [] });
+        return;
+      }
+      await click.deferUpdate();
+      const { done, reply } = await verifyLink(
+        lookup,
+        {
+          async link(id, c) {
+            const { data, error } = await db
+              .from("game_accounts")
+              .upsert(
+                { user_id: id, game: GAME, external_id: c.puuid, region: c.platform, verified_at: new Date().toISOString() },
+                { onConflict: "user_id,game" },
+              )
+              .select("user_id");
+            if (error) throw new Error(`game_accounts upsert: ${error.message}`);
+            // skip_forgotten() drops a forgotten user's row without an error.
+            return data.length > 0;
+          },
+        },
+        userId,
+        challenge,
+      );
+      await interaction.editReply(done ? { content: reply, embeds: [], components: [] } : { content: reply });
+      if (done) {
+        log("info", "lol_linked", {});
+        void tracked("lol_ranks", refreshRank(userId, challenge.puuid, challenge.platform));
+        void tracked("lol_matches", refreshMatches(userId, challenge.puuid, challenge.platform));
+        return;
+      }
+    }
+  } catch (err) {
+    log("error", "command_failed", { command: LOL_COMMAND.name, error: err });
+    await interaction
+      .editReply({ content: "Something went wrong, nothing was changed. Please try again later.", embeds: [], components: [] })
+      .catch(() => {});
+  }
+}
+
 /** /setup: only members with Manage Server see it (default_member_permissions). */
 async function setupCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
   // Deferred because Discord drops replies sent more than 3 s in, and the write may be slow.
@@ -804,8 +919,10 @@ async function setupCommand(interaction: ChatInputCommandInteraction<"cached">):
   const guildId = interaction.guildId;
   const channel = interaction.options.getChannel("channel");
   const me = interaction.guild.members.me;
+  const subcommand = interaction.options.getSubcommand();
+  const state = interaction.options.getString("state");
   const change = setupChange({
-    subcommand: interaction.options.getSubcommand(),
+    subcommand,
     channelId: channel?.id ?? null,
     canSend:
       !!channel &&
@@ -813,6 +930,8 @@ async function setupCommand(interaction: ChatInputCommandInteraction<"cached">):
       !!channel.permissionsFor(me)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]),
     timezone: interaction.options.getString("timezone"),
     include: interaction.options.getBoolean("include"),
+    state,
+    rankRolesProblem: subcommand === "rank-roles" && state === "on" ? rankRolesCheck(interaction.guild) : null,
   });
   const { reply, settings: next } = await applySetup(
     {
@@ -829,6 +948,7 @@ async function setupCommand(interaction: ChatInputCommandInteraction<"cached">):
   settings.set(guildId, next);
   if (change && typeof change === "object") log("info", "setup_changed", { guild: guildId, ...change });
   await interaction.editReply(reply);
+  if (change && typeof change === "object" && change.rank_roles) void tracked("rank_roles", syncRankRoles(interaction.guild));
 }
 
 async function guildStores(guildId: string): Promise<Store[]> {
@@ -1234,6 +1354,243 @@ async function rotatePresence(): Promise<void> {
   }
 }
 
+/** Riot's queue may have held a refresh for minutes: write only if this is still the linked account. */
+async function stillLinked(userId: string, puuid: string, platform: string): Promise<boolean> {
+  const linked = await db
+    .from("game_accounts")
+    .select("user_id")
+    .eq("user_id", userId)
+    .eq("game", GAME)
+    .eq("external_id", puuid)
+    .eq("region", platform);
+  if (linked.error) throw new Error(`game_accounts: ${linked.error.message}`);
+  return linked.data.length > 0;
+}
+
+// One rank refresh at a time per user, so an old account's refresh cannot finish after a relink's.
+const rankRefreshes = keyedQueue();
+
+/** Stores one account's official ranks; Riot's entries replace the stored ones. */
+function refreshRank(userId: string, puuid: string, platform: string): Promise<void> {
+  return rankRefreshes(userId, () => refreshRankNow(userId, puuid, platform));
+}
+
+async function refreshRankNow(userId: string, puuid: string, platform: string): Promise<void> {
+  if (!riot) return;
+  const entries = (await riot.get<LeagueEntry[]>(platform, `/lol/league/v4/entries/by-puuid/${encodeURIComponent(puuid)}`)) ?? [];
+  if (!(await stillLinked(userId, puuid, platform))) return;
+  const rows = rankRows(userId, entries).map((r) => ({ ...r, updated_at: new Date().toISOString() }));
+  if (rows.length) {
+    // Fails on the foreign key when the account was unlinked meanwhile, which is what we want.
+    const { error } = await db.from("lol_ranks").upsert(rows, { onConflict: "user_id,queue" });
+    if (error) throw new Error(`lol_ranks upsert: ${error.message}`);
+  }
+  // Queues no longer ranked in (a new season, or decayed out) go.
+  let stale = db.from("lol_ranks").delete().eq("user_id", userId);
+  if (rows.length) stale = stale.not("queue", "in", `(${rows.map((r) => r.queue).join(",")})`);
+  const { error } = await stale;
+  if (error) throw new Error(`lol_ranks delete: ${error.message}`);
+}
+
+let refreshingRanks = false;
+
+/** Every 3 hours: every linked account's ranks, then the rank roles, which need no Riot key. */
+async function refreshRanks(): Promise<void> {
+  if (riot && !refreshingRanks) {
+    refreshingRanks = true;
+    try {
+      // shortcut: the development key's 100 requests per 2 minutes take 1000 accounts 20 minutes; get a production key first.
+      const accounts = await readAll(async (from, to) => {
+        const { data, error } = await db
+          .from("game_accounts")
+          .select("user_id, external_id, region")
+          .eq("game", GAME)
+          .order("user_id")
+          .range(from, to);
+        if (error) throw new Error(`game_accounts: ${error.message}`);
+        return data;
+      });
+      let failed = 0;
+      for (const a of accounts) {
+        try {
+          await refreshRank(a.user_id, a.external_id, a.region);
+        } catch (err) {
+          failed++;
+          log("warn", "lol_rank_failed", { error: err });
+        }
+      }
+      log("info", "lol_ranks_refreshed", { accounts: accounts.length, failed });
+    } catch (err) {
+      log("error", "lol_ranks_failed", { error: err });
+    } finally {
+      refreshingRanks = false;
+    }
+  }
+  for (const guild of client.guilds.cache.values()) await tracked("rank_roles", syncRankRoles(guild));
+}
+
+// One games refresh at a time per user, as for ranks.
+const matchRefreshes = keyedQueue();
+
+/** Stores the account's new ranked and normal games since KEEP_MS ago, and drops older ones. */
+function refreshMatches(userId: string, puuid: string, platform: string): Promise<void> {
+  return matchRefreshes(userId, () => refreshMatchesNow(userId, puuid, platform));
+}
+
+async function refreshMatchesNow(userId: string, puuid: string, platform: string): Promise<void> {
+  if (!riot) return;
+  const region = matchRegion(platform);
+  const since = Date.now() - KEEP_MS;
+  const stored = await db.from("lol_matches").select("match_id").eq("user_id", userId).eq("puuid", puuid);
+  if (stored.error) throw new Error(`lol_matches: ${stored.error.message}`);
+  const known = new Set(stored.data.map((m) => m.match_id));
+  const ids = new Set<string>();
+  for (const type of MATCH_TYPES) {
+    const all = await allIds((start) => riot.get<string[]>(region, matchIdsPath(puuid, type, since, start)));
+    for (const id of all) if (!known.has(id)) ids.add(id);
+  }
+  const rows: MatchRow[] = [];
+  for (const id of ids) {
+    const match = await riot.get<Match>(region, `/lol/match/v5/matches/${encodeURIComponent(id)}`);
+    const row = match && matchRow(userId, puuid, match);
+    if (row) rows.push(row);
+  }
+  if (!(await stillLinked(userId, puuid, platform))) return;
+  if (rows.length) {
+    // Fails on the foreign key when the account was unlinked meanwhile, which is what we want.
+    const { error } = await db.from("lol_matches").upsert(rows, { onConflict: "user_id,match_id" });
+    if (error) throw new Error(`lol_matches upsert: ${error.message}`);
+  }
+  const { error } = await db.from("lol_matches").delete().eq("user_id", userId).lt("played_at", new Date(since).toISOString());
+  if (error) throw new Error(`lol_matches delete: ${error.message}`);
+}
+
+let refreshingMatches = false;
+
+/**
+ * Every 6 hours: every linked account's new games. Small steps all week through the Riot
+ * queue, rather than every member's week at once when the report is due.
+ */
+async function refreshAllMatches(): Promise<void> {
+  if (!riot || refreshingMatches) return;
+  refreshingMatches = true;
+  try {
+    const accounts = await readAll(async (from, to) => {
+      const { data, error } = await db
+        .from("game_accounts")
+        .select("user_id, external_id, region")
+        .eq("game", GAME)
+        .order("user_id")
+        .range(from, to);
+      if (error) throw new Error(`game_accounts: ${error.message}`);
+      return data;
+    });
+    let failed = 0;
+    for (const a of accounts) {
+      try {
+        await refreshMatches(a.user_id, a.external_id, a.region);
+      } catch (err) {
+        failed++;
+        log("warn", "lol_matches_account_failed", { error: err });
+      }
+    }
+    log("info", "lol_matches_refreshed", { accounts: accounts.length, failed });
+  } catch (err) {
+    log("error", "lol_matches_failed", { error: err });
+  } finally {
+    refreshingMatches = false;
+  }
+}
+
+/** The server's existing rank roles, by tier: the roles named after a tier. */
+function rankRolesOf(guild: Guild) {
+  const names = new Map(TIERS.map((t) => [tierName(t), t]));
+  return [...guild.roles.cache.values()].filter((r) => names.has(r.name)).map((r) => ({ role: r, tier: names.get(r.name)! }));
+}
+
+/** Takes a user's rank roles away in these servers now (/lol unlink, /hide-me), not at the next refresh. */
+async function clearRankRoles(userId: string, guilds: Iterable<Guild>): Promise<void> {
+  for (const guild of guilds) {
+    const member = guild.members.cache.get(userId);
+    if (!member || !settingsFor(guild.id).rank_roles) continue;
+    const { remove } = roleChanges(new Set(member.roles.cache.keys()), null, rankRolesOf(guild).map(({ role }) => role.id));
+    if (remove.length) await member.roles.remove(remove, "ni han bao rank roles");
+  }
+}
+
+/** Why the bot cannot keep rank roles in this server, or null. */
+function rankRolesCheck(guild: Guild): string | null {
+  const me = guild.members.me;
+  return rankRolesProblem(
+    !!me?.permissions.has(PermissionFlagsBits.ManageRoles),
+    me?.roles.highest.position ?? 0,
+    rankRolesOf(guild).map(({ role }) => ({
+      name: role.name,
+      position: role.position,
+      managed: role.managed,
+      grantsAccess:
+        role.permissions.bitfield !== 0n ||
+        guild.channels.cache.some((c) => "permissionOverwrites" in c && c.permissionOverwrites.cache.has(role.id)),
+    })),
+  );
+}
+
+/**
+ * With /setup rank-roles on: gives each linked member the role of their tier (creating the
+ * tier roles it lacks) and takes the other rank roles away. Hidden members get none.
+ */
+async function syncRankRoles(guild: Guild): Promise<void> {
+  if (!settingsFor(guild.id).rank_roles) return;
+  // Permissions or role order changed since /setup: skip until fixed, and say why in the log.
+  const problem = rankRolesCheck(guild);
+  if (problem) {
+    log("warn", "rank_roles_skipped", { guild: guild.id, problem });
+    return;
+  }
+  const byTier = new Map(rankRolesOf(guild).map(({ role, tier }) => [tier, role.id]));
+  for (const tier of TIERS) {
+    if (byTier.has(tier)) continue;
+    const role = await guild.roles.create({ name: tierName(tier), permissions: [], reason: "ni han bao rank roles (/setup rank-roles)" });
+    byTier.set(tier, role.id);
+  }
+  // Read in full before any change: a missing row would take a member's role away.
+  const [ranks, hidden] = await Promise.all([
+    readAll(async (from, to) => {
+      const { data, error } = await db.from("lol_ranks").select("user_id, queue, tier").order("user_id").order("queue").range(from, to);
+      if (error) throw new Error(`lol_ranks: ${error.message}`);
+      return data;
+    }),
+    readAll(async (from, to) => {
+      const { data, error } = await db
+        .from("members")
+        .select("user_id")
+        .eq("guild_id", guild.id)
+        .eq("hidden", true)
+        .order("user_id")
+        .range(from, to);
+      if (error) throw new Error(`members: ${error.message}`);
+      return data;
+    }),
+  ]);
+  const hiddenIds = new Set(hidden.map((m) => m.user_id));
+  const rankIds = [...byTier.values()];
+  let failed = 0;
+  for (const member of guild.members.cache.values()) {
+    if (member.user.bot) continue;
+    const tier = hiddenIds.has(member.id) ? null : roleTier(ranks.filter((r) => r.user_id === member.id));
+    const { add, remove } = roleChanges(new Set(member.roles.cache.keys()), tier && byTier.get(tier)!, rankIds);
+    // Per member: one Discord refuses (the owner, say) must not stop the rest.
+    try {
+      if (add.length) await member.roles.add(add, "ni han bao rank roles");
+      if (remove.length) await member.roles.remove(remove, "ni han bao rank roles");
+    } catch (err) {
+      failed++;
+      log("warn", "rank_role_failed", { guild: guild.id, member: member.id, error: err });
+    }
+  }
+  if (failed) log("warn", "rank_roles_partial", { guild: guild.id, failed });
+}
+
 // Week last seen posted per server, so the database is asked once per week rather than every check.
 const reportedWeek = new Map<string, string>();
 const reporting = new Set<string>();
@@ -1283,9 +1640,15 @@ async function weeklyReport(guild: string): Promise<void> {
       });
       if (error) throw new Error(`report_card: ${error.message}`);
       const events = await upcomingEvents(guild, new Date(Date.now() + 7 * 24 * 60 * 60_000));
+      const league = await db.rpc("lol_week", {
+        g: guild,
+        since: new Date(fromWallClock(Date.parse(week), timezone)).toISOString(),
+        until: new Date(fromWallClock(Date.parse(addDays(week, 7)), timezone)).toISOString(),
+      });
+      if (league.error) throw new Error(`lol_week: ${league.error.message}`);
       // The nonce makes Discord drop a second send of the same week from a concurrent bot.
       await channel.send({
-        embeds: [reportEmbed(week, data as ReportData, config.siteUrl, timezone, events)],
+        embeds: [reportEmbed(week, data as ReportData, config.siteUrl, timezone, events, league.data as LeagueWeek[])],
         nonce: `report-${week}`,
         enforceNonce: true,
       });
@@ -1428,6 +1791,7 @@ async function startServer(guild: Guild): Promise<void> {
       ...VISIBILITY_COMMANDS,
       FORGET_COMMAND,
       PROFILE_COMMAND,
+      LOL_COMMAND,
       ...STATS_COMMANDS,
       SETUP_COMMAND,
       RECAP_COMMAND,
@@ -1481,11 +1845,18 @@ client.once(Events.ClientReady, async (c) => {
   setInterval(() => void periodicFlush(), FLUSH_MS);
   void rotatePresence();
   setInterval(() => void rotatePresence(), PRESENCE_MS);
-  weeklyReports();
-  setInterval(weeklyReports, REPORT_CHECK_MS);
   monthlyRecaps();
   setInterval(monthlyRecaps, REPORT_CHECK_MS);
+  setInterval(() => void refreshRanks(), RANKS_MS);
+  setInterval(() => void refreshAllMatches(), MATCHES_MS);
+  // An overdue report waits for the games played while the bot was down.
+  void refreshAllMatches().finally(() => {
+    weeklyReports();
+    setInterval(weeklyReports, REPORT_CHECK_MS);
+  });
   for (const guild of c.guilds.cache.values()) await startServer(guild);
+  // After startServer: the role sync needs every server's members cached.
+  void refreshRanks();
 });
 
 // discord.js reconnects by itself; these only make outages visible in the log.
@@ -1560,7 +1931,7 @@ for (const b of boundaries) servers.set(b.guild_id, newServer(b.guild_id, b.befo
 // shortcut: PostgREST returns at most 1000 rows; beyond that many servers, page this.
 const { data: savedSettings, error: settingsError } = await db
   .from("guild_settings")
-  .select("guild_id, report_channel_id, timezone, public_totals_opt_out");
+  .select("guild_id, report_channel_id, timezone, public_totals_opt_out, rank_roles");
 if (settingsError) throw new Error(`guild_settings: ${settingsError.message}`);
 for (const { guild_id, ...row } of savedSettings) settings.set(guild_id, row);
 await client.login(config.discordToken);

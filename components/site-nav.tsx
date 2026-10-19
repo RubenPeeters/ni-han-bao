@@ -11,6 +11,7 @@ const SERVER_PAGES = [
   { page: "timeline", label: "Timeline" },
   { page: "stores", label: "Where we play" },
   { page: "games", label: "What we play" },
+  { page: "ranked", label: "Ranked" },
 ];
 
 export function SiteNav() {

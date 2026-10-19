@@ -39,6 +39,16 @@ export default function AboutPage() {
             in, or that you are streaming, and for how long, per day. Nothing else from your
             status is stored: no rich presence details, no Spotify songs, no custom status.
           </li>
+          <li>
+            League ranks: only if you link your League account with <Cmd>/lol link</Cmd>, Riot&apos;s
+            official tier, division and LP for Solo/Duo and Flex, every 3 hours. They show on your
+            profile and on the Ranked page of your servers. <Cmd>/lol unlink</Cmd> deletes them.
+          </li>
+          <li>
+            League games: with a linked account, your ranked and normal games of the last 10 days (the
+            champion you played and when), every 6 hours, for the weekly report and the Ranked page.
+            Custom games are never fetched. <Cmd>/lol unlink</Cmd> deletes them.
+          </li>
           <li>Joins and leaves.</li>
         </ul>
         <p>
@@ -83,7 +93,7 @@ export default function AboutPage() {
           To have your data deleted instead, type <Cmd>/forget-me</Cmd> in any server and
           confirm. It deletes everything the bot stored about you, in every server: your
           message, reaction and voice counts, your game time, your name and avatar, your server memberships, your
-          profile setting and your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
+          linked League account with its ranks and games, your profile setting and your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
           their counts, without anything that points to you. The bot then stops counting you,
           keeping only a scrambled (hashed) copy of your Discord id to recognise you by. Until
           you type <Cmd>/show-me</Cmd>, which starts counting you again, you also cannot open

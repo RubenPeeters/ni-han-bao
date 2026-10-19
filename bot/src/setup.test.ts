@@ -2,7 +2,7 @@ import { PermissionFlagsBits } from "discord.js";
 import { describe, expect, it } from "vitest";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 
-const input = { subcommand: "show", channelId: null, canSend: false, timezone: null, include: null };
+const input = { subcommand: "show", channelId: null, canSend: false, timezone: null, include: null, state: null, rankRolesProblem: null };
 
 describe("SETUP_COMMAND", () => {
   it("is for members with Manage Server only", () => {
@@ -34,6 +34,13 @@ describe("setupChange", () => {
     expect(setupChange({ ...input, subcommand: "public-totals", include: false })).toEqual({ public_totals_opt_out: true });
     expect(setupChange({ ...input, subcommand: "public-totals", include: true })).toEqual({ public_totals_opt_out: false });
   });
+  it("turns rank roles on where the bot can manage them, and off", () => {
+    expect(setupChange({ ...input, subcommand: "rank-roles", state: "on" })).toEqual({ rank_roles: true });
+    expect(setupChange({ ...input, subcommand: "rank-roles", state: "off", rankRolesProblem: "no" })).toEqual({ rank_roles: false });
+  });
+  it("says why it cannot turn rank roles on", () => {
+    expect(setupChange({ ...input, subcommand: "rank-roles", state: "on", rankRolesProblem: "no Manage Roles" })).toBe("no Manage Roles");
+  });
   it("changes nothing for show", () => expect(setupChange(input)).toBeNull());
 });
 
@@ -44,8 +51,8 @@ describe("applySetup", () => {
   it("saves the change and replies with the new settings", async () => {
     const { reply, settings } = await applySetup(writer, DEFAULT_SETTINGS, { report_channel_id: "c1" });
     expect(saved).toEqual([{ report_channel_id: "c1" }]);
-    expect(settings).toEqual({ report_channel_id: "c1", timezone: "UTC", public_totals_opt_out: false });
-    expect(reply).toBe("Saved.\nWeekly report card: <#c1>\nTime zone: UTC\nPublic totals: included");
+    expect(settings).toEqual({ report_channel_id: "c1", timezone: "UTC", public_totals_opt_out: false, rank_roles: false });
+    expect(reply).toBe("Saved.\nWeekly report card: <#c1>\nTime zone: UTC\nPublic totals: included\nRank roles: off (existing rank roles stay until you delete them)");
   });
   it("shows the settings without saving", async () => {
     const { reply } = await applySetup(
