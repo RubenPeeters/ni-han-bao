@@ -12,7 +12,7 @@ export function CommandReference() {
           </div>
           {command.usages.map((usage) => (
             <div key={usage.name} className="flex flex-col gap-1">
-              {command.usages.length > 1 && <h3 className="font-mono font-semibold">/{usage.name}</h3>}
+              {usage.name !== command.name && <h3 className="font-mono font-semibold">/{usage.name}</h3>}
               <p className="text-muted-foreground">{usage.description}</p>
               {usage.options.length > 0 && (
                 <ul className="flex flex-col gap-1 pl-4">
