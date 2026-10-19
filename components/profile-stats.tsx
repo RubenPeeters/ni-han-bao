@@ -66,7 +66,7 @@ export async function ProfileStats({ user }: { user: string }) {
     supabase.rpc("profile_ranks", { u: user }),
     supabase.rpc("profile_lol_champion", { u: user }),
   ]);
-  if (profile.error || servers.error || badges.error || games.error || ranks.error || champion.error) {
+  if (profile.error || servers.error || badges.error || games.error || ranks.error) {
     return <ErrorState title="Could not load this profile">Try again in a minute.</ErrorState>;
   }
   // Private, hidden, forgotten or unknown: the same 404 as a page that does not exist.
@@ -134,7 +134,11 @@ export async function ProfileStats({ user }: { user: string }) {
         </ul>
       )}
       {mine && <VisibilityForm current={visibility ?? "private"} />}
-      <ProfileRanks ranks={ranks.data as (Rank & { queue: string })[]} champion={champion.data as string | null} />
+      <ProfileRanks
+        ranks={ranks.data as (Rank & { queue: string })[]}
+        // Decoration only: a failed champion lookup drops the line, not the profile.
+        champion={champion.error ? null : (champion.data as string | null)}
+      />
       {(topGames.length > 0 || streaming >= 60) && (
         <StatCard title="Games" description="Last 30 days, from Discord's Playing and Streaming status">
           {topGames.length > 0 && (
