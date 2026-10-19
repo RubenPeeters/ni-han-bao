@@ -23,6 +23,7 @@ import {
   type User,
 } from "discord.js";
 import { createClient } from "@supabase/supabase-js";
+import { readFileSync } from "node:fs";
 import { FORGET_CANCEL_ID, FORGET_COMMAND, FORGET_CONFIRM_ID, FORGET_PROMPT, forgetMe } from "./forget.js";
 import { channelRow, memberRow, shouldCount, type MemberRow } from "./activity.js";
 import {
@@ -87,6 +88,7 @@ import { PROFILE_COMMAND, setProfileVisibility } from "./profile.js";
 import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type Match, type MatchRow } from "./matches.js";
 import { rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
+import type { Catalogue } from "./riftbound.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
@@ -1862,6 +1864,21 @@ async function startServer(guild: Guild): Promise<void> {
   queueBackfill(guild.id);
 }
 
+/** The committed placeholder catalogue (#148), upserted on every start: only the bot writes it. */
+async function loadCatalogue(): Promise<void> {
+  // One level above both src/ and dist/: bot/riftbound-catalogue.json.
+  const { cards, printings } = JSON.parse(
+    readFileSync(new URL("../riftbound-catalogue.json", import.meta.url), "utf8"),
+  ) as Catalogue;
+  // shortcut: a card dropped from the file stays in the table; delete it by hand until the real API (#96) replaces them all.
+  const updated_at = new Date().toISOString();
+  const written = await db.from("riftbound_cards").upsert(cards.map((r) => ({ ...r, updated_at })), { onConflict: "id" });
+  if (written.error) throw new Error(`riftbound_cards upsert: ${written.error.message}`);
+  const printed = await db.from("riftbound_printings").upsert(printings.map((r) => ({ ...r, updated_at })), { onConflict: "id" });
+  if (printed.error) throw new Error(`riftbound_printings upsert: ${printed.error.message}`);
+  log("info", "riftbound_catalogue_loaded", { cards: cards.length });
+}
+
 client.once(Events.ClientReady, async (c) => {
   log("info", "ready", { user: c.user.tag, servers: c.guilds.cache.size });
   await heartbeat();
@@ -1869,6 +1886,7 @@ client.once(Events.ClientReady, async (c) => {
   setInterval(() => void periodicFlush(), FLUSH_MS);
   void rotatePresence();
   setInterval(() => void rotatePresence(), PRESENCE_MS);
+  void tracked("riftbound_catalogue", loadCatalogue());
   monthlyRecaps();
   setInterval(monthlyRecaps, REPORT_CHECK_MS);
   setInterval(() => void refreshRanks(), RANKS_MS);
