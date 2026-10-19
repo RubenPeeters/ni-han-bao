@@ -84,7 +84,7 @@ import {
 } from "./stores.js";
 import { challengeText, GAME, LOL_COMMAND, startLink, verifyLink, type Platform, type RiotLookup } from "./lol.js";
 import { PROFILE_COMMAND, setProfileVisibility } from "./profile.js";
-import { KEEP_MS, MATCH_TYPES, matchIdsPath, matchRegion, matchRow, type Match, type MatchRow } from "./matches.js";
+import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type Match, type MatchRow } from "./matches.js";
 import { rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
@@ -1354,6 +1354,19 @@ async function rotatePresence(): Promise<void> {
   }
 }
 
+/** Riot's queue may have held a refresh for minutes: write only if this is still the linked account. */
+async function stillLinked(userId: string, puuid: string, platform: string): Promise<boolean> {
+  const linked = await db
+    .from("game_accounts")
+    .select("user_id")
+    .eq("user_id", userId)
+    .eq("game", GAME)
+    .eq("external_id", puuid)
+    .eq("region", platform);
+  if (linked.error) throw new Error(`game_accounts: ${linked.error.message}`);
+  return linked.data.length > 0;
+}
+
 // One rank refresh at a time per user, so an old account's refresh cannot finish after a relink's.
 const rankRefreshes = keyedQueue();
 
@@ -1365,16 +1378,7 @@ function refreshRank(userId: string, puuid: string, platform: string): Promise<v
 async function refreshRankNow(userId: string, puuid: string, platform: string): Promise<void> {
   if (!riot) return;
   const entries = (await riot.get<LeagueEntry[]>(platform, `/lol/league/v4/entries/by-puuid/${encodeURIComponent(puuid)}`)) ?? [];
-  // Riot's queue may have held this for minutes: write only if this is still the linked account.
-  const linked = await db
-    .from("game_accounts")
-    .select("user_id")
-    .eq("user_id", userId)
-    .eq("game", GAME)
-    .eq("external_id", puuid)
-    .eq("region", platform);
-  if (linked.error) throw new Error(`game_accounts: ${linked.error.message}`);
-  if (!linked.data.length) return;
+  if (!(await stillLinked(userId, puuid, platform))) return;
   const rows = rankRows(userId, entries).map((r) => ({ ...r, updated_at: new Date().toISOString() }));
   if (rows.length) {
     // Fails on the foreign key when the account was unlinked meanwhile, which is what we want.
@@ -1442,7 +1446,8 @@ async function refreshMatchesNow(userId: string, puuid: string, platform: string
   const known = new Set(stored.data.map((m) => m.match_id));
   const ids = new Set<string>();
   for (const type of MATCH_TYPES) {
-    for (const id of (await riot.get<string[]>(region, matchIdsPath(puuid, type, since))) ?? []) if (!known.has(id)) ids.add(id);
+    const all = await allIds((start) => riot.get<string[]>(region, matchIdsPath(puuid, type, since, start)));
+    for (const id of all) if (!known.has(id)) ids.add(id);
   }
   const rows: MatchRow[] = [];
   for (const id of ids) {
@@ -1450,6 +1455,7 @@ async function refreshMatchesNow(userId: string, puuid: string, platform: string
     const row = match && matchRow(userId, puuid, match);
     if (row) rows.push(row);
   }
+  if (!(await stillLinked(userId, puuid, platform))) return;
   if (rows.length) {
     // Fails on the foreign key when the account was unlinked meanwhile, which is what we want.
     const { error } = await db.from("lol_matches").upsert(rows, { onConflict: "user_id,match_id" });
@@ -1839,13 +1845,15 @@ client.once(Events.ClientReady, async (c) => {
   setInterval(() => void periodicFlush(), FLUSH_MS);
   void rotatePresence();
   setInterval(() => void rotatePresence(), PRESENCE_MS);
-  weeklyReports();
-  setInterval(weeklyReports, REPORT_CHECK_MS);
   monthlyRecaps();
   setInterval(monthlyRecaps, REPORT_CHECK_MS);
   setInterval(() => void refreshRanks(), RANKS_MS);
   setInterval(() => void refreshAllMatches(), MATCHES_MS);
-  void refreshAllMatches();
+  // An overdue report waits for the games played while the bot was down.
+  void refreshAllMatches().finally(() => {
+    weeklyReports();
+    setInterval(weeklyReports, REPORT_CHECK_MS);
+  });
   for (const guild of c.guilds.cache.values()) await startServer(guild);
   // After startServer: the role sync needs every server's members cached.
   void refreshRanks();

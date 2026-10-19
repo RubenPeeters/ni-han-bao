@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchIdsPath, matchRegion, matchRow, type Match } from "./matches.js";
+import { allIds, matchIdsPath, matchRegion, matchRow, type Match } from "./matches.js";
 
 describe("matchRegion", () => {
   it.each([
@@ -13,9 +13,23 @@ describe("matchRegion", () => {
 
 describe("matchIdsPath", () => {
   it("asks for one type since a time, in seconds", () => {
-    expect(matchIdsPath("a/b", "ranked", 1_760_000_000_999)).toBe(
-      "/lol/match/v5/matches/by-puuid/a%2Fb/ids?type=ranked&startTime=1760000000&count=100",
+    expect(matchIdsPath("a/b", "ranked", 1_760_000_000_999, 200)).toBe(
+      "/lol/match/v5/matches/by-puuid/a%2Fb/ids?type=ranked&startTime=1760000000&start=200&count=100",
     );
+  });
+});
+
+describe("allIds", () => {
+  const history = Array.from({ length: 250 }, (_, i) => `m${i}`);
+  it("pages until a short page", async () => {
+    const starts: number[] = [];
+    const ids = await allIds(async (start) => (starts.push(start), history.slice(start, start + 100)));
+    expect(ids).toEqual(history);
+    expect(starts).toEqual([0, 100, 200]);
+  });
+  it("stops on an empty page after a full one, and on a missing one", async () => {
+    expect(await allIds(async (start) => history.slice(start, start + 100).slice(0, start < 200 ? 100 : 0))).toHaveLength(200);
+    expect(await allIds(async () => null)).toEqual([]);
   });
 });
 

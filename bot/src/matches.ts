@@ -18,10 +18,22 @@ export function matchRegion(platform: string): string {
   return Object.hasOwn(PLATFORMS, platform) ? PLATFORMS[platform as Platform].regional : "europe";
 }
 
-/** The ids of one type's games since `since` (ms), newest first. */
-export function matchIdsPath(puuid: string, type: (typeof MATCH_TYPES)[number], since: number): string {
-  // shortcut: one page of 100 games per type per 10 days; page with `start` if anyone plays more.
-  return `/lol/match/v5/matches/by-puuid/${encodeURIComponent(puuid)}/ids?type=${type}&startTime=${Math.floor(since / 1000)}&count=100`;
+/** The most ids the ids endpoint returns per page. */
+export const PAGE = 100;
+
+/** One page of the ids of one type's games since `since` (ms), newest first, skipping `start`. */
+export function matchIdsPath(puuid: string, type: (typeof MATCH_TYPES)[number], since: number, start: number): string {
+  return `/lol/match/v5/matches/by-puuid/${encodeURIComponent(puuid)}/ids?type=${type}&startTime=${Math.floor(since / 1000)}&start=${start}&count=${PAGE}`;
+}
+
+/** Every id, asking for pages until one comes back short. */
+export async function allIds(page: (start: number) => Promise<string[] | null>): Promise<string[]> {
+  const ids: string[] = [];
+  for (;;) {
+    const got = (await page(ids.length)) ?? [];
+    ids.push(...got);
+    if (got.length < PAGE) return ids;
+  }
 }
 
 /** One Match-V5 match, as /lol/match/v5/matches/{id} returns it (fields used here). */
