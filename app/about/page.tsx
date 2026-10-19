@@ -53,9 +53,10 @@ export default function AboutPage() {
           </li>
           <li>
             Riftbound cards: only what you enter yourself on the Cards page or with{" "}
-            <Cmd>/collection add</Cmd>, how many of each you own (finish and condition), how many are
-            for trade and how many you lend. Your profile&apos;s Collection tab shows totals per set
-            and rarity. With <Cmd>/collection lending on</Cmd>, members of your servers see your
+            <Cmd>/collection add</Cmd>, how many of each you own (finish, condition and language), how
+            many are for trade and how many you lend. Your profile&apos;s Collection tab shows totals
+            per set, rarity and language. We keep the language you last added in, so the next entry
+            starts in it. With <Cmd>/collection lending on</Cmd>, members of your servers see your
             copies to lend on a card&apos;s page, unless your profile is private.
           </li>
           <li>Joins and leaves.</li>

@@ -249,18 +249,28 @@ begin
         or exists (select from public.profile_collection('rls-hidden')) then
         raise exception 'profile_collection() does not follow the profile';
     end if;
-    perform public.set_riftbound_copies('rls-printing', 'normal', 'NM', 4, 9, null);
+    perform public.set_riftbound_copies('rls-printing', 'normal', 'NM', 'en', 4, 9, null);
     if (select quantity || ':' || for_trade from public.riftbound_collection) <> '4:4' then
         raise exception 'set_riftbound_copies() does not save, or lets for trade exceed the copies';
     end if;
     if (select lendable from public.riftbound_collection) is not null then
         raise exception 'set_riftbound_copies() turns the lending default into an explicit count';
     end if;
-    if public.own_riftbound_playset('RLS') <> 0 then raise exception 'own_riftbound_playset() tops up a full playset'; end if;
-    perform public.set_riftbound_copies('rls-printing', 'normal', 'NM', 0, 0, null);
+    if public.own_riftbound_playset('RLS', 'en') <> 0 then raise exception 'own_riftbound_playset() tops up a full playset'; end if;
+    -- Languages (#171): the same printing in French is a row of its own, and becomes the last-used one.
+    perform public.set_riftbound_copies('rls-printing', 'normal', 'NM', 'fr', 1, 0, null);
+    if (select string_agg(language || ':' || quantity, ',' order by language) from public.riftbound_collection) <> 'en:4,fr:1' then
+        raise exception 'set_riftbound_copies() does not keep languages apart';
+    end if;
+    if (select card_language from public.profiles where user_id = 'rls-user') <> 'fr' then
+        raise exception 'set_riftbound_copies() does not remember the language';
+    end if;
+    perform public.set_riftbound_copies('rls-printing', 'normal', 'NM', 'fr', 0, 0, null);
+    perform public.set_riftbound_copies('rls-printing', 'normal', 'NM', 'en', 0, 0, null);
     if exists (select from public.riftbound_collection) then raise exception 'set_riftbound_copies() keeps a row at 0'; end if;
-    if public.own_riftbound_playset('RLS') <> 1 or (select quantity from public.riftbound_collection) <> 3 then
-        raise exception 'own_riftbound_playset() does not fill the set to 3';
+    if public.own_riftbound_playset('RLS', 'zh-Hans') <> 1
+        or (select language || ':' || quantity from public.riftbound_collection) <> 'zh-Hans:3' then
+        raise exception 'own_riftbound_playset() does not fill the set to 3 in the language asked for';
     end if;
     perform public.set_card_lending(true, false);
     if (select lends_cards from public.profiles where user_id = 'rls-user') is not true then

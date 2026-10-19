@@ -1,8 +1,17 @@
 // /collection (#150): quick entry at a table, and the "I lend cards" opt-in. The website's
-// Cards grid is the full editor; this adds normal, NM copies of a card's first printing.
+// Cards grid is the full editor; this adds normal, NM copies of a card's first printing, in
+// the language asked for or else the one last added in.
 
 import { ApplicationCommandOptionType } from "discord.js";
 import { cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
+
+/** The database's riftbound_language domain, as the site's lib/collection.ts has it. */
+export const LANGUAGES = [
+  { name: "English", value: "en" },
+  { name: "Chinese (Simplified)", value: "zh-Hans" },
+  { name: "French", value: "fr" },
+];
+const languageName = (code: string) => LANGUAGES.find((l) => l.value === code)?.name ?? code;
 
 export const COLLECTION_COMMAND = {
   name: "collection",
@@ -26,6 +35,12 @@ export const COLLECTION_COMMAND = {
           description: "How many (1 if left out)",
           min_value: 1,
           max_value: 99,
+        },
+        {
+          type: ApplicationCommandOptionType.String,
+          name: "language",
+          description: "The copies' language (the one you last added in if left out)",
+          choices: LANGUAGES,
         },
       ],
     },
@@ -59,8 +74,11 @@ export const COLLECTION_COMMAND = {
 } as const;
 
 export interface CollectionWriter {
-  /** Add normal, NM copies; the new count, or null when the database skipped a forgotten user. */
-  add(userId: string, printingId: string, count: number): Promise<number | null>;
+  /**
+   * Add normal, NM copies, in the member's last-used language when `language` is null; the
+   * new count and the language, or null when the database skipped a forgotten user.
+   */
+  add(userId: string, printingId: string, count: number, language: string | null): Promise<{ total: number; language: string } | null>;
   /** lendAll null keeps the current default. Null when the database skipped a forgotten user. */
   setLending(userId: string, lends: boolean, lendAll: boolean | null): Promise<{ lendAll: boolean; visibility: string } | null>;
 }
@@ -75,6 +93,7 @@ export async function addToCollection(
   userId: string,
   typed: string,
   count: number,
+  language: string | null,
 ): Promise<string> {
   const found = lookupCard(catalogue, typed);
   if (!found || !("card" in found)) return cardMiss(typed, found?.ambiguous ?? null);
@@ -85,9 +104,10 @@ export async function addToCollection(
   // Discord enforces the bounds, but the option is still caller input.
   const n = Math.min(99, Math.max(1, Math.trunc(count)));
   try {
-    const total = await writer.add(userId, printing.id, n);
-    if (total === null) return FORGOTTEN;
-    return `Added ${n} × ${found.card.name} (${printing.collector_code}). You now have ${total} normal NM.`;
+    const added = await writer.add(userId, printing.id, n, language);
+    if (added === null) return FORGOTTEN;
+    const lang = languageName(added.language);
+    return `Added ${n} × ${found.card.name} (${printing.collector_code}) in ${lang}. You now have ${added.total} normal NM in ${lang}.`;
   } catch (err) {
     console.error("collection add failed:", err);
     return FAILED;

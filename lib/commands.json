@@ -402,6 +402,17 @@
             "type": "integer",
             "required": false,
             "choices": []
+          },
+          {
+            "name": "language",
+            "description": "The copies' language (the one you last added in if left out)",
+            "type": "string",
+            "required": false,
+            "choices": [
+              "English",
+              "Chinese (Simplified)",
+              "French"
+            ]
           }
         ]
       },
