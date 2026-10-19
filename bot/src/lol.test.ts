@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { LOL_COMMAND, parseRiotId, pickIcon, startLink, verifyLink, type Challenge, type RiotLookup } from "./lol.js";
+import { challengeText, LOL_COMMAND, parseRiotId, pickIcon, startLink, verifyLink, type Challenge, type RiotLookup } from "./lol.js";
+import { STARTER_ICON_NAMES } from "./starter-icons.js";
 
 describe("parseRiotId", () => {
   it("splits at the last #", () => {
@@ -23,6 +24,14 @@ describe("pickIcon", () => {
         expect(icon).not.toBe(current);
         expect(icon).toBeGreaterThanOrEqual(0);
         expect(icon).toBeLessThanOrEqual(28);
+      }
+    }
+  });
+
+  it("names every icon it can pick, so it can be searched for in the client", () => {
+    for (let current = 0; current <= 29; current++) {
+      for (let i = 0; i < 28; i++) {
+        expect(STARTER_ICON_NAMES[pickIcon(current, () => i / 28)]).toMatch(/\S/);
       }
     }
   });
@@ -65,9 +74,16 @@ describe("verifyLink", () => {
     expect(link).toHaveBeenCalledWith("u", challenge);
   });
 
+  it("asks for the icon by name", () => {
+    expect(challengeText({ ...challenge, icon: 8 })).toMatch(/\*\*Ancient Golem Icon\*\* \(icon 8/);
+  });
+
   it("keeps waiting while the icon differs", async () => {
     const link = vi.fn(async () => true);
-    expect(await verifyLink(lookup(7), { link }, "u", challenge)).toMatchObject({ done: false });
+    expect(await verifyLink(lookup(7), { link }, "u", challenge)).toMatchObject({
+      done: false,
+      reply: expect.stringContaining("not **Blue Minion Caster Icon** (icon 3) yet"),
+    });
     expect(link).not.toHaveBeenCalled();
   });
 
