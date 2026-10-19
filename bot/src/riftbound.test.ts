@@ -93,6 +93,8 @@ describe("resolveCard", () => {
     printing("s-3", "OGN-007b"),
     printing("u-zed", "SFD-232"),
     printing("u-zed", "SFD-232*"),
+    printing("s-1", "OGN-009"),
+    printing("s-2", "OGN-009a"),
   ];
   const id = (typed: string) => {
     const r = resolveCard({ cards, printings }, typed);
@@ -135,6 +137,9 @@ describe("resolveCard", () => {
     expect(id("OGN-007")).toEqual(["s-2", "s-3"]);
     // Two printings of one card are still that card.
     expect(id("SFD232")).toBe("u-zed");
+    // The unsuffixed printing does not hide a variant that is another card.
+    expect(id("OGN-009")).toEqual(["s-1", "s-2"]);
+    expect(id("OGN-009a")).toBe("s-2");
   });
 });
 

@@ -145,16 +145,14 @@ const normal = (text: string) =>
 export const codeKey = (text: string) => text.replace(/[\s-]+/g, "").toLowerCase();
 
 /**
- * The cards printed under a typed collector code. An exact code wins; otherwise the code may
- * lack a variant suffix ("OGN-007" for "OGN-007a" and "OGN-007b"), which can be several cards.
+ * The cards printed under a typed collector code or one of its variants ("OGN-007" for
+ * "OGN-007a" and "OGN-007b"), which can be several cards.
  */
 function cardsByCode({ cards, printings }: Catalogue, typed: string): Card[] {
   const q = codeKey(typed);
   if (!/\d/.test(q)) return [];
-  const exact = printings.filter((p) => codeKey(p.collector_code) === q);
-  const matched = exact.length
-    ? exact
-    : printings.filter((p) => { const k = codeKey(p.collector_code); return k.startsWith(q) && /^[a-z*]+$/.test(k.slice(q.length)); });
+  // The code itself and its suffixed variants together: "OGN-007" and "OGN-007a" may be two cards.
+  const matched = printings.filter((p) => { const k = codeKey(p.collector_code); return k.startsWith(q) && /^[a-z*]*$/.test(k.slice(q.length)); });
   const ids = new Set(matched.map((p) => p.card_id));
   return cards.filter((c) => ids.has(c.id));
 }
