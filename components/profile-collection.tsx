@@ -2,13 +2,16 @@ import { setLending } from "@/app/u/[userId]/actions";
 import { ProfileHeader, type Profile } from "@/components/profile-stats";
 import { EmptyState, ErrorState, RankList, RankRow, StatCard, StatGrid } from "@/components/stat-ui";
 import { Button } from "@/components/ui/button";
+import { languageName } from "@/lib/collection";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+/** A row per set and rarity (language null), or per language (set and rarity null). */
 interface Total {
   set_code: string;
   rarity: string;
+  language: string | null;
   copies: number;
   printings: number;
 }
@@ -31,12 +34,14 @@ export async function ProfileCollection({ user }: { user: string }) {
   const { mine } = profile.data;
   const lending = mine ? await supabase.from("profiles").select("lends_cards, lend_all").eq("user_id", user).maybeSingle() : null;
   if (lending?.error) return <ErrorState title="Could not load this collection">Try again in a minute.</ErrorState>;
-  const rows = totals.data as Total[];
-  const sum = (key: "set_code" | "rarity") => {
+  const all = totals.data as Total[];
+  const rows = all.filter((r) => r.language === null);
+  const sum = (key: "set_code" | "rarity" | "language") => {
     const by = new Map<string, { copies: number; printings: number }>();
-    for (const r of rows) {
-      const t = by.get(r[key]) ?? { copies: 0, printings: 0 };
-      by.set(r[key], { copies: t.copies + r.copies, printings: t.printings + r.printings });
+    for (const r of key === "language" ? all.filter((r) => r.language !== null) : rows) {
+      const label = key === "language" ? languageName(r.language!) : r[key];
+      const t = by.get(label) ?? { copies: 0, printings: 0 };
+      by.set(label, { copies: t.copies + r.copies, printings: t.printings + r.printings });
     }
     return [...by].sort((a, b) => b[1].copies - a[1].copies || a[0].localeCompare(b[0]));
   };
@@ -65,6 +70,7 @@ export async function ProfileCollection({ user }: { user: string }) {
           {[
             { title: "Per set", key: "set_code" as const },
             { title: "Per rarity", key: "rarity" as const },
+            { title: "Per language", key: "language" as const },
           ].map(({ title, key }) => (
             <StatCard key={key} title={title} description={`${copies.toLocaleString("en-US")} copies in all`}>
               <RankList>

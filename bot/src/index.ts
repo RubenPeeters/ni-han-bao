@@ -698,11 +698,17 @@ async function collectionCommand(interaction: ChatInputCommandInteraction<"cache
   try {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const writer = {
-      async add(userId: string, printingId: string, count: number) {
-        const { data, error } = await db.rpc("add_riftbound_copies", { member: userId, p_printing: printingId, n: count });
+      async add(userId: string, printingId: string, count: number, language: string | null) {
+        const { data, error } = await db.rpc("add_riftbound_copies", {
+          member: userId,
+          p_printing: printingId,
+          n: count,
+          p_language: language,
+        });
         if (error) throw new Error(`add_riftbound_copies: ${error.message}`);
-        // skip_forgotten() drops a forgotten user's row without an error.
-        return data as number | null;
+        // skip_forgotten() drops a forgotten user's row without an error: no row comes back.
+        const row = (data as { total: number; used_language: string }[])[0];
+        return row ? { total: row.total, language: row.used_language } : null;
       },
       async setLending(userId: string, lends: boolean, lendAll: boolean | null) {
         const { data, error } = await db
@@ -724,6 +730,7 @@ async function collectionCommand(interaction: ChatInputCommandInteraction<"cache
             interaction.user.id,
             interaction.options.getString("card", true),
             interaction.options.getInteger("count") ?? 1,
+            interaction.options.getString("language"),
           )
         : await setLending(
             writer,

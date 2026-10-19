@@ -8,6 +8,7 @@ import {
   applyPlayset,
   CONDITIONS,
   FINISHES,
+  LANGUAGES,
   NONE,
   parseKey,
   retryDelay,
@@ -17,6 +18,7 @@ import {
   type Condition,
   type Copies,
   type Finish,
+  type Language,
   type Mode,
   type OwnedRow,
 } from "@/lib/collection";
@@ -46,6 +48,8 @@ export interface MyCollection {
   owned: OwnedRow[];
   lends: boolean;
   lendAll: boolean;
+  /** The language last added in: where entry starts. */
+  language: Language;
 }
 
 const MODES: { value: Mode; label: string }[] = [
@@ -77,6 +81,7 @@ export function CardGrid({ cards, mine }: { cards: LibraryCard[]; mine: MyCollec
   const [mode, setMode] = useState<Mode>("quantity");
   const [finish, setFinish] = useState<Finish>("normal");
   const [condition, setCondition] = useState<Condition>("NM");
+  const [language, setLanguage] = useState<Language>(mine.language);
   const collection = useCollection(mine);
   const q = normal(query);
   const code = codeKey(query);
@@ -106,7 +111,7 @@ export function CardGrid({ cards, mine }: { cards: LibraryCard[]; mine: MyCollec
     (code && c.printings.find((p) => codeKey(p.collector_code).startsWith(code))) || c.printings[0];
   const tap = (c: LibraryCard, delta: number) => {
     const p = printingOf(c);
-    if (p) collection.change(rowKey(p.id, finish, condition), (row) => step(row, mode, delta, mine.lendAll));
+    if (p) collection.change(rowKey(p.id, finish, condition, language), (row) => step(row, mode, delta, mine.lendAll));
   };
   return (
     <div className="flex flex-col gap-4">
@@ -139,7 +144,7 @@ export function CardGrid({ cards, mine }: { cards: LibraryCard[]; mine: MyCollec
           ))}
         </div>
         {editing && (
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <select aria-label="What the steppers count" value={mode} onChange={(e) => setMode(e.target.value as Mode)} className={field}>
               {MODES.map((m) => (
                 <option key={m.value} value={m.value}>
@@ -161,6 +166,13 @@ export function CardGrid({ cards, mine }: { cards: LibraryCard[]; mine: MyCollec
                 </option>
               ))}
             </select>
+            <select aria-label="Language" value={language} onChange={(e) => setLanguage(e.target.value as Language)} className={field}>
+              {LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
           </div>
         )}
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -177,7 +189,13 @@ export function CardGrid({ cards, mine }: { cards: LibraryCard[]; mine: MyCollec
                 size="sm"
                 // The database tops up from what it has, so the taps go first.
                 disabled={collection.waiting > 0}
-                onClick={() => collection.playset(playsetOf, cards.flatMap((c) => c.printings.filter((p) => p.set_code === playsetOf).map((p) => p.id)))}
+                onClick={() =>
+                  collection.playset(
+                    playsetOf,
+                    cards.flatMap((c) => c.printings.filter((p) => p.set_code === playsetOf).map((p) => p.id)),
+                    language,
+                  )
+                }
               >
                 I own a playset of {playsetOf}
               </Button>
@@ -199,7 +217,7 @@ export function CardGrid({ cards, mine }: { cards: LibraryCard[]; mine: MyCollec
         <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
           {shown.slice(0, limit).map((c) => {
             const p = printingOf(c);
-            const count = p ? countOf(collection.rows.get(rowKey(p.id, finish, condition)) ?? NONE, mode, mine.lendAll) : 0;
+            const count = p ? countOf(collection.rows.get(rowKey(p.id, finish, condition, language)) ?? NONE, mode, mine.lendAll) : 0;
             const owned = collection.owned(c);
             return (
               <li key={c.id} className="flex min-w-0 flex-col gap-2">
@@ -273,7 +291,7 @@ export function CardImage({ url, eager }: { url: string | null; eager?: boolean 
  * that did arrive changes nothing.
  */
 function useCollection(mine: MyCollection) {
-  const [rows, setRowsState] = useState(() => new Map<string, Copies>(mine.owned.map((r) => [rowKey(r.printing_id, r.finish, r.condition), r])));
+  const [rows, setRowsState] = useState(() => new Map<string, Copies>(mine.owned.map((r) => [rowKey(r.printing_id, r.finish, r.condition, r.language), r])));
   // Taps faster than React renders build on each other, not on a stale `rows`.
   const latest = useRef(rows);
   const setRows = useCallback((next: Map<string, Copies>) => {
@@ -306,12 +324,13 @@ function useCollection(mine: MyCollection) {
     while (pending.current.size) {
       const [key, row] = pending.current.entries().next().value!;
       setStatus(`Saving ${pending.current.size}…`);
-      const { printing_id, finish, condition } = parseKey(key);
+      const { printing_id, finish, condition, language } = parseKey(key);
       const error = await supabase
         .rpc("set_riftbound_copies", {
           p_printing: printing_id,
           p_finish: finish,
           p_condition: condition,
+          p_language: language,
           p_quantity: row.quantity,
           p_for_trade: row.for_trade,
           p_lendable: row.lendable,
@@ -365,11 +384,11 @@ function useCollection(mine: MyCollection) {
     void flush();
   };
 
-  const playset = async (set: string, printings: string[]) => {
+  const playset = async (set: string, printings: string[], language: Language) => {
     setStatus(`Adding a playset of ${set}…`);
-    const { error } = await createClient().rpc("own_riftbound_playset", { p_set: set });
+    const { error } = await createClient().rpc("own_riftbound_playset", { p_set: set, p_language: language });
     if (error) return setStatus(`Could not add the playset (${error.message}). Try again.`);
-    setRows(applyPlayset(latest.current, printings));
+    setRows(applyPlayset(latest.current, printings, language));
     setStatus(`Playset of ${set} added`);
   };
 

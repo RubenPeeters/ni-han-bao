@@ -6,37 +6,44 @@ const catalogue = placeholderCatalogue([{ id: "Ahri", key: "103", name: "Ahri" }
 
 function writer(overrides: Partial<CollectionWriter> = {}): CollectionWriter {
   return {
-    add: vi.fn(async (_u, _p, n: number) => n + 1),
+    add: vi.fn(async (_u, _p, n: number, language: string | null) => ({ total: n + 1, language: language ?? "zh-Hans" })),
     setLending: vi.fn(async (_u, _l, lendAll: boolean | null) => ({ lendAll: lendAll ?? false, visibility: "members" })),
     ...overrides,
   };
 }
 
 describe("/collection add", () => {
-  it("adds copies of the card's printing and says the new count", async () => {
+  it("adds copies of the card's printing in the chosen language and says the new count", async () => {
     const w = writer();
-    const reply = await addToCollection(w, catalogue, "u", "placeholder-unit-ahri", 2);
-    expect(w.add).toHaveBeenCalledWith("u", "PLH-U103", 2);
-    expect(reply).toContain("now have 3");
+    const reply = await addToCollection(w, catalogue, "u", "placeholder-unit-ahri", 2, "fr");
+    expect(w.add).toHaveBeenCalledWith("u", "PLH-U103", 2, "fr");
+    expect(reply).toContain("now have 3 normal NM in French");
+  });
+
+  it("leaves the language to the last-used one and names it", async () => {
+    const w = writer();
+    const reply = await addToCollection(w, catalogue, "u", "Ahri", 1, null);
+    expect(w.add).toHaveBeenCalledWith("u", expect.any(String), 1, null);
+    expect(reply).toContain("in Chinese (Simplified)");
   });
 
   it("finds a typed collector code and keeps the count within 1 to 99", async () => {
     const w = writer();
-    await addToCollection(w, catalogue, "u", "plh l103", 500);
-    expect(w.add).toHaveBeenCalledWith("u", "PLH-L103", 99);
+    await addToCollection(w, catalogue, "u", "plh l103", 500, null);
+    expect(w.add).toHaveBeenCalledWith("u", "PLH-L103", 99, null);
   });
 
   it("writes nothing for an unknown card", async () => {
     const w = writer();
-    expect(await addToCollection(w, catalogue, "u", "nope", 1)).toContain("No card");
+    expect(await addToCollection(w, catalogue, "u", "nope", 1, null)).toContain("No card");
     expect(w.add).not.toHaveBeenCalled();
   });
 
   it("says so for a forgotten user or a failed write", async () => {
-    expect(await addToCollection(writer({ add: async () => null }), catalogue, "u", "Ahri", 1)).toContain("/show-me");
+    expect(await addToCollection(writer({ add: async () => null }), catalogue, "u", "Ahri", 1, null)).toContain("/show-me");
     const failing = writer({ add: async () => { throw new Error("down"); } });
     vi.spyOn(console, "error").mockImplementation(() => {});
-    expect(await addToCollection(failing, catalogue, "u", "Ahri", 1)).toContain("nothing was changed");
+    expect(await addToCollection(failing, catalogue, "u", "Ahri", 1, null)).toContain("nothing was changed");
   });
 });
 

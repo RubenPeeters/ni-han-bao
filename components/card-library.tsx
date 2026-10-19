@@ -1,7 +1,7 @@
 import { CardGrid, CardImage, type LibraryCard } from "@/components/card-grid";
 import { LogInPrompt } from "@/components/server-picker";
 import { EmptyState, ErrorState, MemberRankRow, RankList, StatCard } from "@/components/stat-ui";
-import type { OwnedRow } from "@/lib/collection";
+import { languageName, type Language, type OwnedRow } from "@/lib/collection";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
@@ -47,10 +47,11 @@ async function ownedRows(supabase: Awaited<ReturnType<typeof createClient>>) {
   for (let from = 0; ; from += MAX_CARDS) {
     const { data, error } = await supabase
       .from("riftbound_collection")
-      .select("printing_id, finish, condition, quantity, for_trade, lendable")
+      .select("printing_id, finish, condition, language, quantity, for_trade, lendable")
       .order("printing_id")
       .order("finish")
       .order("condition")
+      .order("language")
       .range(from, from + MAX_CARDS - 1);
     if (error) return { data: null, error };
     rows.push(...(data as OwnedRow[]));
@@ -71,7 +72,7 @@ export async function CardLibrary() {
   if (error || me.error || owned.error) return <ErrorState title="Could not load the cards">Try again in a minute.</ErrorState>;
   // Logged in, but not with Discord: no collection to edit.
   if (!me.data) return <LogInPrompt text={LOG_IN} />;
-  const lending = await supabase.from("profiles").select("lends_cards, lend_all").eq("user_id", me.data).maybeSingle();
+  const lending = await supabase.from("profiles").select("lends_cards, lend_all, card_language").eq("user_id", me.data).maybeSingle();
   if (lending.error) return <ErrorState title="Could not load the cards">Try again in a minute.</ErrorState>;
   const cards = (data as Card[]).map((c) => ({ ...c, printings: c.printings.toSorted(byNumber) }));
   // Collector order, as in a binder; a card without printings goes last.
@@ -99,6 +100,7 @@ export async function CardLibrary() {
         owned: owned.data,
         lends: lending.data?.lends_cards ?? false,
         lendAll: lending.data?.lend_all ?? false,
+        language: (lending.data?.card_language ?? "en") as Language,
       }}
     />
   );
@@ -189,6 +191,7 @@ interface Lender {
   display_name: string;
   avatar_url: string | null;
   copies: number;
+  languages: string[];
 }
 
 /** Per server the visitor is in, who has copies to lend; card_lenders() decides who may show. */
@@ -212,6 +215,7 @@ function WhoHasIt({ lenders }: { lenders: Lender[] }) {
                     name={l.display_name}
                     avatarUrl={l.avatar_url}
                     value={`${l.copies} to lend`}
+                    detail={l.languages.map(languageName).join(", ")}
                     href={`/u/${l.user_id}`}
                   />
                 ))}

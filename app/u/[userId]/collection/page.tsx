@@ -5,12 +5,12 @@ import { Suspense } from "react";
 
 export const metadata = {
   title: "Collection · ni han bao",
-  description: "Their Riftbound cards, per set and rarity.",
+  description: "Their Riftbound cards, per set, rarity and language.",
 };
 
 export default function CollectionPage({ params }: PageProps<"/u/[userId]/collection">) {
   return hasEnvVars ? (
-    <Suspense fallback={<StatsSkeleton cards={2} />}>
+    <Suspense fallback={<StatsSkeleton cards={3} />}>
       <CollectionForUser params={params} />
     </Suspense>
   ) : (

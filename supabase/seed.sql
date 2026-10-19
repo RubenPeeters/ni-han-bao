@@ -161,9 +161,13 @@ begin
         where abs(hashtext('lm' || users[i] || n::text)) % (1 + i % 3) = 0;
 
     -- Riftbound collections (#150): about a third of the placeholder cards each, some for trade,
-    -- and Ahri's legend (the demo card page) with Bram, Chloé and Daan, for Who has it?.
-    insert into public.riftbound_collection (user_id, printing_id, finish, condition, quantity, for_trade, lendable)
+    -- some in French or Chinese (#171), and Ahri's legend (the demo card page) with Bram, Chloé
+    -- and Daan, for Who has it? (Daan's in Chinese).
+    insert into public.riftbound_collection (user_id, printing_id, finish, condition, language, quantity, for_trade, lendable)
         select users[i], p.id, case when abs(hashtext('f' || users[i] || p.id)) % 5 = 0 then 'foil' else 'normal' end, 'NM',
+               case when p.id = 'PLH-L103' and i = 4 then 'zh-Hans'
+                    when p.id = 'PLH-L103' then 'en'
+                    else (array['en', 'en', 'en', 'en', 'fr', 'zh-Hans'])[1 + abs(hashtext('g' || users[i] || p.id)) % 6] end,
                1 + abs(hashtext('q' || users[i] || p.id)) % 3, abs(hashtext('t' || users[i] || p.id)) % 2,
                case when i = 3 then abs(hashtext('l' || users[i] || p.id)) % 2 end
         from public.riftbound_printings p, generate_series(1, 6) i
