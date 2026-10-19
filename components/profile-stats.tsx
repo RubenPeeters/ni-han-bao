@@ -1,5 +1,6 @@
 import { setVisibility } from "@/app/u/[userId]/actions";
 import { Emoji } from "@/components/emoji-stats";
+import { ProfileRanks, type Rank } from "@/components/lol-ranks";
 import { EmptyState, ErrorState, RankList, RankRow, StatCard } from "@/components/stat-ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,13 +58,14 @@ export function formatSeconds(seconds: number): string {
  */
 export async function ProfileStats({ user }: { user: string }) {
   const supabase = await createClient();
-  const [profile, servers, badges, games] = await Promise.all([
+  const [profile, servers, badges, games, ranks] = await Promise.all([
     supabase.rpc("profile", { u: user }).maybeSingle<Profile>(),
     supabase.rpc("profile_servers", { u: user }),
     supabase.rpc("profile_badges", { u: user }).maybeSingle<Badges>(),
     supabase.rpc("profile_games", { u: user }),
+    supabase.rpc("profile_ranks", { u: user }),
   ]);
-  if (profile.error || servers.error || badges.error || games.error) {
+  if (profile.error || servers.error || badges.error || games.error || ranks.error) {
     return <ErrorState title="Could not load this profile">Try again in a minute.</ErrorState>;
   }
   // Private, hidden, forgotten or unknown: the same 404 as a page that does not exist.
@@ -131,6 +133,7 @@ export async function ProfileStats({ user }: { user: string }) {
         </ul>
       )}
       {mine && <VisibilityForm current={visibility ?? "private"} />}
+      <ProfileRanks ranks={ranks.data as (Rank & { queue: string })[]} />
       {(topGames.length > 0 || streaming >= 60) && (
         <StatCard title="Games" description="Last 30 days, from Discord's Playing and Streaming status">
           {topGames.length > 0 && (

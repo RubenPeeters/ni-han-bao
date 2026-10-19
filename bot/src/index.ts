@@ -83,6 +83,7 @@ import {
 } from "./stores.js";
 import { challengeText, GAME, LOL_COMMAND, startLink, verifyLink, type Platform, type RiotLookup } from "./lol.js";
 import { PROFILE_COMMAND, setProfileVisibility } from "./profile.js";
+import { rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
@@ -96,6 +97,7 @@ const SHUTDOWN_DEADLINE_MS = 8_000;
 const SHUTDOWN_KILL_MS = 9_500;
 const PRESENCE_MS = 5 * 60_000;
 const REPORT_CHECK_MS = 60_000;
+const RANKS_MS = 3 * 60 * 60_000;
 
 const config = loadConfig();
 const log = createLogger();
@@ -892,6 +894,7 @@ async function lolCommand(interaction: ChatInputCommandInteraction<"cached">): P
       await interaction.editReply(done ? { content: reply, embeds: [], components: [] } : { content: reply });
       if (done) {
         log("info", "lol_linked", {});
+        void tracked("lol_ranks", refreshRank(userId, challenge.puuid, challenge.platform));
         return;
       }
     }
@@ -910,8 +913,10 @@ async function setupCommand(interaction: ChatInputCommandInteraction<"cached">):
   const guildId = interaction.guildId;
   const channel = interaction.options.getChannel("channel");
   const me = interaction.guild.members.me;
+  const subcommand = interaction.options.getSubcommand();
+  const state = interaction.options.getString("state");
   const change = setupChange({
-    subcommand: interaction.options.getSubcommand(),
+    subcommand,
     channelId: channel?.id ?? null,
     canSend:
       !!channel &&
@@ -919,6 +924,8 @@ async function setupCommand(interaction: ChatInputCommandInteraction<"cached">):
       !!channel.permissionsFor(me)?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]),
     timezone: interaction.options.getString("timezone"),
     include: interaction.options.getBoolean("include"),
+    state,
+    rankRolesProblem: subcommand === "rank-roles" && state === "on" ? rankRolesCheck(interaction.guild) : null,
   });
   const { reply, settings: next } = await applySetup(
     {
@@ -935,6 +942,7 @@ async function setupCommand(interaction: ChatInputCommandInteraction<"cached">):
   settings.set(guildId, next);
   if (change && typeof change === "object") log("info", "setup_changed", { guild: guildId, ...change });
   await interaction.editReply(reply);
+  if (change && typeof change === "object" && change.rank_roles) void tracked("rank_roles", syncRankRoles(interaction.guild));
 }
 
 async function guildStores(guildId: string): Promise<Store[]> {
@@ -1340,6 +1348,104 @@ async function rotatePresence(): Promise<void> {
   }
 }
 
+/** Stores one account's official ranks; Riot's entries replace the stored ones. */
+async function refreshRank(userId: string, puuid: string, platform: string): Promise<void> {
+  if (!riot) return;
+  const entries = (await riot.get<LeagueEntry[]>(platform, `/lol/league/v4/entries/by-puuid/${encodeURIComponent(puuid)}`)) ?? [];
+  const rows = rankRows(userId, entries).map((r) => ({ ...r, updated_at: new Date().toISOString() }));
+  if (rows.length) {
+    // Fails on the foreign key when the account was unlinked meanwhile, which is what we want.
+    const { error } = await db.from("lol_ranks").upsert(rows, { onConflict: "user_id,queue" });
+    if (error) throw new Error(`lol_ranks upsert: ${error.message}`);
+  }
+  // Queues no longer ranked in (a new season, or decayed out) go.
+  let stale = db.from("lol_ranks").delete().eq("user_id", userId);
+  if (rows.length) stale = stale.not("queue", "in", `(${rows.map((r) => r.queue).join(",")})`);
+  const { error } = await stale;
+  if (error) throw new Error(`lol_ranks delete: ${error.message}`);
+}
+
+let refreshingRanks = false;
+
+/** Every 3 hours: every linked account's ranks, then the rank roles. */
+async function refreshRanks(): Promise<void> {
+  if (!riot || refreshingRanks) return;
+  refreshingRanks = true;
+  try {
+    // shortcut: PostgREST returns at most 1000 rows, and the development key's 100 requests
+    // per 2 minutes take 1000 accounts 20 minutes; page this and get a production key first.
+    const { data, error } = await db.from("game_accounts").select("user_id, external_id, region").eq("game", GAME);
+    if (error) throw new Error(`game_accounts: ${error.message}`);
+    let failed = 0;
+    for (const a of data) {
+      try {
+        await refreshRank(a.user_id, a.external_id, a.region);
+      } catch (err) {
+        failed++;
+        log("warn", "lol_rank_failed", { error: err });
+      }
+    }
+    log("info", "lol_ranks_refreshed", { accounts: data.length, failed });
+    for (const guild of client.guilds.cache.values()) await tracked("rank_roles", syncRankRoles(guild));
+  } catch (err) {
+    log("error", "lol_ranks_failed", { error: err });
+  } finally {
+    refreshingRanks = false;
+  }
+}
+
+/** The server's existing rank roles, by tier: the roles named after a tier. */
+function rankRolesOf(guild: Guild) {
+  const names = new Map(TIERS.map((t) => [tierName(t), t]));
+  return [...guild.roles.cache.values()].filter((r) => names.has(r.name)).map((r) => ({ role: r, tier: names.get(r.name)! }));
+}
+
+/** Why the bot cannot keep rank roles in this server, or null. */
+function rankRolesCheck(guild: Guild): string | null {
+  const me = guild.members.me;
+  return rankRolesProblem(
+    !!me?.permissions.has(PermissionFlagsBits.ManageRoles),
+    me?.roles.highest.position ?? 0,
+    rankRolesOf(guild).map(({ role }) => ({ name: role.name, position: role.position })),
+  );
+}
+
+/**
+ * With /setup rank-roles on: gives each linked member the role of their tier (creating the
+ * tier roles it lacks) and takes the other rank roles away. Hidden members get none.
+ */
+async function syncRankRoles(guild: Guild): Promise<void> {
+  if (!settingsFor(guild.id).rank_roles) return;
+  // Permissions or role order changed since /setup: skip until fixed, and say why in the log.
+  const problem = rankRolesCheck(guild);
+  if (problem) {
+    log("warn", "rank_roles_skipped", { guild: guild.id, problem });
+    return;
+  }
+  const byTier = new Map(rankRolesOf(guild).map(({ role, tier }) => [tier, role.id]));
+  for (const tier of TIERS) {
+    if (byTier.has(tier)) continue;
+    const role = await guild.roles.create({ name: tierName(tier), permissions: [], reason: "ni han bao rank roles (/setup rank-roles)" });
+    byTier.set(tier, role.id);
+  }
+  // shortcut: PostgREST returns at most 1000 rows; page these past that many linked accounts.
+  const [ranks, hidden] = await Promise.all([
+    db.from("lol_ranks").select("user_id, queue, tier"),
+    db.from("members").select("user_id").eq("guild_id", guild.id).eq("hidden", true),
+  ]);
+  if (ranks.error) throw new Error(`lol_ranks: ${ranks.error.message}`);
+  if (hidden.error) throw new Error(`members: ${hidden.error.message}`);
+  const hiddenIds = new Set(hidden.data.map((m) => m.user_id));
+  const rankIds = [...byTier.values()];
+  for (const member of guild.members.cache.values()) {
+    if (member.user.bot) continue;
+    const tier = hiddenIds.has(member.id) ? null : roleTier(ranks.data.filter((r) => r.user_id === member.id));
+    const { add, remove } = roleChanges(new Set(member.roles.cache.keys()), tier && byTier.get(tier)!, rankIds);
+    if (add.length) await member.roles.add(add, "ni han bao rank roles");
+    if (remove.length) await member.roles.remove(remove, "ni han bao rank roles");
+  }
+}
+
 // Week last seen posted per server, so the database is asked once per week rather than every check.
 const reportedWeek = new Map<string, string>();
 const reporting = new Set<string>();
@@ -1592,7 +1698,10 @@ client.once(Events.ClientReady, async (c) => {
   setInterval(weeklyReports, REPORT_CHECK_MS);
   monthlyRecaps();
   setInterval(monthlyRecaps, REPORT_CHECK_MS);
+  setInterval(() => void refreshRanks(), RANKS_MS);
   for (const guild of c.guilds.cache.values()) await startServer(guild);
+  // After startServer: the role sync needs every server's members cached.
+  void refreshRanks();
 });
 
 // discord.js reconnects by itself; these only make outages visible in the log.
@@ -1667,7 +1776,7 @@ for (const b of boundaries) servers.set(b.guild_id, newServer(b.guild_id, b.befo
 // shortcut: PostgREST returns at most 1000 rows; beyond that many servers, page this.
 const { data: savedSettings, error: settingsError } = await db
   .from("guild_settings")
-  .select("guild_id, report_channel_id, timezone, public_totals_opt_out");
+  .select("guild_id, report_channel_id, timezone, public_totals_opt_out, rank_roles");
 if (settingsError) throw new Error(`guild_settings: ${settingsError.message}`);
 for (const { guild_id, ...row } of savedSettings) settings.set(guild_id, row);
 await client.login(config.discordToken);

@@ -66,6 +66,11 @@ begin
     from unnest(array['rls-user', 'rls-rls-mine', 'rls-hidden', 'rls-public']) u;
     -- Linked game accounts (#102): the bot's only, read by nobody else.
     insert into public.game_accounts (user_id, game, external_id, region) values ('rls-user', 'lol', 'p', 'euw1');
+    -- League ranks (#103): read through functions only, per profile and per server.
+    insert into public.game_accounts (user_id, game, external_id, region)
+    select u, 'lol', u, 'euw1' from unnest(array['rls-rls-mine', 'rls-rls-other', 'rls-hidden']) u;
+    insert into public.lol_ranks (user_id, queue, tier, division, lp)
+    select u, 'RANKED_SOLO_5x5', 'GOLD', 'II', 47 from unnest(array['rls-rls-mine', 'rls-rls-other', 'rls-hidden']) u;
     -- anon cannot read keys itself, so hand it one for the recap checks below.
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
@@ -89,6 +94,9 @@ begin
     end loop;
     if exists (select from public.activity_seconds) then raise exception 'anon reads game time'; end if;
     if exists (select from public.game_accounts) then raise exception 'anon reads linked accounts'; end if;
+    if exists (select from public.lol_ranks) or exists (select from public.profile_ranks('rls-rls-mine')) then
+        raise exception 'anon reads a rank';
+    end if;
     if exists (select from public.profiles) or exists (select from public.profile('rls-public')) then
         raise exception 'anon reads a profile';
     end if;
@@ -176,6 +184,17 @@ begin
     perform public.set_profile_visibility('private');
     if exists (select from public.activity_seconds) then raise exception 'a member reads game time directly'; end if;
     if exists (select from public.game_accounts) then raise exception 'a member reads linked accounts'; end if;
+    if exists (select from public.lol_ranks) then raise exception 'a member reads ranks directly'; end if;
+    if (select array_agg(user_id) from public.guild_ranks('rls-mine', 'RANKED_SOLO_5x5')) <> array['rls-rls-mine'] then
+        raise exception 'guild_ranks() does not list just the visible linked members';
+    end if;
+    if exists (select from public.guild_ranks('rls-other', 'RANKED_SOLO_5x5')) then
+        raise exception 'a member reads another server''s ranks';
+    end if;
+    if not exists (select from public.profile_ranks('rls-rls-mine')) or exists (select from public.profile_ranks('rls-rls-other'))
+        or exists (select from public.profile_ranks('rls-hidden')) then
+        raise exception 'profile_ranks() does not follow the profile';
+    end if;
     if (select players from public.guild_games('rls-mine', current_date)) <> 2 then
         raise exception 'guild_games() does not count just the visible members';
     end if;
