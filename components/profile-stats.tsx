@@ -1,6 +1,7 @@
 import { setVisibility } from "@/app/u/[userId]/actions";
 import { Emoji } from "@/components/emoji-stats";
 import { ProfileRanks, type Rank } from "@/components/lol-ranks";
+import { ProfileNav } from "@/components/site-nav";
 import { EmptyState, ErrorState, RankList, RankRow, StatCard } from "@/components/stat-ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ interface Server {
   rank: number | null;
 }
 
-interface Profile {
+export interface Profile {
   display_name: string | null;
   avatar_url: string | null;
   visibility: string | null;
@@ -71,34 +72,18 @@ export async function ProfileStats({ user }: { user: string }) {
   }
   // Private, hidden, forgotten or unknown: the same 404 as a page that does not exist.
   if (!profile.data) notFound();
-  const { display_name, avatar_url, visibility, mine } = profile.data;
-  const name = display_name ?? "You";
+  const { visibility, mine } = profile.data;
   const badge = badges.data;
   const gameRows = games.data as GameTime[];
   const topGames = gameRows.filter((g) => g.name !== null && g.seconds >= 60).slice(0, 5);
   const streaming = gameRows.find((g) => g.name === null)?.seconds ?? 0;
   return (
     <>
-      <div className="flex min-w-0 items-center gap-4">
-        {avatar_url ? (
-          // Discord CDN avatars are already small; same as the leaderboard.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={avatar_url} alt="" width={64} height={64} className="size-16 shrink-0 rounded-full bg-muted object-cover" />
-        ) : (
-          <span
-            aria-hidden
-            className="flex size-16 shrink-0 items-center justify-center rounded-full bg-muted text-2xl font-semibold text-muted-foreground"
-          >
-            {name.slice(0, 1).toUpperCase()}
-          </span>
-        )}
-        <div className="flex min-w-0 flex-col gap-2">
-          <h1 className="truncate text-4xl font-semibold">{name}</h1>
-          <p className="text-muted-foreground">
-            {mine ? "Your activity in every server you are in." : "Their activity in the servers you share."}
-          </p>
-        </div>
-      </div>
+      <ProfileHeader
+        user={user}
+        profile={profile.data}
+        subtitle={mine ? "Your activity in every server you are in." : "Their activity in the servers you share."}
+      />
       {badge && (
         <ul className="flex flex-wrap gap-2" aria-label="Badges">
           {badge.channel_name && (
@@ -198,6 +183,34 @@ export async function ProfileStats({ user }: { user: string }) {
           ))}
         </ul>
       )}
+    </>
+  );
+}
+
+/** Name, avatar and the profile's tabs, on every tab of a profile. */
+export function ProfileHeader({ user, profile, subtitle }: { user: string; profile: Profile; subtitle: string }) {
+  const name = profile.display_name ?? "You";
+  return (
+    <>
+      <div className="flex min-w-0 items-center gap-4">
+        {profile.avatar_url ? (
+          // Discord CDN avatars are already small; same as the leaderboard.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={profile.avatar_url} alt="" width={64} height={64} className="size-16 shrink-0 rounded-full bg-muted object-cover" />
+        ) : (
+          <span
+            aria-hidden
+            className="flex size-16 shrink-0 items-center justify-center rounded-full bg-muted text-2xl font-semibold text-muted-foreground"
+          >
+            {name.slice(0, 1).toUpperCase()}
+          </span>
+        )}
+        <div className="flex min-w-0 flex-col gap-2">
+          <h1 className="truncate text-4xl font-semibold">{name}</h1>
+          <p className="text-muted-foreground">{subtitle}</p>
+        </div>
+      </div>
+      <ProfileNav user={user} />
     </>
   );
 }

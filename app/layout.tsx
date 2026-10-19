@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { AuthButton } from "@/components/auth-button";
 import { BotStatusDot } from "@/components/bot-status";
-import { ServersLink, SiteNav } from "@/components/site-nav";
+import { MainNav, SiteNav } from "@/components/site-nav";
 import { hasEnvVars, RIOT_DISCLAIMER } from "@/lib/utils";
 import "./globals.css";
 
@@ -51,16 +51,19 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-10 px-5 py-6">
-            <header className="flex items-center gap-2 border-b pb-4">
+            {/* On a phone the tabs get their own row: with Docs they no longer fit beside Log in. */}
+            <header className="flex flex-wrap items-center gap-2 border-b pb-4">
               <Link
                 href="/"
                 className="whitespace-nowrap rounded-md text-lg font-semibold transition-colors hover:text-primary active:text-primary/80"
               >
                 ni han bao
               </Link>
-              <Suspense fallback={<ServersLink current={false} />}>
-                <SiteNav />
-              </Suspense>
+              <div className="order-last -ml-3 w-full sm:order-none sm:ml-0 sm:w-auto">
+                <Suspense fallback={<MainNav pathname={null} />}>
+                  <SiteNav />
+                </Suspense>
+              </div>
               <div className="ml-auto flex items-center">
                 <AuthButton />
               </div>

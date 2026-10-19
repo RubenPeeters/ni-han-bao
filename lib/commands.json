@@ -1,0 +1,522 @@
+[
+  {
+    "name": "hide-me",
+    "description": "Hide yourself from the public ni han bao website",
+    "admin": false,
+    "usages": [
+      {
+        "name": "hide-me",
+        "description": "Hide yourself from the public ni han bao website",
+        "options": []
+      }
+    ]
+  },
+  {
+    "name": "show-me",
+    "description": "Show yourself on the public ni han bao website again",
+    "admin": false,
+    "usages": [
+      {
+        "name": "show-me",
+        "description": "Show yourself on the public ni han bao website again",
+        "options": []
+      }
+    ]
+  },
+  {
+    "name": "forget-me",
+    "description": "Delete everything ni han bao has stored about you, in every server",
+    "admin": false,
+    "usages": [
+      {
+        "name": "forget-me",
+        "description": "Delete everything ni han bao has stored about you, in every server",
+        "options": []
+      }
+    ]
+  },
+  {
+    "name": "profile",
+    "description": "Your ni han bao profile page",
+    "admin": false,
+    "usages": [
+      {
+        "name": "profile visibility",
+        "description": "Who can see your profile page on the website",
+        "options": [
+          {
+            "name": "level",
+            "description": "Who can see it",
+            "type": "string",
+            "required": true,
+            "choices": [
+              "Private: only you",
+              "Server members: people who share a server with you, for the servers you share",
+              "Public: anyone logged in to the website"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "lol",
+    "description": "Your League of Legends account",
+    "admin": false,
+    "usages": [
+      {
+        "name": "lol link",
+        "description": "Link your League account by changing your profile icon for a moment",
+        "options": [
+          {
+            "name": "riot-id",
+            "description": "GameName#TAG",
+            "type": "string",
+            "required": true,
+            "choices": []
+          },
+          {
+            "name": "region",
+            "description": "The server you play League on",
+            "type": "string",
+            "required": true,
+            "choices": [
+              "Europe West",
+              "Europe Nordic & East",
+              "Türkiye",
+              "Russia",
+              "Middle East",
+              "North America",
+              "Brazil",
+              "Latin America North",
+              "Latin America South",
+              "Korea",
+              "Japan",
+              "Oceania",
+              "Southeast Asia",
+              "Taiwan",
+              "Vietnam"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "lol unlink",
+        "description": "Unlink your League account",
+        "options": []
+      }
+    ]
+  },
+  {
+    "name": "leaderboard",
+    "description": "Top 10 members by messages",
+    "admin": false,
+    "usages": [
+      {
+        "name": "leaderboard",
+        "description": "Top 10 members by messages",
+        "options": [
+          {
+            "name": "period",
+            "description": "This week (default) or all time",
+            "type": "string",
+            "required": false,
+            "choices": [
+              "week",
+              "all"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "me",
+    "description": "Your own message and reaction counts",
+    "admin": false,
+    "usages": [
+      {
+        "name": "me",
+        "description": "Your own message and reaction counts",
+        "options": []
+      }
+    ]
+  },
+  {
+    "name": "channel",
+    "description": "Message volume of a channel over the last 30 days",
+    "admin": false,
+    "usages": [
+      {
+        "name": "channel",
+        "description": "Message volume of a channel over the last 30 days",
+        "options": [
+          {
+            "name": "channel",
+            "description": "Defaults to this channel",
+            "type": "channel",
+            "required": false,
+            "choices": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "setup",
+    "description": "Configure ni han bao for this server",
+    "admin": true,
+    "usages": [
+      {
+        "name": "setup report-channel",
+        "description": "Where the weekly report card and monthly recap go; leave the channel out to turn both off",
+        "options": [
+          {
+            "name": "channel",
+            "description": "A text channel the bot can post in",
+            "type": "channel",
+            "required": false,
+            "choices": []
+          }
+        ]
+      },
+      {
+        "name": "setup timezone",
+        "description": "Time zone for today, this week and the weekly report",
+        "options": [
+          {
+            "name": "timezone",
+            "description": "An IANA time zone, like Europe/Brussels",
+            "type": "string",
+            "required": true,
+            "choices": []
+          }
+        ]
+      },
+      {
+        "name": "setup public-totals",
+        "description": "Whether this server counts toward the totals on the public home page",
+        "options": [
+          {
+            "name": "include",
+            "description": "False leaves this server out of them",
+            "type": "boolean",
+            "required": true,
+            "choices": []
+          }
+        ]
+      },
+      {
+        "name": "setup rank-roles",
+        "description": "Give linked members a role for their League tier; needs Manage Roles",
+        "options": [
+          {
+            "name": "state",
+            "description": "On keeps a role per tier in sync",
+            "type": "string",
+            "required": true,
+            "choices": [
+              "on",
+              "off"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "setup show",
+        "description": "Show this server's settings",
+        "options": []
+      }
+    ]
+  },
+  {
+    "name": "recap",
+    "description": "Post last month's recap card",
+    "admin": false,
+    "usages": [
+      {
+        "name": "recap",
+        "description": "Post last month's recap card",
+        "options": []
+      }
+    ]
+  },
+  {
+    "name": "store",
+    "description": "The local game stores this server plays at",
+    "admin": false,
+    "usages": [
+      {
+        "name": "store add",
+        "description": "Add a store this server plays at",
+        "options": [
+          {
+            "name": "name",
+            "description": "The store's name",
+            "type": "string",
+            "required": true,
+            "choices": []
+          },
+          {
+            "name": "city",
+            "description": "Its city (no address)",
+            "type": "string",
+            "required": true,
+            "choices": []
+          },
+          {
+            "name": "link",
+            "description": "Its PlayRiftbound page, or another https link",
+            "type": "string",
+            "required": false,
+            "choices": []
+          },
+          {
+            "name": "game",
+            "description": "The game played there (default Riftbound)",
+            "type": "string",
+            "required": false,
+            "choices": []
+          }
+        ]
+      },
+      {
+        "name": "store list",
+        "description": "List this server's stores",
+        "options": []
+      },
+      {
+        "name": "store remove",
+        "description": "Remove a store (the member who added it, or Manage Server)",
+        "options": [
+          {
+            "name": "store",
+            "description": "Start typing its name or city",
+            "type": "integer",
+            "required": true,
+            "choices": []
+          }
+        ]
+      },
+      {
+        "name": "store mine",
+        "description": "Mark a store as one of your regulars, or unmark it",
+        "options": [
+          {
+            "name": "store",
+            "description": "Start typing its name or city",
+            "type": "integer",
+            "required": true,
+            "choices": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "event",
+    "description": "Say which events you are going to, so others can meet you there",
+    "admin": false,
+    "usages": [
+      {
+        "name": "event going",
+        "description": "Mark yourself as going: give the event's link, or its store and time",
+        "options": [
+          {
+            "name": "link",
+            "description": "Its PlayRiftbound or Discord event link",
+            "type": "string",
+            "required": false,
+            "choices": []
+          },
+          {
+            "name": "store",
+            "description": "Where it is (start typing its name or city)",
+            "type": "integer",
+            "required": false,
+            "choices": []
+          },
+          {
+            "name": "when",
+            "description": "Date and time in the server's time zone, like 2026-10-25 19:00",
+            "type": "string",
+            "required": false,
+            "choices": []
+          }
+        ]
+      },
+      {
+        "name": "event not-going",
+        "description": "Undo /event going",
+        "options": [
+          {
+            "name": "event",
+            "description": "Start typing its store or date",
+            "type": "integer",
+            "required": true,
+            "choices": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "card",
+    "description": "Look up a Riftbound card",
+    "admin": false,
+    "usages": [
+      {
+        "name": "card",
+        "description": "Look up a Riftbound card",
+        "options": [
+          {
+            "name": "name",
+            "description": "The card's name or collector code, or a legend's champion",
+            "type": "string",
+            "required": true,
+            "choices": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "collection",
+    "description": "Your Riftbound collection",
+    "admin": false,
+    "usages": [
+      {
+        "name": "collection add",
+        "description": "Add copies of a card you own",
+        "options": [
+          {
+            "name": "card",
+            "description": "The card's name or collector code, or a legend's champion",
+            "type": "string",
+            "required": true,
+            "choices": []
+          },
+          {
+            "name": "count",
+            "description": "How many (1 if left out)",
+            "type": "integer",
+            "required": false,
+            "choices": []
+          },
+          {
+            "name": "language",
+            "description": "The copies' language (the one you last added in if left out)",
+            "type": "string",
+            "required": false,
+            "choices": [
+              "English",
+              "Chinese (Simplified)",
+              "French"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "collection lending",
+        "description": "Whether members of your servers may ask to borrow your cards",
+        "options": [
+          {
+            "name": "state",
+            "description": "On or off",
+            "type": "string",
+            "required": true,
+            "choices": [
+              "On: I lend cards",
+              "Off: none of my cards are lendable"
+            ]
+          },
+          {
+            "name": "default",
+            "description": "What you lend when a card has no count of its own",
+            "type": "string",
+            "required": false,
+            "choices": [
+              "Nothing until I mark cards",
+              "Everything I own"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "lend",
+    "description": "Record Riftbound cards you lend to a member",
+    "admin": false,
+    "usages": [
+      {
+        "name": "lend",
+        "description": "Record Riftbound cards you lend to a member",
+        "options": [
+          {
+            "name": "member",
+            "description": "Who borrows them",
+            "type": "user",
+            "required": true,
+            "choices": []
+          },
+          {
+            "name": "cards",
+            "description": "The cards, separated by ; with a count if more than one: 2 Jinx; Ahri",
+            "type": "string",
+            "required": true,
+            "choices": []
+          },
+          {
+            "name": "due",
+            "description": "When you want them back, like 2026-11-02",
+            "type": "string",
+            "required": false,
+            "choices": []
+          },
+          {
+            "name": "fixes",
+            "description": "The number of a loan of yours this one corrects; that loan stops counting",
+            "type": "integer",
+            "required": false,
+            "choices": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "return",
+    "description": "Record that lent Riftbound cards are back with their owner",
+    "admin": false,
+    "usages": [
+      {
+        "name": "return",
+        "description": "Record that lent Riftbound cards are back with their owner",
+        "options": [
+          {
+            "name": "member",
+            "description": "The other member of the loan, lender or borrower",
+            "type": "user",
+            "required": true,
+            "choices": []
+          },
+          {
+            "name": "loan",
+            "description": "Only this loan (every open loan between you two if left out)",
+            "type": "integer",
+            "required": false,
+            "choices": []
+          },
+          {
+            "name": "lost",
+            "description": "The cards are lost: write off your loan instead (the owner only)",
+            "type": "boolean",
+            "required": false,
+            "choices": []
+          }
+        ]
+      }
+    ]
+  }
+]

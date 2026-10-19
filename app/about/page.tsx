@@ -51,6 +51,21 @@ export default function AboutPage() {
             your profile (your most played champion). Custom games are never fetched.
             <Cmd>/lol unlink</Cmd> deletes them.
           </li>
+          <li>
+            Riftbound cards: only what you enter yourself on the Cards page or with{" "}
+            <Cmd>/collection add</Cmd>, how many of each you own (finish, condition and language), how
+            many are for trade and how many you lend. Your profile&apos;s Collection tab shows totals
+            per set, rarity and language. We keep the language you last added in, so the next entry
+            starts in it. With <Cmd>/collection lending on</Cmd>, members of your servers see your
+            copies to lend on a card&apos;s page, unless your profile is private.
+          </li>
+          <li>
+            Riftbound loans: when you record one with <Cmd>/lend</Cmd>, which of your cards a member
+            has, until when, and whether they confirmed or disputed it (with what they wrote);
+            <Cmd>/return</Cmd> closes it. Loans are never edited: a correction is a new loan that
+            replaces the old one. Only you and the other member see a loan, on your profiles&apos;
+            Loans tab. The bot sends the borrower one reminder on the due date, if they accept DMs.
+          </li>
           <li>Joins and leaves.</li>
         </ul>
         <p>
@@ -95,7 +110,7 @@ export default function AboutPage() {
           To have your data deleted instead, type <Cmd>/forget-me</Cmd> in any server and
           confirm. It deletes everything the bot stored about you, in every server: your
           message, reaction and voice counts, your game time, your name and avatar, your server memberships, your
-          linked League account with its ranks and games, your profile setting and your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
+          linked League account with its ranks and games, your Riftbound collection and loans (they go for the other member too), your profile and lending settings and your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
           their counts, without anything that points to you. The bot then stops counting you,
           keeping only a scrambled (hashed) copy of your Discord id to recognise you by. Until
           you type <Cmd>/show-me</Cmd>, which starts counting you again, you also cannot open

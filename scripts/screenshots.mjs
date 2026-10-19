@@ -6,6 +6,8 @@
 // With SCREENSHOT_EMAIL and SCREENSHOT_PASSWORD (forge sets them, against the dev database)
 // every page is photographed signed in as the demo server's member, plus the home page
 // signed out. Without them the member pages show their logged-out state.
+// `--docs` (`make docs-images`): instead, the images the docs pages show, from DOCS_SHOTS
+// into public/docs/shots/, at the first screen of a 1280px window.
 // `--a11y` (run by `make check`): no PNGs; runs axe-core on every page in dark and light and
 // fails on serious or critical violations, so contrast and focus states cannot regress (#56).
 // Browser: CHROME_PATH (set in the forge runner image), else an installed Google Chrome
@@ -21,6 +23,8 @@ const OUT = ".forge/screenshots";
 const PORT = Number(process.env.SCREENSHOT_PORT ?? 3123);
 const WIDTHS = [375, 1280];
 const A11Y = process.argv.includes("--a11y");
+const DOCS = process.argv.includes("--docs");
+const DOCS_OUT = "public/docs/shots";
 const AXE = createRequire(import.meta.url).resolve("axe-core");
 // Starter-template routes that are not part of the product.
 const EXCLUDE = [/^\/auth(\/|$)/, /^\/protected(\/|$)/];
@@ -31,7 +35,21 @@ const lastMonth = () => {
   d.setUTCMonth(d.getUTCMonth() - 1);
   return d.toISOString().slice(0, 7);
 };
-export const DEMO = { guildId: "900000000000000001", userId: "900000000000000101", month: lastMonth() };
+// `cardId` is a placeholder card from bot/riftbound-catalogue.json, which the seed loads.
+export const DEMO = {
+  guildId: "900000000000000001",
+  userId: "900000000000000101",
+  month: lastMonth(),
+  cardId: "placeholder-legend-ahri",
+};
+
+// The docs' images by name, as /docs/shots/<name>.png. Remove one only once no docs page uses it.
+export const DOCS_SHOTS = [
+  { name: "home", route: "/", signedOut: true },
+  { name: "servers", route: "/s" },
+  { name: "leaderboard", route: `/s/${DEMO.guildId}/leaderboard` },
+  { name: "profile", route: `/u/${DEMO.userId}` },
+];
 
 export function routesFrom(appDir = "app") {
   const routes = [];
@@ -39,7 +57,7 @@ export function routesFrom(appDir = "app") {
     for (const name of readdirSync(dir)) {
       const full = join(dir, name);
       if (statSync(full).isDirectory()) walk(full);
-      else if (/^page\.(tsx|jsx|ts|js)$/.test(name)) {
+      else if (/^page\.(tsx|jsx|ts|js|mdx)$/.test(name)) {
         const segs = relative(appDir, dir).split(sep).filter(Boolean)
           .filter((s) => !/^\(.*\)$/.test(s)); // route groups do not appear in URLs
         if (segs.some((s) => s.startsWith("@") || s.startsWith("_"))) continue;
@@ -58,8 +76,9 @@ function fill(seg) {
   return DEMO[m[1]];
 }
 
-// Slugs name the page, not the demo ids: "s-ranked", "u", "s-member".
-const DEMO_IDS = new Set(Object.values(DEMO));
+// Slugs name the page, not the demo ids: "s-ranked", "u", "s-member", "cards-placeholder-legend-ahri".
+// The card id stays: without it the card page would be named "cards", like the library.
+const DEMO_IDS = new Set([DEMO.guildId, DEMO.userId, DEMO.month]);
 export const slug = (route) => (route === "/" ? "home" : route.slice(1).split("/").filter((s) => !DEMO_IDS.has(s)).join("-"));
 
 async function waitForServer(url, ms = 60_000) {
@@ -95,7 +114,7 @@ async function signIn(base) {
 }
 
 async function main() {
-  mkdirSync(OUT, { recursive: true });
+  mkdirSync(DOCS ? DOCS_OUT : OUT, { recursive: true });
   const base = `http://127.0.0.1:${PORT}`;
   let failures = 0;
   // Otherwise next start cannot bind and we would photograph whatever build is already there.
@@ -119,12 +138,16 @@ async function main() {
     try {
       const cookies = await signIn(base);
       // The not-found page has no page.tsx to discover, so visit it via an unknown path.
-      const shots = [...routesFrom(), "/not-found"].map((route) => ({ route, name: slug(route), cookies }));
-      if (cookies.length) shots.push({ route: "/", name: "home-signed-out", cookies: [] });
+      // Docs images need the demo member: signed out, the server pages are empty.
+      if (DOCS && !cookies.length) throw new Error("docs images need SCREENSHOT_EMAIL, SCREENSHOT_PASSWORD and the Supabase env vars");
+      const shots = DOCS
+        ? DOCS_SHOTS.map(({ name, route, signedOut }) => ({ route, name, cookies: signedOut ? [] : cookies }))
+        : [...routesFrom(), "/not-found"].map((route) => ({ route, name: slug(route), cookies }));
+      if (cookies.length && !DOCS) shots.push({ route: "/", name: "home-signed-out", cookies: [] });
       const dupes = shots.map((s) => s.name).filter((n, i, all) => all.indexOf(n) !== i);
       if (dupes.length) throw new Error(`two pages would share a screenshot name: ${dupes.join(", ")}`);
       for (const { route, name, cookies } of shots) {
-        for (const width of WIDTHS) {
+        for (const width of DOCS ? [1280] : WIDTHS) {
           for (const theme of A11Y ? ["dark", "light"] : ["dark"]) {
             const ctx = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: theme });
             await ctx.addCookies(cookies);
@@ -141,6 +164,10 @@ async function main() {
                 console.log(`  ${v.impact} ${v.id}: ${v.help} (${v.helpUrl})`);
                 for (const n of v.nodes) console.log(`    ${n.target.join(" ")}: ${n.failureSummary.replaceAll("\n", " ")}`);
               }
+            } else if (DOCS) {
+              const file = `${DOCS_OUT}/${name}.png`;
+              await page.screenshot({ path: file });
+              console.log(file);
             } else {
               const file = `${OUT}/${name}-${width}.png`;
               await page.screenshot({ path: file, fullPage: true });

@@ -43,19 +43,58 @@ export function GuildIcon({ guild, className }: { guild: Guild; className: strin
   );
 }
 
-// The brand links home, so the only site-wide page left is the server picker.
-export function ServersLink({ current }: { current: boolean }) {
+// The brand links home, so the site-wide pages left are the server picker, the cards and the docs.
+// Server pages have their own row of tabs, so only the picker itself marks Servers; a card page marks Cards.
+const MAIN = [
+  { href: "/s", label: "Servers", nested: false },
+  { href: "/cards", label: "Cards", nested: true },
+  { href: "/docs", label: "Docs", nested: true },
+];
+
+export function MainNav({ pathname }: { pathname: string | null }) {
   return (
     <nav aria-label="Main">
-      <Link href="/s" aria-current={current ? "page" : undefined} className={tab(current)}>
-        Servers
-      </Link>
+      <ul className="flex gap-1">
+        {MAIN.map(({ href, label, nested }) => {
+          const current = pathname === href || (nested && !!pathname?.startsWith(`${href}/`));
+          return (
+            <li key={href}>
+              <Link href={href} aria-current={current ? "page" : undefined} className={tab(current)}>
+                {label}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
     </nav>
   );
 }
 
 export function SiteNav() {
-  return <ServersLink current={usePathname() === "/s"} />;
+  return <MainNav pathname={usePathname()} />;
+}
+
+/** A profile's two tabs: activity in shared servers, and the Riftbound collection. */
+export function ProfileNav({ user }: { user: string }) {
+  const pathname = usePathname();
+  const tabs = [
+    { href: `/u/${user}`, label: "Activity" },
+    { href: `/u/${user}/collection`, label: "Collection" },
+    { href: `/u/${user}/loans`, label: "Loans" },
+  ];
+  return (
+    <nav aria-label="Profile">
+      <ul className="flex gap-1">
+        {tabs.map(({ href, label }) => (
+          <li key={href}>
+            <Link href={href} aria-current={pathname === href ? "page" : undefined} className={tab(pathname === href)}>
+              {label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
 }
 
 /** The row on top of server pages: which server this is, and its tabs. */
