@@ -36,8 +36,9 @@ export default function AboutPage() {
           <li>Voice: how long members spend in voice channels.</li>
           <li>
             Games: from your Discord status, the name of the game you are playing or competing
-            in, or that you are streaming, and for how long, per day. Nothing else from your
-            status is stored: no rich presence details, no Spotify songs, no custom status.
+            in, or that you are streaming, and for how long, per day. The game&apos;s Discord
+            application id is kept with the game, not with you, to show its icon. Nothing else from
+            your status is stored: no rich presence details, no Spotify songs, no custom status.
           </li>
           <li>
             League ranks: only if you link your League account with <Cmd>/lol link</Cmd>, Riot&apos;s

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { flushGames, GameBuffer, gameKeys, GameSessions, MAX_SESSION_S, type GameBatch } from "./games.js";
+import { flushGames, gameApps, GameBuffer, gameKeys, GameSessions, MAX_SESSION_S, type GameBatch } from "./games.js";
 
 const at = (time: string, day = "17") => new Date(`2026-10-${day}T${time}Z`);
 
@@ -19,6 +19,25 @@ describe("gameKeys", () => {
 
   it("drops empty names and counts a duplicate once", () => {
     expect(gameKeys([{ type: 0, name: " " }, { type: 0, name: "A" }, { type: 0, name: "A" }])).toEqual(["playing:A"]);
+  });
+});
+
+describe("gameApps", () => {
+  it("maps game names to their application id, games only and only when Discord sends one", () => {
+    expect(
+      gameApps([
+        { type: 0, name: "League of Legends ", applicationId: "401518684763586560" },
+        { type: 0, name: "Riftbound", applicationId: null },
+        { type: 1, name: "Twitch", applicationId: "1" },
+        { type: 5, name: "Arena", applicationId: "2" },
+        { type: 0, name: " ", applicationId: "3" },
+      ]),
+    ).toEqual(
+      new Map([
+        ["League of Legends", "401518684763586560"],
+        ["Arena", "2"],
+      ]),
+    );
   });
 });
 
