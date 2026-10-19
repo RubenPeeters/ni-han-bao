@@ -46,8 +46,9 @@ export default function AboutPage() {
           </li>
           <li>
             League games: with a linked account, your ranked and normal games of the last 10 days (the
-            champion you played and when), every 6 hours, for the weekly report and the Ranked page.
-            Custom games are never fetched. <Cmd>/lol unlink</Cmd> deletes them.
+            champion you played and when), every 6 hours, for the weekly report, the Ranked page and
+            your profile (your most played champion). Custom games are never fetched.
+            <Cmd>/lol unlink</Cmd> deletes them.
           </li>
           <li>Joins and leaves.</li>
         </ul>

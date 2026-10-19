@@ -54,12 +54,15 @@ begin
     delete from public.members where guild_id = g;
     delete from public.guilds where guild_id = g;
 
-    insert into public.guilds (guild_id, name) values (g, 'Demo server');
+    insert into public.guilds (guild_id, name, icon_url)
+        values (g, 'Demo server', 'https://cdn.discordapp.com/embed/avatars/1.png');
     insert into public.guild_settings (guild_id, timezone, public_totals_opt_out)
         values (g, 'Europe/Brussels', true);
 
-    insert into public.members (guild_id, user_id, display_name)
-        select g, users[i], names[i] from generate_series(1, 12) i;
+    -- Discord's default avatars, so screenshots show pictures where real members have them.
+    insert into public.members (guild_id, user_id, display_name, avatar_url)
+        select g, users[i], names[i], 'https://cdn.discordapp.com/embed/avatars/' || (i - 1) % 6 || '.png'
+        from generate_series(1, 12) i;
     insert into public.guild_members (guild_id, user_id) select g, u from unnest(users) u;
     -- Anna (the viewer) shares with members; a few are public, the rest stay private.
     insert into public.profiles (user_id, visibility)

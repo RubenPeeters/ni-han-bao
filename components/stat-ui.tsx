@@ -65,12 +65,15 @@ export function MemberRankRow({
   avatarUrl,
   value,
   href,
+  detail,
 }: {
   rank: number;
   name: string;
   avatarUrl: string | null;
   value: string;
   href?: string;
+  /** A second, smaller line under the name. */
+  detail?: ReactNode;
 }) {
   return (
     <RankRow rank={rank} value={value}>
@@ -93,13 +96,16 @@ export function MemberRankRow({
           {name.slice(0, 1).toUpperCase()}
         </span>
       )}
-      {href ? (
-        <Link href={href} className="min-w-0 flex-1 truncate underline-offset-4 hover:text-primary hover:underline">
-          {name}
-        </Link>
-      ) : (
-        <span className="min-w-0 flex-1 truncate">{name}</span>
-      )}
+      <span className="flex min-w-0 flex-1 flex-col">
+        {href ? (
+          <Link href={href} className="truncate underline-offset-4 hover:text-primary hover:underline">
+            {name}
+          </Link>
+        ) : (
+          <span className="truncate">{name}</span>
+        )}
+        {detail && <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">{detail}</span>}
+      </span>
     </RankRow>
   );
 }
