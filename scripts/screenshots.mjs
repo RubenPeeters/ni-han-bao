@@ -98,7 +98,19 @@ async function main() {
   mkdirSync(OUT, { recursive: true });
   const base = `http://127.0.0.1:${PORT}`;
   let failures = 0;
-  const server = spawn("pnpm", ["exec", "next", "start", "-p", String(PORT)], { stdio: "ignore" });
+  // Otherwise next start cannot bind and we would photograph whatever build is already there.
+  if (await fetch(base, { signal: AbortSignal.timeout(2000) }).then(() => true, () => false)) {
+    throw new Error(`something already answers on port ${PORT}: stop it (or set SCREENSHOT_PORT) and rerun`);
+  }
+  // Its own process group, so stopping it reaches next-server and not just the pnpm wrapper.
+  const server = spawn("pnpm", ["exec", "next", "start", "-p", String(PORT)], { stdio: "ignore", detached: true });
+  const stop = () => {
+    try {
+      process.kill(-server.pid, "SIGTERM");
+    } catch {} // already gone, or never started
+  };
+  // A detached group no longer gets the terminal's Ctrl-C, so pass it on.
+  for (const sig of ["SIGINT", "SIGTERM"]) process.once(sig, () => (stop(), process.exit(130)));
   try {
     await waitForServer(base);
     const browser = process.env.CHROME_PATH
@@ -142,7 +154,7 @@ async function main() {
       await browser.close();
     }
   } finally {
-    server.kill("SIGTERM");
+    stop();
   }
   if (failures) throw new Error(`${failures} serious or critical accessibility violation(s)`);
 }
