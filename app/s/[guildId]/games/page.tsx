@@ -1,14 +1,11 @@
 import { CountingStatus } from "@/components/counting-status";
 import { GameStats } from "@/components/game-stats";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
-import { memberGuild } from "@/lib/guild";
+import { memberGuild, serverMetadata } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
-export const metadata = {
-  title: "What we play · ni han bao",
-  description: "The games this server plays most, and who is playing right now.",
-};
+export const generateMetadata = serverMetadata("What we play", "The games this server plays most, and who is playing right now.");
 
 export default function GamesPage({ params }: PageProps<"/s/[guildId]/games">) {
   return (

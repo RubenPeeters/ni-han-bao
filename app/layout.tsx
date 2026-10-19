@@ -5,8 +5,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { AuthButton } from "@/components/auth-button";
 import { BotStatusDot } from "@/components/bot-status";
-import { ServerBar } from "@/components/server-picker";
-import { ServerNav, ServersLink, SiteNav } from "@/components/site-nav";
+import { ServersLink, SiteNav } from "@/components/site-nav";
 import { hasEnvVars, RIOT_DISCLAIMER } from "@/lib/utils";
 import "./globals.css";
 
@@ -52,24 +51,19 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-10 px-5 py-6">
-            <header className="flex flex-col gap-3 border-b pb-4">
-              <div className="flex items-center gap-2">
-                <Link
-                  href="/"
-                  className="whitespace-nowrap rounded-md text-lg font-semibold transition-colors hover:text-primary active:text-primary/80"
-                >
-                  ni han bao
-                </Link>
-                <Suspense fallback={<ServersLink current={false} />}>
-                  <SiteNav />
-                </Suspense>
-                <div className="ml-auto flex items-center">
-                  <AuthButton />
-                </div>
+            <header className="flex items-center gap-2 border-b pb-4">
+              <Link
+                href="/"
+                className="whitespace-nowrap rounded-md text-lg font-semibold transition-colors hover:text-primary active:text-primary/80"
+              >
+                ni han bao
+              </Link>
+              <Suspense fallback={<ServersLink current={false} />}>
+                <SiteNav />
+              </Suspense>
+              <div className="ml-auto flex items-center">
+                <AuthButton />
               </div>
-              {/* Server pages know their guildId only at request time, and the static shell cannot
-                  tell a server page from any other, so the row streams in with the page. */}
-              <Suspense>{hasEnvVars ? <ServerBar /> : <ServerNav guilds={[]} />}</Suspense>
             </header>
             <main className="flex flex-1 flex-col gap-8">{children}</main>
             <footer className="flex flex-wrap items-center justify-between gap-2 border-t pt-4 text-xs text-muted-foreground">

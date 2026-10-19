@@ -1,5 +1,6 @@
 import { LoginButton } from "@/components/auth-button";
 import { EmptyState, ErrorState } from "@/components/stat-ui";
+import { guildInfo } from "@/lib/guild";
 import { createClient } from "@/lib/supabase/server";
 import { GuildIcon, ServerNav, type Guild } from "@/components/site-nav";
 import Link from "next/link";
@@ -42,10 +43,11 @@ export async function ServerPicker() {
   );
 }
 
-/** The header's server row; the visitor's servers feed its switcher. Anon gets none. */
-export async function ServerBar() {
+/** The server row; the visitor's servers feed its switcher. */
+export async function ServerBar({ params }: { params: Promise<{ guildId: string }> }) {
+  const { guildId } = await params;
   const supabase = await createClient();
-  // The header must not take the page down with it: without the list the tabs still work.
-  const { data } = await supabase.rpc("my_guilds");
-  return <ServerNav guilds={(data ?? []) as Guild[]} />;
+  // The row must not take the page down with it: without the list the tabs still work.
+  const [{ data }, guild] = await Promise.all([supabase.rpc("my_guilds"), guildInfo(guildId)]);
+  return <ServerNav guild={guild} guilds={(data ?? []) as Guild[]} />;
 }

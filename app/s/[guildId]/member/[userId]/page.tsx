@@ -1,13 +1,10 @@
 import { MemberStats } from "@/components/member-stats";
 import { NotConfigured, StatsSkeleton } from "@/components/stat-ui";
-import { memberGuild } from "@/lib/guild";
+import { memberGuild, serverMetadata } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
-export const metadata = {
-  title: "Member · ni han bao",
-  description: "Their activity in this server.",
-};
+export const generateMetadata = serverMetadata("Member", "Their activity in this server.");
 
 export default function MemberPage({ params }: PageProps<"/s/[guildId]/member/[userId]">) {
   return hasEnvVars ? (

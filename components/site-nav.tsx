@@ -58,8 +58,8 @@ export function SiteNav() {
   return <ServersLink current={usePathname() === "/s"} />;
 }
 
-/** The second header row on server pages: which server this is, and its tabs. */
-export function ServerNav({ guilds }: { guilds: Guild[] }) {
+/** The row on top of server pages: which server this is, and its tabs. */
+export function ServerNav({ guild, guilds }: { guild: Guild | null; guilds: Guild[] }) {
   const pathname = usePathname();
   const { guildId } = useParams<{ guildId?: string }>();
   const tabs = useRef<HTMLElement>(null);
@@ -72,7 +72,6 @@ export function ServerNav({ guilds }: { guilds: Guild[] }) {
   }, [pathname]);
 
   if (!guildId) return null;
-  const guild = guilds.find((g) => g.guild_id === guildId);
   const others = guilds.filter((g) => g.guild_id !== guildId);
   const label = guild && (
     <>

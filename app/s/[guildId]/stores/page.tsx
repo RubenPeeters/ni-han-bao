@@ -2,14 +2,11 @@ import { CountingStatus } from "@/components/counting-status";
 import { EventStats } from "@/components/event-stats";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
 import { StoreStats } from "@/components/store-stats";
-import { memberGuild } from "@/lib/guild";
+import { memberGuild, serverMetadata } from "@/lib/guild";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
-export const metadata = {
-  title: "Where we play · ni han bao",
-  description: "The local game stores this server plays at, and who is going where.",
-};
+export const generateMetadata = serverMetadata("Where we play", "The local game stores this server plays at, and who is going where.");
 
 export default function StoresPage({ params }: PageProps<"/s/[guildId]/stores">) {
   return (

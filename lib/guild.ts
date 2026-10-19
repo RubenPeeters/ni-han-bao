@@ -1,8 +1,10 @@
 import { legacyPath } from "@/lib/legacy";
 import { createClient } from "@/lib/supabase/server";
 import { hasEnvVars } from "@/lib/utils";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { NextResponse, type NextRequest } from "next/server";
+import { cache } from "react";
 
 /**
  * The route's server id, once the visitor is known to be a member. Anyone else gets a 404,
@@ -16,6 +18,26 @@ export async function memberGuild(params: Promise<{ guildId: string }>) {
   if (error) throw new Error(`is_guild_member failed: ${error.message}`);
   if (!data) notFound();
   return guildId;
+}
+
+/**
+ * The server's name and icon, or null. Safe before memberGuild(): RLS on guilds returns
+ * only the visitor's own servers. Null on errors too: the header and title must not take
+ * the page down with them. Cached so the header and the title share one query.
+ */
+export const guildInfo = cache(async (guildId: string) => {
+  if (!hasEnvVars) return null;
+  const supabase = await createClient();
+  const { data } = await supabase.from("guilds").select("guild_id, name, icon_url").eq("guild_id", guildId).maybeSingle();
+  return data as { guild_id: string; name: string; icon_url: string | null } | null;
+});
+
+/** generateMetadata for a server page: "Ranked · Demo server · ni han bao", for members only. */
+export function serverMetadata(title: string, description: string) {
+  return async ({ params }: { params: Promise<{ guildId: string }> }): Promise<Metadata> => {
+    const guild = await guildInfo((await params).guildId);
+    return { title: [title, guild?.name, "ni han bao"].filter(Boolean).join(" · "), description };
+  };
 }
 
 /** The server's time zone from /setup timezone; UTC until someone sets one. Call after memberGuild(). */

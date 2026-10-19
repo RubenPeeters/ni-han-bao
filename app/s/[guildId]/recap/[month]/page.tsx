@@ -1,15 +1,12 @@
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
-import { memberGuild } from "@/lib/guild";
+import { memberGuild, serverMetadata } from "@/lib/guild";
 import { recapAlt, recapMonth, type RecapData } from "@/lib/recap";
 import { createClient } from "@/lib/supabase/server";
 import { hasEnvVars } from "@/lib/utils";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
-export const metadata = {
-  title: "Monthly recap · ni han bao",
-  description: "The month in one card, as the bot posts it.",
-};
+export const generateMetadata = serverMetadata("Monthly recap", "The month in one card, as the bot posts it.");
 
 export default function RecapPage({ params }: PageProps<"/s/[guildId]/recap/[month]">) {
   return (
