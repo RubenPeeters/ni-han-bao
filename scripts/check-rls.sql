@@ -101,7 +101,9 @@ begin
     if exists (select from public.lol_ranks) or exists (select from public.profile_ranks('rls-rls-mine')) then
         raise exception 'anon reads a rank';
     end if;
-    if exists (select from public.lol_matches) then raise exception 'anon reads League games'; end if;
+    if exists (select from public.lol_matches) or public.profile_lol_champion('rls-rls-mine') is not null then
+        raise exception 'anon reads League games';
+    end if;
     if exists (select from public.profiles) or exists (select from public.profile('rls-public')) then
         raise exception 'anon reads a profile';
     end if;
@@ -208,6 +210,10 @@ begin
     if not exists (select from public.profile_ranks('rls-rls-mine')) or exists (select from public.profile_ranks('rls-rls-other'))
         or exists (select from public.profile_ranks('rls-hidden')) then
         raise exception 'profile_ranks() does not follow the profile';
+    end if;
+    if public.profile_lol_champion('rls-rls-mine') is distinct from 'Ahri' or public.profile_lol_champion('rls-rls-other') is not null
+        or public.profile_lol_champion('rls-hidden') is not null then
+        raise exception 'profile_lol_champion() does not follow the profile';
     end if;
     if (select players from public.guild_games('rls-mine', current_date)) <> 2 then
         raise exception 'guild_games() does not count just the visible members';

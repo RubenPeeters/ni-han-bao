@@ -1,4 +1,6 @@
 import { EmptyState, ErrorState, MemberRankRow, RankList, RankRow, StatCard, StatGrid } from "@/components/stat-ui";
+import { loadChampionIcons } from "@/lib/champion-icons";
+import { championIcon } from "@/lib/ddragon";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 
@@ -33,6 +35,21 @@ export function RankEmblem({ tier, size }: { tier: string; size: number }) {
     // Static files already sized for this; no optimisation needed.
     // eslint-disable-next-line @next/next/no-img-element
     <img src={`/ranked/${tier.toLowerCase()}.png`} alt="" width={size} height={size} className="shrink-0" />
+  );
+}
+
+/** The champion's square icon from Riot's Data Dragon, then "mostly <champion>". */
+function MostlyChampion({ champion, icons, size }: { champion: string; icons: Record<string, string>; size: number }) {
+  const src = championIcon(icons, champion);
+  return (
+    <>
+      {src && (
+        // Riot's CDN serves them small already; next/image would need a remote pattern.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" width={size} height={size} className="shrink-0 rounded-sm bg-muted" />
+      )}
+      <span className="truncate">mostly {champion}</span>
+    </>
   );
 }
 
@@ -90,7 +107,7 @@ interface LolWeek {
 /** The server's League week: linked members' ranked and normal games. Nothing when no one linked. */
 export async function GuildLolWeek({ guild }: { guild: string }) {
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("guild_lol_week", { g: guild });
+  const [{ data, error }, icons] = await Promise.all([supabase.rpc("guild_lol_week", { g: guild }), loadChampionIcons()]);
   if (error) return <ErrorState title="Could not load the League games">Try again in a minute.</ErrorState>;
   const rows = (data as LolWeek[]).filter((r) => r.games > 0);
   if (data.length === 0) return null;
@@ -104,8 +121,9 @@ export async function GuildLolWeek({ guild }: { guild: string }) {
             <MemberRankRow
               key={r.user_id}
               rank={n + 1}
-              name={r.champion ? `${r.display_name} · mostly ${r.champion}` : r.display_name}
+              name={r.display_name}
               avatarUrl={r.avatar_url}
+              detail={r.champion && <MostlyChampion champion={r.champion} icons={icons} size={16} />}
               value={`${r.games.toLocaleString("en-US")} ${r.games === 1 ? "game" : "games"}`}
               href={`/s/${guild}/member/${r.user_id}`}
             />
@@ -116,9 +134,10 @@ export async function GuildLolWeek({ guild }: { guild: string }) {
   );
 }
 
-/** The profile's League card; nothing without a ranked queue. */
-export function ProfileRanks({ ranks }: { ranks: (Rank & { queue: string })[] }) {
-  if (ranks.length === 0) return null;
+/** The profile's League card; nothing without a ranked queue or a game this week. */
+export async function ProfileRanks({ ranks, champion }: { ranks: (Rank & { queue: string })[]; champion: string | null }) {
+  if (ranks.length === 0 && !champion) return null;
+  const icons = champion ? await loadChampionIcons() : {};
   return (
     <StatCard title="League of Legends" description="Riot's official rank, updated every 3 hours">
       <ul className="grid gap-4 sm:grid-cols-2">
@@ -139,6 +158,12 @@ export function ProfileRanks({ ranks }: { ranks: (Rank & { queue: string })[] })
           );
         })}
       </ul>
+      {champion && (
+        <p className="flex min-w-0 items-center gap-2 text-sm">
+          <MostlyChampion champion={champion} icons={icons} size={24} />
+          <span className="shrink-0 text-muted-foreground">this week</span>
+        </p>
+      )}
     </StatCard>
   );
 }
