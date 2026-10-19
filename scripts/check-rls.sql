@@ -47,6 +47,7 @@ begin
     insert into public.guild_members (guild_id, user_id) values ('rls-mine', 'rls-user');
     -- A member who ran /hide-me: none of their regulars may show.
     insert into public.members (guild_id, user_id, display_name, hidden) values ('rls-mine', 'rls-hidden', 'x', true);
+    insert into public.message_counts (guild_id, user_id, day, count) values ('rls-mine', 'rls-hidden', '2026-01-01', 1);
     insert into public.store_regulars (guild_id, store_id, user_id)
     select 'rls-mine', id, 'rls-hidden' from public.stores where guild_id = 'rls-mine';
     insert into public.event_attendees (guild_id, event_id, user_id)
@@ -104,6 +105,7 @@ begin
     if exists (select from public.profiles) or exists (select from public.profile('rls-public')) then
         raise exception 'anon reads a profile';
     end if;
+    if public.message_total('2026-01-01', 'rls-mine') <> 0 then raise exception 'anon reads a server''s message_total()'; end if;
     if (select servers from public.public_totals('2026-01-01')) < 2 then
         raise exception 'anon cannot read public_totals()';
     end if;
@@ -221,6 +223,13 @@ begin
     if not exists (select from public.profile_games('rls-rls-mine')) or exists (select from public.profile_games('rls-public'))
         or exists (select from public.profile_games('rls-hidden')) then
         raise exception 'profile_games() does not follow the profile and shared servers';
+    end if;
+    -- A hidden member's messages count towards the total without being readable one by one.
+    if public.message_total('2026-01-01', 'rls-mine') <> 2 then
+        raise exception 'message_total() leaves out hidden members';
+    end if;
+    if public.message_total('2026-01-01', 'rls-other') <> 0 then
+        raise exception 'a member reads another server''s message_total()';
     end if;
     if (select count(*) from public.my_guilds()) <> 1 then raise exception 'my_guilds() is not just mine'; end if;
     if public.monthly_recap('rls-mine', '2025-12-01') is null then raise exception 'a member cannot read their recap'; end if;
