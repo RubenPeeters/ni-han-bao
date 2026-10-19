@@ -49,6 +49,7 @@ begin
     delete from public.lol_ranks where user_id = any (users);
     delete from public.game_accounts where user_id = any (users);
     delete from public.activity_seconds where user_id = any (users);
+    delete from public.riftbound_collection where user_id = any (users);
     delete from public.profiles where user_id = any (users);
     delete from public.guild_members where guild_id = g;
     delete from public.members where guild_id = g;
@@ -65,8 +66,10 @@ begin
         from generate_series(1, 12) i;
     insert into public.guild_members (guild_id, user_id) select g, u from unnest(users) u;
     -- Anna (the viewer) shares with members; a few are public, the rest stay private.
-    insert into public.profiles (user_id, visibility)
-        select users[i], case when i in (1, 2, 5) then 'members' when i in (3, 8) then 'public' else 'private' end
+    -- Bram lends everything, Chloé the cards she marks; Daan lends too, but his profile is private.
+    insert into public.profiles (user_id, visibility, lends_cards, lend_all)
+        select users[i], case when i in (1, 2, 5) then 'members' when i in (3, 8) then 'public' else 'private' end,
+               i in (2, 3, 4), i = 2
         from generate_series(1, 12) i;
 
     -- Activity over the last 120 days. Members differ in level (i) and every day is noisy.
@@ -156,6 +159,16 @@ begin
                now() - (n * interval '7 hours') - (i * interval '13 minutes')
         from generate_series(1, 8) i, generate_series(1, 48) n
         where abs(hashtext('lm' || users[i] || n::text)) % (1 + i % 3) = 0;
+
+    -- Riftbound collections (#150): about a third of the placeholder cards each, some for trade,
+    -- and Ahri's legend (the demo card page) with Bram, Chloé and Daan, for Who has it?.
+    insert into public.riftbound_collection (user_id, printing_id, finish, condition, quantity, for_trade, lendable)
+        select users[i], p.id, case when abs(hashtext('f' || users[i] || p.id)) % 5 = 0 then 'foil' else 'normal' end, 'NM',
+               1 + abs(hashtext('q' || users[i] || p.id)) % 3, abs(hashtext('t' || users[i] || p.id)) % 2,
+               case when i = 3 then abs(hashtext('l' || users[i] || p.id)) % 2 end
+        from public.riftbound_printings p, generate_series(1, 6) i
+        where p.id = 'PLH-L103' and i in (2, 3, 4) or abs(hashtext('c' || users[i] || p.id)) % 3 = 0;
+    update public.riftbound_collection set lendable = 1 where user_id = users[3] and printing_id = 'PLH-L103';
 
     -- Riftbound local play: stores, regulars and upcoming events.
     insert into public.stores (guild_id, name, city, url, added_by) values

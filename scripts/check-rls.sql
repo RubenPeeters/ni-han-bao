@@ -81,6 +81,11 @@ begin
     insert into public.riftbound_cards (id, name, type) values ('rls-card', 'x', 'Spell');
     insert into public.riftbound_printings (id, card_id, set_code, collector_code, collector_number)
     values ('rls-printing', 'rls-card', 'RLS', 'RLS-001', 1);
+    -- Collections (#150): rls-rls-mine lends everything, rls-hidden lends but is hidden,
+    -- rls-rls-other lends but shares no server; rls-user owns one but does not lend.
+    update public.profiles set lends_cards = true, lend_all = true where user_id in ('rls-rls-mine', 'rls-hidden', 'rls-rls-other');
+    insert into public.riftbound_collection (user_id, printing_id, finish, condition, quantity)
+    select u, 'rls-printing', 'normal', 'NM', 2 from unnest(array['rls-user', 'rls-rls-mine', 'rls-hidden', 'rls-rls-other']) u;
     -- anon cannot read keys itself, so hand it one for the recap checks below.
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
@@ -108,6 +113,9 @@ begin
         raise exception 'anon reads the card catalogue';
     end if;
     if exists (select from public.game_accounts) then raise exception 'anon reads linked accounts'; end if;
+    if exists (select from public.riftbound_collection) or exists (select from public.profile_collection('rls-rls-mine')) then
+        raise exception 'anon reads a collection';
+    end if;
     if exists (select from public.lol_ranks) or exists (select from public.profile_ranks('rls-rls-mine')) then
         raise exception 'anon reads a rank';
     end if;
@@ -229,6 +237,34 @@ begin
     if not exists (select from public.riftbound_cards where id = 'rls-card')
         or not exists (select from public.riftbound_printings where id = 'rls-printing') then
         raise exception 'a logged-in user cannot read the card catalogue';
+    end if;
+    -- Collections (#150): your own rows directly, others' through the functions only.
+    if (select array_agg(user_id) from public.riftbound_collection) <> array['rls-user'] then
+        raise exception 'a member reads collection rows that are not theirs';
+    end if;
+    if (select array_agg(user_id || ':' || copies) from public.card_lenders('rls-card')) <> array['rls-rls-mine:2'] then
+        raise exception 'card_lenders() does not list just the visible lenders of the visitor''s servers';
+    end if;
+    if not exists (select from public.profile_collection('rls-rls-mine')) or exists (select from public.profile_collection('rls-rls-other'))
+        or exists (select from public.profile_collection('rls-hidden')) then
+        raise exception 'profile_collection() does not follow the profile';
+    end if;
+    perform public.set_riftbound_copies('rls-printing', 'normal', 'NM', 4, 9, null);
+    if (select quantity || ':' || for_trade from public.riftbound_collection) <> '4:4' then
+        raise exception 'set_riftbound_copies() does not save, or lets for trade exceed the copies';
+    end if;
+    if (select lendable from public.riftbound_collection) is not null then
+        raise exception 'set_riftbound_copies() turns the lending default into an explicit count';
+    end if;
+    if public.own_riftbound_playset('RLS') <> 0 then raise exception 'own_riftbound_playset() tops up a full playset'; end if;
+    perform public.set_riftbound_copies('rls-printing', 'normal', 'NM', 0, 0, null);
+    if exists (select from public.riftbound_collection) then raise exception 'set_riftbound_copies() keeps a row at 0'; end if;
+    if public.own_riftbound_playset('RLS') <> 1 or (select quantity from public.riftbound_collection) <> 3 then
+        raise exception 'own_riftbound_playset() does not fill the set to 3';
+    end if;
+    perform public.set_card_lending(true, false);
+    if (select lends_cards from public.profiles where user_id = 'rls-user') is not true then
+        raise exception 'set_card_lending() does not save your own setting';
     end if;
     if (select icon from public.guild_games('rls-mine', current_date)) is distinct from 'i' then
         raise exception 'guild_games() does not return the game icon';

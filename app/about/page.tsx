@@ -51,6 +51,13 @@ export default function AboutPage() {
             your profile (your most played champion). Custom games are never fetched.
             <Cmd>/lol unlink</Cmd> deletes them.
           </li>
+          <li>
+            Riftbound cards: only what you enter yourself on the Cards page or with{" "}
+            <Cmd>/collection add</Cmd>, how many of each you own (finish and condition), how many are
+            for trade and how many you lend. Your profile&apos;s Collection tab shows totals per set
+            and rarity. With <Cmd>/collection lending on</Cmd>, members of your servers see your
+            copies to lend on a card&apos;s page, unless your profile is private.
+          </li>
           <li>Joins and leaves.</li>
         </ul>
         <p>
@@ -95,7 +102,7 @@ export default function AboutPage() {
           To have your data deleted instead, type <Cmd>/forget-me</Cmd> in any server and
           confirm. It deletes everything the bot stored about you, in every server: your
           message, reaction and voice counts, your game time, your name and avatar, your server memberships, your
-          linked League account with its ranks and games, your profile setting and your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
+          linked League account with its ranks and games, your Riftbound collection, your profile and lending settings and your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
           their counts, without anything that points to you. The bot then stops counting you,
           keeping only a scrambled (hashed) copy of your Discord id to recognise you by. Until
           you type <Cmd>/show-me</Cmd>, which starts counting you again, you also cannot open
