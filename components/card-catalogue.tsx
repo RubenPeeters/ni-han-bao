@@ -11,6 +11,8 @@ interface Printing {
 const TYPES = ["Legend", "Unit", "Spell", "Gear"];
 // shortcut: the first few of each type, no search or paging; add them with the first page that needs a card list.
 const PER_TYPE = 8;
+// shortcut: PostgREST caps a response at 1000 rows, so past that the counts undercount; query per type when the real API (#96) lands.
+const MAX_PRINTINGS = 1000;
 
 /** The global Riftbound catalogue: not per server, so no guild filter. */
 export async function CardCatalogue() {
@@ -19,7 +21,8 @@ export async function CardCatalogue() {
     .from("riftbound_printings")
     .select("collector_code, image_url, card:riftbound_cards!inner(id, name, type, energy, might, placeholder)")
     .order("collector_number")
-    .order("collector_code");
+    .order("collector_code")
+    .limit(MAX_PRINTINGS);
   if (error) return <ErrorState title="Could not load the cards">Try again in a minute.</ErrorState>;
   const printings = data as unknown as Printing[];
   if (printings.length === 0) return <EmptyState>No cards yet.</EmptyState>;

@@ -135,24 +135,23 @@ export function catalogueJson({ cards, printings }: Catalogue): string {
   return `{\n  "cards": [\n${list(cards)}\n  ],\n  "printings": [\n${list(printings)}\n  ]\n}\n`;
 }
 
-// Case, accents and curly apostrophes do not matter: "kai’sa" is "Kai'Sa", "anivia" "Anivia".
+// Case, accents, spacing and apostrophes do not matter: "kaisa" is "Kai'Sa", "anivia" "Anivia".
 const normal = (text: string) =>
-  text.normalize("NFD").replace(/\p{M}/gu, "").replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim().toLowerCase();
+  text.normalize("NFD").replace(/\p{M}/gu, "").replace(/['‘’]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 
 export type Resolved = { card: Card } | { ambiguous: Card[] } | null;
 
 /**
- * What a member typed, to one card. The exact name wins; else, for legends, "Champion,
- * Epithet" or the bare champion name. More than one match is ambiguous, never guessed.
+ * What a member typed, to one card: its exact name or, for legends, "Champion, Epithet" or
+ * the bare champion name. More than one match is ambiguous, never guessed.
  */
 export function resolveCard(cards: Card[], typed: string): Resolved {
   const q = normal(typed);
   if (!q) return null;
-  const one = (found: Card[]): Resolved => (found.length === 1 ? { card: found[0] } : { ambiguous: found });
-  const exact = cards.filter((c) => normal(c.name) === q);
-  if (exact.length) return one(exact);
-  const legends = cards.filter(
-    (c) => c.type === "Legend" && c.tags.some((t) => normal(t) === q || normal(`${t}, ${c.name}`) === q),
+  const found = cards.filter(
+    (c) =>
+      normal(c.name) === q ||
+      (c.type === "Legend" && c.tags.some((t) => normal(t) === q || normal(`${t}, ${c.name}`) === q)),
   );
-  return legends.length ? one(legends) : null;
+  return found.length === 0 ? null : found.length === 1 ? { card: found[0] } : { ambiguous: found };
 }

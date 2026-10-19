@@ -68,6 +68,8 @@ describe("resolveCard", () => {
     card("s-2", "Twin", "Spell"),
     card("s-3", "Twin", "Gear"),
     card("l-x", "Twin Legend", "Legend", ["Twin Legend"]),
+    card("u-zed", "Zed", "Unit"),
+    card("l-zed", "Master of Shadows", "Legend", ["Zed"]),
   ];
   const id = (typed: string) => {
     const r = resolveCard(cards, typed);
@@ -85,11 +87,14 @@ describe("resolveCard", () => {
     expect(id("Ahri, Nine Lives")).toBe("l-ahri");
     expect(id("kai’sa")).toBe("l-kaisa");
     expect(id("Kai'Sa, Daughter of the Void")).toBe("l-kaisa");
+    expect(id("kaisa")).toBe("l-kaisa");
+    expect(id("Kaisa, Daughter of the Void")).toBe("l-kaisa");
   });
 
   it("reports a spelling that matches more than one card, and finds nothing for the rest", () => {
     expect(id("twin")).toEqual(["s-2", "s-3"]);
     expect(id("Twin Legend")).toBe("l-x");
+    expect(id("zed")).toEqual(["u-zed", "l-zed"]);
     expect(id("Teemo")).toBeNull();
     expect(id("   ")).toBeNull();
   });
