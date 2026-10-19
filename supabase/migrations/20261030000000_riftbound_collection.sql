@@ -101,6 +101,12 @@ begin
     on conflict (user_id, printing_id, finish, condition) do update
     set quantity = greatest(c.quantity, excluded.quantity), updated_at = now();
     get diagnostics n = row_count;
+    -- Nothing written: an unknown set, or skip_forgotten() dropped every row. Say so instead of a save.
+    if n = 0 and exists (select from public.riftbound_printings p where p.set_code = $1) then
+        raise exception 'you asked to be forgotten: use /show-me in Discord first';
+    elsif n = 0 then
+        raise exception 'no printings in set %', $1;
+    end if;
     return n;
 end;
 $$;

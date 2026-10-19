@@ -26,6 +26,8 @@ export function useCollection({ me, copies: initial }: Collection) {
   const inFlight = useRef(new Set<string>());
   const attempt = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // The next page's editor takes over the stored queue; a request answering after unmount must not overwrite it.
+  const mounted = useRef(true);
 
   const persist = useCallback(() => {
     setWaiting(pending.current.size);
@@ -53,6 +55,7 @@ export function useCollection({ me, copies: initial }: Collection) {
         })
         .then(({ error: failed }) => {
           inFlight.current.delete(key);
+          if (!mounted.current) return;
           if (failed && !isPermanent(failed)) {
             timer.current = setTimeout(flush, retryDelay(attempt.current++));
             return;
@@ -68,6 +71,7 @@ export function useCollection({ me, copies: initial }: Collection) {
   }, [persist]);
 
   useEffect(() => {
+    mounted.current = true;
     try {
       const saved = JSON.parse(localStorage.getItem(storage) ?? "[]") as Copy[];
       for (const c of saved) pending.current.set(copyKey(c), c);
@@ -82,6 +86,7 @@ export function useCollection({ me, copies: initial }: Collection) {
     }
     window.addEventListener("online", flush);
     return () => {
+      mounted.current = false;
       window.removeEventListener("online", flush);
       clearTimeout(timer.current);
     };

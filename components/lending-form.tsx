@@ -6,7 +6,7 @@ import { useState } from "react";
 
 const DEFAULTS = [
   { value: "nothing", label: "Nothing until I mark cards", hint: "Set a count to lend on each card." },
-  { value: "everything", label: "Everything I own", hint: "Except decks marked not for lending; a count on a card wins." },
+  { value: "everything", label: "Everything I own", hint: "Every copy, unless a count on a card says less." },
 ];
 
 /** "I lend cards": turning it on the first time asks which default applies. */

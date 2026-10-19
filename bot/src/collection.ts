@@ -6,7 +6,7 @@ import { cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
 
 export const LEND_DEFAULTS = {
   nothing: "Nothing until I mark cards",
-  everything: "Everything I own, except decks marked not for lending",
+  everything: "Everything I own",
 } as const;
 export type LendDefault = keyof typeof LEND_DEFAULTS;
 

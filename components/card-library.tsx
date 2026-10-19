@@ -4,6 +4,7 @@ import type { Collection } from "@/components/collection-sync";
 import { LogInPrompt } from "@/components/server-picker";
 import { EmptyState, ErrorState, MemberRankRow, RankList, StatCard } from "@/components/stat-ui";
 import { Badge } from "@/components/ui/badge";
+import type { Copy } from "@/lib/collection";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -35,6 +36,7 @@ interface Card {
 
 // shortcut: PostgREST caps a response at 1000 rows, so a bigger catalogue is cut off; page it when the real API (#96) lands.
 const MAX_CARDS = 1000;
+const PAGE = 1000;
 const byNumber = (a: Printing, b: Printing) =>
   a.collector_number - b.collector_number || a.collector_code.localeCompare(b.collector_code);
 const LOG_IN = "Log in to look through the Riftbound cards.";
@@ -43,23 +45,32 @@ type Client = Awaited<ReturnType<typeof createClient>>;
 
 /**
  * The visitor's own copies and lending setting, for the editors; null when they are not
- * logged in with Discord (nothing to save under) or it cannot be read.
- * shortcut: PostgREST's 1000 rows cap a collection at 1000 printing/finish/condition rows; page it if someone gets there.
+ * logged in with Discord (nothing to save under) or it cannot be read in full: a row missing
+ * here would look unowned, and a tap would overwrite it.
  */
 async function myCollection(supabase: Client): Promise<Collection | null> {
   const me = await supabase.rpc("current_discord_id");
   if (me.error || !me.data) return null;
-  const [copies, lending] = await Promise.all([
-    supabase
+  const lending = await supabase.from("riftbound_lending").select("lends, lend_default").maybeSingle();
+  if (lending.error) return null;
+  const copies: Copy[] = [];
+  // PostgREST returns at most PAGE rows a request; a page short of that is the last.
+  for (let from = 0; ; from += PAGE) {
+    const page = await supabase
       .from("riftbound_collection")
       .select("printing:printing_id, finish, condition, quantity, for_trade, lendable")
-      .eq("user_id", me.data as string),
-    supabase.from("riftbound_lending").select("lends, lend_default").maybeSingle(),
-  ]);
-  if (copies.error || lending.error) return null;
+      .eq("user_id", me.data as string)
+      .order("printing_id")
+      .order("finish")
+      .order("condition")
+      .range(from, from + PAGE - 1);
+    if (page.error) return null;
+    copies.push(...page.data);
+    if (page.data.length < PAGE) break;
+  }
   return {
     me: me.data as string,
-    copies: copies.data,
+    copies,
     lends: lending.data?.lends ?? false,
     lendAll: lending.data?.lend_default === "everything",
   };
