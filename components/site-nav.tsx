@@ -80,6 +80,7 @@ export function ProfileNav({ user }: { user: string }) {
   const tabs = [
     { href: `/u/${user}`, label: "Activity" },
     { href: `/u/${user}/collection`, label: "Collection" },
+    { href: `/u/${user}/loans`, label: "Loans" },
   ];
   return (
     <nav aria-label="Profile">

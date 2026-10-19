@@ -1,6 +1,7 @@
 -- Proves per-server data is readable only by members of that server (#45): anon reads zero
 -- rows from every table with a guild_id, and a logged-in user reads rows of their own
--- servers only; that profiles follow their visibility (#100); then that /forget-me deletes
+-- servers only; that profiles follow their visibility (#100); that the lending ledger holds
+-- (#172); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`. Run against a local Supabase or the dev project
 -- (never production); everything is rolled back:
@@ -86,6 +87,10 @@ begin
     update public.profiles set lends_cards = true, lend_all = true where user_id in ('rls-rls-mine', 'rls-hidden', 'rls-rls-other');
     insert into public.riftbound_collection (user_id, printing_id, finish, condition, quantity)
     select u, 'rls-printing', 'normal', 'NM', 2 from unnest(array['rls-user', 'rls-rls-mine', 'rls-hidden', 'rls-rls-other']) u;
+    -- Loans (#172): rls-rls-mine lent the test user one copy; rls-rls-other lent rls-public one.
+    perform public.lend_riftbound_cards(l, b, null, null,
+        '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"en","quantity":1}]')
+    from (values ('rls-rls-mine', 'rls-user'), ('rls-rls-other', 'rls-public')) v (l, b);
     -- anon cannot read keys itself, so hand it one for the recap checks below.
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
@@ -115,6 +120,10 @@ begin
     if exists (select from public.game_accounts) then raise exception 'anon reads linked accounts'; end if;
     if exists (select from public.riftbound_collection) or exists (select from public.profile_collection('rls-rls-mine')) then
         raise exception 'anon reads a collection';
+    end if;
+    if exists (select from public.riftbound_loans) or exists (select from public.riftbound_loan_cards)
+        or exists (select from public.riftbound_loan_entries) then
+        raise exception 'anon reads a loan';
     end if;
     if exists (select from public.lol_ranks) or exists (select from public.profile_ranks('rls-rls-mine')) then
         raise exception 'anon reads a rank';
@@ -242,8 +251,19 @@ begin
     if (select array_agg(user_id) from public.riftbound_collection) <> array['rls-user'] then
         raise exception 'a member reads collection rows that are not theirs';
     end if;
-    if (select array_agg(user_id || ':' || copies) from public.card_lenders('rls-card')) <> array['rls-rls-mine:2'] then
-        raise exception 'card_lenders() does not list just the visible lenders of the visitor''s servers';
+    -- rls-rls-mine has 2 and lent 1 (#172): the lent copy is not on offer.
+    if (select array_agg(user_id || ':' || copies) from public.card_lenders('rls-card')) <> array['rls-rls-mine:1'] then
+        raise exception 'card_lenders() does not list just the visible lenders of the visitor''s servers, or offers lent copies';
+    end if;
+    -- Loans (#172): only the parties, through profile_loans().
+    if exists (select from public.riftbound_loans) or exists (select from public.riftbound_loan_cards)
+        or exists (select from public.riftbound_loan_entries) then
+        raise exception 'a member reads the lending ledger directly';
+    end if;
+    if (select array_agg(other_id || ':' || lent || ':' || state) from public.profile_loans('rls-user')) <> array['rls-rls-mine:false:open']
+        or (select count(*) from public.profile_loans('rls-rls-mine')) <> 1
+        or exists (select from public.profile_loans('rls-public')) or exists (select from public.profile_loans('rls-rls-other')) then
+        raise exception 'profile_loans() shows loans the visitor is not a party to';
     end if;
     if not exists (select from public.profile_collection('rls-rls-mine')) or exists (select from public.profile_collection('rls-rls-other'))
         or exists (select from public.profile_collection('rls-hidden')) then
@@ -322,6 +342,73 @@ begin
     end if;
 end $$;
 
+-- The lending ledger (#172), as the bot writes it: append-only, an owner lends only copies in
+-- hand, a correction replaces a loan, answers replace each other, one nudge, one close.
+reset role;
+do $$
+declare cards constant jsonb := '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"en","quantity":1}]';
+    first bigint := (select id from public.riftbound_loans where lender_id = 'rls-rls-mine');
+    wrong bigint; fixed bigint;
+begin
+    begin
+        update public.riftbound_loans set due_on = current_date where id = first;
+        raise exception 'a loan can be edited';
+    exception when raise_exception then
+        if sqlerrm not like '%append-only%' then raise; end if;
+    end;
+    -- rls-rls-mine has 2: one is out, this takes the other.
+    wrong := public.lend_riftbound_cards('rls-rls-mine', 'rls-user', null, null, cards);
+    begin
+        perform public.lend_riftbound_cards('rls-rls-mine', 'rls-public', null, null, cards);
+        raise exception 'an owner lends a copy that is out already';
+    exception when raise_exception then
+        if sqlerrm not like '%only the owner%' then raise; end if;
+    end;
+    begin
+        perform public.lend_riftbound_cards('rls-public', 'rls-user', null, null, cards);
+        raise exception 'a borrower lends a copy on';
+    exception when raise_exception then
+        if sqlerrm not like '%only the owner%' then raise; end if;
+    end;
+    begin
+        perform public.lend_riftbound_cards('rls-public', 'rls-user', null, wrong, '[]');
+        raise exception 'a member corrects someone else''s loan';
+    exception when raise_exception then
+        if sqlerrm <> 'not_your_loan' then raise; end if;
+    end;
+    -- Lent to the wrong member: the correction frees the copy it replaces.
+    fixed := public.lend_riftbound_cards('rls-rls-mine', 'rls-public', current_date, wrong, cards);
+    if public.riftbound_loan_state(wrong) <> 'replaced' or public.riftbound_loan_state(fixed) <> 'open' then
+        raise exception 'a correction does not replace the loan';
+    end if;
+    if public.answer_riftbound_loan('rls-rls-mine', first, 'confirmed', null) <> 'not_borrower'
+        or public.answer_riftbound_loan('rls-user', first, 'disputed', 'I got none') <> 'ok'
+        or public.answer_riftbound_loan('rls-user', first, 'confirmed', null) <> 'ok'
+        or public.answer_riftbound_loan('rls-user', first, 'confirmed', null) <> 'unchanged' then
+        raise exception 'answer_riftbound_loan() lets someone else answer, or does not save answers';
+    end if;
+    if not exists (select from public.riftbound_loan_entries c join public.riftbound_loan_entries d on d.id = c.replaces
+                   where c.loan_id = first and c.kind = 'confirmed' and d.kind = 'disputed' and d.note = 'I got none') then
+        raise exception 'a new answer does not replace the dispute';
+    end if;
+    if (select array_agg(loan_id) from public.nudge_riftbound_loans(current_date)) <> array[fixed]
+        or exists (select from public.nudge_riftbound_loans(current_date)) then
+        raise exception 'nudge_riftbound_loans() does not nudge a due loan exactly once';
+    end if;
+    if exists (select from public.close_riftbound_loans('rls-user', 'rls-rls-mine', 'written_off', null)) then
+        raise exception 'a borrower writes off a loan';
+    end if;
+    if (select array_agg(loan_id) from public.close_riftbound_loans('rls-user', 'rls-rls-mine', 'returned', null)) <> array[first]
+        or exists (select from public.close_riftbound_loans('rls-rls-mine', 'rls-user', 'returned', null))
+        or public.answer_riftbound_loan('rls-user', first, 'disputed', 'x') <> 'closed' then
+        raise exception 'close_riftbound_loans() does not close the open loans once, either way';
+    end if;
+    if (select array_agg(loan_id) from public.close_riftbound_loans('rls-rls-mine', 'rls-public', 'written_off', null)) <> array[fixed] then
+        raise exception 'an owner cannot write off a loan';
+    end if;
+    if public.riftbound_loan_state(fixed) <> 'written_off' then raise exception 'a write-off does not close the loan'; end if;
+end $$;
+
 -- /forget-me (#72): no row about the user is left anywhere, and none can be written again
 -- until remember_user().
 reset role;
@@ -340,6 +427,15 @@ begin
     end loop;
     if exists (select from public.stores where added_by = 'rls-user') then
         raise exception 'forget_user() leaves the user on the stores they added';
+    end if;
+    -- Their loans go; the correction that replaced one stays, without the link (#172).
+    if exists (select from public.riftbound_loans where 'rls-user' in (lender_id, borrower_id))
+        or exists (select from public.riftbound_loans where borrower_id = 'rls-public' and lender_id = 'rls-rls-mine' and replaces is not null) then
+        raise exception 'forget_user() leaves the user''s loans';
+    end if;
+    if public.lend_riftbound_cards('rls-rls-mine', 'rls-user', null, null,
+        '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"en","quantity":1}]') is not null then
+        raise exception 'a forgotten user is lent cards';
     end if;
     insert into public.members (guild_id, user_id, display_name) values ('rls-mine', 'rls-user', 'x');
     if exists (select from public.members where user_id = 'rls-user') then

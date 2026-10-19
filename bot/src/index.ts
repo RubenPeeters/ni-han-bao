@@ -15,11 +15,15 @@ import {
   type GuildScheduledEvent,
   MessageFlags,
   type MessageReaction,
+  ModalBuilder,
+  type ModalSubmitInteraction,
   Partials,
   type PartialMessageReaction,
   type PartialUser,
   PermissionFlagsBits,
   type TextChannel,
+  TextInputBuilder,
+  TextInputStyle,
   type User,
 } from "discord.js";
 import { createClient } from "@supabase/supabase-js";
@@ -89,6 +93,26 @@ import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type
 import { rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
 import { addToCollection, COLLECTION_COMMAND, setLending } from "./collection.js";
+import {
+  answerId,
+  answerReply,
+  disputeFormId,
+  LEND_COMMAND,
+  lendAnnouncement,
+  lendChoices,
+  lendReceipt,
+  loanCardList,
+  NOT_BORROWER,
+  nudgeText,
+  parseAnswerId,
+  parseCards,
+  parseDisputeFormId,
+  parseDue,
+  pickCopies,
+  RETURN_COMMAND,
+  returnReply,
+  type CopyRow,
+} from "./lending.js";
 import { CARD_COMMAND, cardChoices, cardEmbed, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility } from "./visibility.js";
@@ -105,6 +129,7 @@ const PRESENCE_MS = 5 * 60_000;
 const REPORT_CHECK_MS = 60_000;
 const RANKS_MS = 3 * 60 * 60_000;
 const MATCHES_MS = 6 * 60 * 60_000;
+const NUDGE_MS = 60 * 60_000;
 
 const config = loadConfig();
 const log = createLogger();
@@ -745,7 +770,171 @@ async function collectionCommand(interaction: ChatInputCommandInteraction<"cache
   }
 }
 
+const today = () => new Date().toISOString().slice(0, 10);
+const FAILED = "Something went wrong, nothing was changed. Please try again later.";
+
+/** /lend: the loan in the ledger, a receipt only the lender sees, and Confirm and Dispute for the borrower. */
+async function lendCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const lender = interaction.user.id;
+  const borrower = interaction.options.getUser("member", true);
+  const wanted = parseCards(catalogue, interaction.options.getString("cards", true));
+  const due = parseDue(interaction.options.getString("due"), today());
+  const fixes = interaction.options.getInteger("fixes");
+  if (borrower.id === lender || borrower.bot) {
+    await interaction.editReply("Lend to another member, not to yourself or a bot.");
+    return;
+  }
+  if (typeof wanted === "string" || typeof due === "string") {
+    await interaction.editReply(typeof wanted === "string" ? wanted : (due as string));
+    return;
+  }
+  let loan: number;
+  let unmarked: number;
+  try {
+    const options = await db.rpc("riftbound_lend_options", { p_lender: lender, p_cards: wanted.map((w) => w.card.id) });
+    if (options.error) throw new Error(`riftbound_lend_options: ${options.error.message}`);
+    const picked = pickCopies(options.data as CopyRow[], wanted);
+    if (typeof picked === "string") {
+      await interaction.editReply(picked);
+      return;
+    }
+    const { data, error } = await db.rpc("lend_riftbound_cards", {
+      p_lender: lender,
+      p_borrower: borrower.id,
+      p_due: due.due,
+      p_fixes: fixes,
+      p_cards: picked.cards,
+    });
+    if (error?.message === "not_your_loan") {
+      await interaction.editReply(`Loan #${fixes} is not one of yours to correct, or was corrected already.`);
+      return;
+    }
+    if (error) throw new Error(`lend_riftbound_cards: ${error.message}`);
+    if (data === null) {
+      await interaction.editReply("One of you asked to be forgotten, so nothing was recorded.");
+      return;
+    }
+    loan = data as number;
+    unmarked = picked.unmarked;
+  } catch (err) {
+    log("error", "command_failed", { command: LEND_COMMAND.name, error: err });
+    await interaction.editReply(FAILED);
+    return;
+  }
+  await interaction.editReply(lendReceipt(loan, wanted, unmarked, fixes));
+  const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(answerId("confirm", loan, borrower.id)).setLabel("Confirm").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(answerId("dispute", loan, borrower.id)).setLabel("Dispute").setStyle(ButtonStyle.Secondary),
+  );
+  await interaction.followUp({
+    content: lendAnnouncement(lender, borrower.id, loan, wanted, due.due),
+    components: [buttons],
+    allowedMentions: { users: [borrower.id] },
+  });
+}
+
+/** Confirm saves at once; Dispute first asks for the borrower's side in a form. */
+async function loanAnswerButton(
+  interaction: ButtonInteraction<"cached">,
+  answer: NonNullable<ReturnType<typeof parseAnswerId>>,
+): Promise<void> {
+  if (interaction.user.id !== answer.borrower) {
+    await interaction.reply({ content: NOT_BORROWER, flags: MessageFlags.Ephemeral });
+    return;
+  }
+  if (answer.kind === "disputed") {
+    // A form must be the first response, so it opens before the database is asked.
+    await interaction.showModal(
+      new ModalBuilder()
+        .setCustomId(disputeFormId(answer.loan))
+        .setTitle(`Dispute loan #${answer.loan}`)
+        .addComponents(
+          new ActionRowBuilder<TextInputBuilder>().addComponents(
+            new TextInputBuilder()
+              .setCustomId("note")
+              .setLabel("What is different? The lender sees this.")
+              .setStyle(TextInputStyle.Paragraph)
+              .setMaxLength(300)
+              .setRequired(true),
+          ),
+        ),
+    );
+    return;
+  }
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  await interaction.editReply(await answerLoan(interaction.user.id, answer.loan, "confirmed", null));
+}
+
+async function loanDisputeForm(interaction: ModalSubmitInteraction<"cached">, loan: number): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const note = interaction.fields.getTextInputValue("note");
+  await interaction.editReply(await answerLoan(interaction.user.id, loan, "disputed", note));
+}
+
+async function answerLoan(member: string, loan: number, kind: "confirmed" | "disputed", note: string | null): Promise<string> {
+  try {
+    const { data, error } = await db.rpc("answer_riftbound_loan", { p_member: member, p_loan: loan, p_kind: kind, p_note: note });
+    if (error) throw new Error(`answer_riftbound_loan: ${error.message}`);
+    return answerReply(data as string, kind);
+  } catch (err) {
+    log("error", "command_failed", { command: "loan-answer", error: err });
+    return FAILED;
+  }
+}
+
+/** /return: closes the open loans between the caller and the member, or writes the caller's off. */
+async function returnCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const other = interaction.options.getUser("member", true).id;
+  const lost = interaction.options.getBoolean("lost") ?? false;
+  let reply: ReturnType<typeof returnReply>;
+  try {
+    const { data, error } = await db.rpc("close_riftbound_loans", {
+      p_member: interaction.user.id,
+      p_other: other,
+      p_kind: lost ? "written_off" : "returned",
+      p_loan: interaction.options.getInteger("loan"),
+    });
+    if (error) throw new Error(`close_riftbound_loans: ${error.message}`);
+    reply = returnReply(interaction.user.id, other, lost, data as { loan_id: number }[]);
+  } catch (err) {
+    log("error", "command_failed", { command: RETURN_COMMAND.name, error: err });
+    await interaction.editReply(FAILED);
+    return;
+  }
+  await interaction.editReply({ content: reply.announce ? "Done." : reply.content, allowedMentions: { parse: [] } });
+  if (reply.announce) await interaction.followUp({ content: reply.content, allowedMentions: { users: [other] } });
+}
+
+/** One DM per loan on its due date (UTC), if the borrower accepts DMs from the bot. */
+async function nudgeDueLoans(): Promise<void> {
+  try {
+    const { data, error } = await db.rpc("nudge_riftbound_loans", { p_today: today() });
+    if (error) throw new Error(`nudge_riftbound_loans: ${error.message}`);
+    for (const loan of data as { loan_id: number; lender_id: string; borrower_id: string }[]) {
+      const cards = await db.from("riftbound_loan_cards").select("printing_id, quantity").eq("loan_id", loan.loan_id);
+      if (cards.error) throw new Error(`riftbound_loan_cards select: ${cards.error.message}`);
+      // Marked nudged already: a closed DM or a failure is not retried, so it stays one nudge.
+      await client.users
+        .send(loan.borrower_id, nudgeText(loan.loan_id, loan.lender_id, loanCardList(catalogue, cards.data)))
+        .catch((err: unknown) => log("info", "loan_nudge_not_sent", { loan: loan.loan_id, error: err }));
+    }
+  } catch (err) {
+    log("error", "loan_nudges_failed", { error: err });
+  }
+}
+
 client.on(Events.InteractionCreate, async (interaction) => {
+  if (interaction.isAutocomplete() && interaction.commandName === LEND_COMMAND.name) {
+    await tracked(
+      "command",
+      interaction
+        .respond(lendChoices(catalogue, interaction.options.getFocused()))
+        .catch((err: unknown) => log("error", "autocomplete_failed", { command: interaction.commandName, error: err })),
+    );
+    return;
+  }
   const cardCommands = [CARD_COMMAND.name, COLLECTION_COMMAND.name] as string[];
   if (interaction.isAutocomplete() && cardCommands.includes(interaction.commandName)) {
     await tracked(
@@ -776,6 +965,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isButton() && interaction.inCachedGuild()) {
     const eventId = goingEventId(interaction.customId);
     if (eventId !== null) await tracked("command", goingButton(interaction, eventId));
+    const answer = parseAnswerId(interaction.customId);
+    if (answer !== null) await tracked("command", loanAnswerButton(interaction, answer));
+    return;
+  }
+  if (interaction.isModalSubmit() && interaction.inCachedGuild()) {
+    const loan = parseDisputeFormId(interaction.customId);
+    if (loan !== null) await tracked("command", loanDisputeForm(interaction, loan));
     return;
   }
   if (!interaction.isChatInputCommand() || !interaction.inCachedGuild()) return;
@@ -829,6 +1025,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
   if (interaction.commandName === COLLECTION_COMMAND.name) {
     await tracked("command", collectionCommand(interaction));
+    return;
+  }
+  if (interaction.commandName === LEND_COMMAND.name) {
+    await tracked("command", lendCommand(interaction));
+    return;
+  }
+  if (interaction.commandName === RETURN_COMMAND.name) {
+    await tracked("command", returnCommand(interaction));
     return;
   }
   const hidden = hiddenFor(interaction.commandName);
@@ -1969,6 +2173,7 @@ client.once(Events.ClientReady, async (c) => {
   setInterval(monthlyRecaps, REPORT_CHECK_MS);
   setInterval(() => void refreshRanks(), RANKS_MS);
   setInterval(() => void refreshAllMatches(), MATCHES_MS);
+  setInterval(() => void nudgeDueLoans(), NUDGE_MS);
   // An overdue report waits for the games played while the bot was down.
   void refreshAllMatches().finally(() => {
     weeklyReports();

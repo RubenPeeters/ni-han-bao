@@ -26,6 +26,8 @@ declare
                                    'Hana', 'Jonas', 'Lotte', 'Milan', 'Noor', 'Sven'];
     users text[] := array(select '9000000000000001' || lpad(i::text, 2, '0') from generate_series(1, 12) i);
     today constant date := current_date;
+    r record;
+    loan bigint;
 begin
     -- Start clean: every table that holds demo-server or demo-user rows.
     delete from public.event_attendees where guild_id = g;
@@ -49,6 +51,10 @@ begin
     delete from public.lol_ranks where user_id = any (users);
     delete from public.game_accounts where user_id = any (users);
     delete from public.activity_seconds where user_id = any (users);
+    -- The lending ledger is append-only (#172) except when a person's loans are erased.
+    perform set_config('ni_han_bao.erase_loans', 'on', true);
+    delete from public.riftbound_loans where lender_id = any (users) or borrower_id = any (users);
+    perform set_config('ni_han_bao.erase_loans', 'off', true);
     delete from public.riftbound_collection where user_id = any (users);
     delete from public.profiles where user_id = any (users);
     delete from public.guild_members where guild_id = g;
@@ -173,6 +179,27 @@ begin
         from public.riftbound_printings p, generate_series(1, 6) i
         where p.id = 'PLH-L103' and i in (2, 3, 4) or abs(hashtext('c' || users[i] || p.id)) % 3 = 0;
     update public.riftbound_collection set lendable = 1 where user_id = users[3] and printing_id = 'PLH-L103';
+
+    -- Loans (#172), all Anna's: Bram's cards she has (confirmed), hers with Chloé (unconfirmed)
+    -- and Finn (disputed), and two Elise gave back. Two copies each, from the lender's own
+    -- collection (the ledger checks that), different ones per loan.
+    for r in select * from (values
+            (2, 1, 0, 10, 'confirmed', null),
+            (1, 3, 0, 4, null, null),
+            (1, 6, 2, 1, 'disputed', 'I only got one of them, not two.'),
+            (1, 5, 4, null, 'returned', null)) v (lender, borrower, pick, days, outcome, note)
+    loop
+        loan := public.lend_riftbound_cards(users[r.lender], users[r.borrower], today + r.days, null, (
+            select jsonb_agg(jsonb_build_object('printing_id', c.printing_id, 'finish', c.finish,
+                'condition', c.condition, 'language', c.language, 'quantity', 1))
+            from (select * from public.riftbound_collection c where c.user_id = users[r.lender]
+                  order by c.printing_id, c.language offset r.pick limit 2) c));
+        if r.outcome = 'returned' then
+            perform public.close_riftbound_loans(users[r.borrower], users[r.lender], 'returned', loan);
+        elsif r.outcome is not null then
+            perform public.answer_riftbound_loan(users[r.borrower], loan, r.outcome, r.note);
+        end if;
+    end loop;
 
     -- Riftbound local play: stores, regulars and upcoming events.
     insert into public.stores (guild_id, name, city, url, added_by) values
