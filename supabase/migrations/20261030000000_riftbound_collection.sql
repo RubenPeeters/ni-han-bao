@@ -68,7 +68,9 @@ begin
     end if;
     insert into public.riftbound_collection (user_id, printing_id, finish, condition, quantity, for_trade, lendable)
     values (me, p_printing, p_finish, p_condition, p_quantity,
-        least(greatest(p_for_trade, 0), p_quantity), least(greatest(p_lendable, 0), p_quantity))
+        least(greatest(p_for_trade, 0), p_quantity),
+        -- greatest() skips nulls, so keep null (follow the lending default) explicitly.
+        case when p_lendable is not null then least(greatest(p_lendable, 0), p_quantity) end)
     on conflict (user_id, printing_id, finish, condition) do update set quantity = excluded.quantity,
         for_trade = excluded.for_trade, lendable = excluded.lendable, updated_at = now();
     -- skip_forgotten() drops the row silently; say so instead of reporting a save.

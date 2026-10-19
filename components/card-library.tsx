@@ -38,6 +38,26 @@ const byNumber = (a: Printing, b: Printing) =>
   a.collector_number - b.collector_number || a.collector_code.localeCompare(b.collector_code);
 const LOG_IN = "Log in to look through the Riftbound cards.";
 
+/**
+ * The visitor's whole collection (RLS returns their own rows only), paged past PostgREST's
+ * 1000-row cap: a row missing here would look unowned and the next tap would overwrite it.
+ */
+async function ownedRows(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const rows: OwnedRow[] = [];
+  for (let from = 0; ; from += MAX_CARDS) {
+    const { data, error } = await supabase
+      .from("riftbound_collection")
+      .select("printing_id, finish, condition, quantity, for_trade, lendable")
+      .order("printing_id")
+      .order("finish")
+      .order("condition")
+      .range(from, from + MAX_CARDS - 1);
+    if (error) return { data: null, error };
+    rows.push(...(data as OwnedRow[]));
+    if (data.length < MAX_CARDS) return { data: rows, error: null };
+  }
+}
+
 /** The global Riftbound catalogue: not per server, so no guild filter; RLS lets anyone logged in read it. */
 export async function CardLibrary() {
   const supabase = await createClient();
@@ -46,8 +66,7 @@ export async function CardLibrary() {
   const [{ data, error }, me, owned] = await Promise.all([
     supabase.from("riftbound_cards").select("*, printings:riftbound_printings(*)").order("id").limit(MAX_CARDS),
     supabase.rpc("current_discord_id"),
-    // RLS returns the visitor's own rows only. shortcut: capped at 1000 rows like the cards; page it when collections get that big.
-    supabase.from("riftbound_collection").select("printing_id, finish, condition, quantity, for_trade, lendable"),
+    ownedRows(supabase),
   ]);
   if (error || me.error || owned.error) return <ErrorState title="Could not load the cards">Try again in a minute.</ErrorState>;
   // Logged in, but not with Discord: no collection to edit.
@@ -77,7 +96,7 @@ export async function CardLibrary() {
       cards={library}
       mine={{
         userId: me.data as string,
-        owned: owned.data as OwnedRow[],
+        owned: owned.data,
         lends: lending.data?.lends_cards ?? false,
         lendAll: lending.data?.lend_all ?? false,
       }}

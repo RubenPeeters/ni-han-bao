@@ -253,6 +253,9 @@ begin
     if (select quantity || ':' || for_trade from public.riftbound_collection) <> '4:4' then
         raise exception 'set_riftbound_copies() does not save, or lets for trade exceed the copies';
     end if;
+    if (select lendable from public.riftbound_collection) is not null then
+        raise exception 'set_riftbound_copies() turns the lending default into an explicit count';
+    end if;
     if public.own_riftbound_playset('RLS') <> 0 then raise exception 'own_riftbound_playset() tops up a full playset'; end if;
     perform public.set_riftbound_copies('rls-printing', 'normal', 'NM', 0, 0, null);
     if exists (select from public.riftbound_collection) then raise exception 'set_riftbound_copies() keeps a row at 0'; end if;
