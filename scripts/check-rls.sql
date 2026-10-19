@@ -1,6 +1,7 @@
 -- Proves per-server data is readable only by members of that server (#45): anon reads zero
 -- rows from every table with a guild_id, and a logged-in user reads rows of their own
--- servers only; then that /forget-me deletes and keeps out a user (#72). Needs a database,
+-- servers only; that profiles follow their visibility (#100); then that /forget-me deletes
+-- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`. Run against a local Supabase or the dev project
 -- (never production); everything is rolled back:
 --   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/check-rls.sql
@@ -50,6 +51,14 @@ begin
     select 'rls-mine', id, 'rls-hidden' from public.stores where guild_id = 'rls-mine';
     insert into public.event_attendees (guild_id, event_id, user_id)
     select 'rls-mine', id, 'rls-hidden' from public.events where guild_id = 'rls-mine';
+    -- Profiles (#100): one per visibility. rls-rls-mine shares rls-mine with the test user,
+    -- rls-public shares nothing with them.
+    insert into public.members (guild_id, user_id, display_name) values ('rls-mine', 'rls-rls-mine', 'x');
+    insert into public.members (guild_id, user_id, display_name) values ('rls-other', 'rls-rls-other', 'x');
+    insert into public.members (guild_id, user_id, display_name) values ('rls-other', 'rls-public', 'x');
+    insert into public.guild_members (guild_id, user_id) values ('rls-other', 'rls-public');
+    insert into public.profiles (user_id, visibility)
+    values ('rls-rls-mine', 'members'), ('rls-rls-other', 'members'), ('rls-public', 'public'), ('rls-hidden', 'public');
     -- anon cannot read keys itself, so hand it one for the recap checks below.
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
@@ -71,6 +80,9 @@ begin
         execute format('select count(*) from public.%I', t) into n;
         if n <> 0 then raise exception 'anon reads % rows from %', n, t; end if;
     end loop;
+    if exists (select from public.profiles) or exists (select from public.profile('rls-public')) then
+        raise exception 'anon reads a profile';
+    end if;
     if (select servers from public.public_totals('2026-01-01')) < 2 then
         raise exception 'anon cannot read public_totals()';
     end if;
@@ -112,6 +124,32 @@ begin
     end if;
     if exists (select from public.upcoming_events('rls-other')) then
         raise exception 'a member reads another server''s events';
+    end if;
+    -- Profiles (#100): visibility and shared servers, checked in the database.
+    if not exists (select from public.profile('rls-rls-mine')) then
+        raise exception 'a member cannot see the profile of someone they share a server with';
+    end if;
+    if exists (select from public.profile('rls-rls-other')) or exists (select from public.profiles where user_id = 'rls-rls-other') then
+        raise exception 'a member sees a members-only profile without a shared server';
+    end if;
+    if exists (select from public.profile('rls-hidden')) or exists (select from public.profiles where user_id = 'rls-hidden') then
+        raise exception 'a member sees the profile of a hidden member';
+    end if;
+    if not exists (select from public.profile('rls-public')) or exists (select from public.profile_servers('rls-public')) then
+        raise exception 'a public profile does not show, or shows servers the visitor is not in';
+    end if;
+    if (select visibility from public.profile('rls-user')) <> 'private' then
+        raise exception 'your own profile is not there, or not private by default';
+    end if;
+    if (select array_agg(guild_id) from public.profile_servers('rls-user')) <> array['rls-mine'] then
+        raise exception 'profile_servers() is not just the shared servers';
+    end if;
+    if (select longest_streak from public.profile_badges('rls-user')) <> 1 then
+        raise exception 'profile_badges() does not count the streak';
+    end if;
+    perform public.set_profile_visibility('public');
+    if (select visibility from public.profiles where user_id = 'rls-user') <> 'public' then
+        raise exception 'set_profile_visibility() does not save your own setting';
     end if;
     if (select count(*) from public.my_guilds()) <> 1 then raise exception 'my_guilds() is not just mine'; end if;
     if public.monthly_recap('rls-mine', '2025-12-01') is null then raise exception 'a member cannot read their recap'; end if;

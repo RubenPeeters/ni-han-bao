@@ -52,6 +52,12 @@ export default function AboutPage() {
           members of a server can see your name and stats on that server&apos;s pages.
         </p>
         <p>
+          Your profile page, which brings your servers together, is private until you change it
+          there or with <Cmd>/profile visibility</Cmd>: only you, people who share a server
+          with you (for the servers you share), or anyone logged in. While you are hidden with{" "}
+          <Cmd>/hide-me</Cmd> in a server, nobody else sees it.
+        </p>
+        <p>
           Logging in stores your Discord id, name, avatar and email address. The email comes
           with every Discord login through our login provider (Supabase); the site does not use
           it.
@@ -67,8 +73,8 @@ export default function AboutPage() {
         <p>
           To have your data deleted instead, type <Cmd>/forget-me</Cmd> in any server and
           confirm. It deletes everything the bot stored about you, in every server: your
-          message, reaction and voice counts, your name and avatar, your server memberships and
-          your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
+          message, reaction and voice counts, your name and avatar, your server memberships, your
+          profile setting and your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
           their counts, without anything that points to you. The bot then stops counting you,
           keeping only a scrambled (hashed) copy of your Discord id to recognise you by. Until
           you type <Cmd>/show-me</Cmd>, which starts counting you again, you also cannot open
