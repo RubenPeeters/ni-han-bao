@@ -114,5 +114,5 @@ export async function verifyLink(
   if (!(await writer.link(userId, challenge))) {
     return { done: true, reply: "You asked to be forgotten, so nothing was saved. Use /show-me first." };
   }
-  return { done: true, reply: `Linked: ${challenge.riotId} is your League account. Its ranks show on your profile and on the Ranked page of your servers. Use /lol unlink to undo it.` };
+  return { done: true, reply: `Linked: ${challenge.riotId} is your League account. Its ranks show on your profile and on the Ranked page of your servers, and its ranked and normal games in the weekly report. Use /lol unlink to undo it.` };
 }

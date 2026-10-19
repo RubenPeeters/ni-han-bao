@@ -3,6 +3,7 @@ import {
   addDays,
   dueReportWeek,
   isReportFor,
+  leagueField,
   PAGE_SIZE,
   postedSince,
   reportEmbed,
@@ -120,6 +121,30 @@ describe("reportEmbed", () => {
     const embed = reportEmbed("2026-10-12", full, null, "Europe/Brussels", [event]);
     expect(embed.fields![4]).toEqual({ name: "Coming up this week", value: "**Sun 25 Oct, 18:00 · Shop \\(Gent\\)**: Alice, Bob" });
     expect(reportEmbed("2026-10-12", full, null, "UTC").fields![4].value).toMatch(/\/event going/);
+  });
+});
+
+describe("League", () => {
+  it("has no field when nobody linked an account", () => {
+    expect(reportEmbed("2026-10-12", full, null, "UTC").fields!.map((f) => f.name)).not.toContain("League");
+    expect(leagueField([])).toBeNull();
+  });
+
+  it("lists the three who played most and the total", () => {
+    const embed = reportEmbed("2026-10-12", full, null, "UTC", [], [
+      { display_name: "Alice", games: 12, champion: "Ahri" },
+      { display_name: "Bob", games: 3, champion: "Lux" },
+      { display_name: "Cleo", games: 1, champion: "Jinx" },
+      { display_name: "Dan", games: 1, champion: "Zed" },
+      { display_name: "Eve", games: 0, champion: null },
+    ]);
+    expect(embed.fields!.find((f) => f.name === "League")?.value).toBe(
+      "Alice: 12 games, mostly Ahri\nBob: 3 games, mostly Lux\nCleo: 1 game, mostly Jinx\n17 games between you. Ranked and normals only.",
+    );
+  });
+
+  it("teases a week without a game", () => {
+    expect(leagueField([{ display_name: "Eve", games: 0, champion: null }])).toMatch(/Not one game/);
   });
 });
 

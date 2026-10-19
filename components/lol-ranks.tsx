@@ -1,4 +1,4 @@
-import { EmptyState, ErrorState, RankList, RankRow, StatCard, StatGrid } from "@/components/stat-ui";
+import { EmptyState, ErrorState, MemberRankRow, RankList, RankRow, StatCard, StatGrid } from "@/components/stat-ui";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 
@@ -76,6 +76,43 @@ export async function GuildRanks({ guild }: { guild: string }) {
         );
       })}
     </StatGrid>
+  );
+}
+
+interface LolWeek {
+  user_id: string;
+  display_name: string;
+  avatar_url: string | null;
+  games: number;
+  champion: string | null;
+}
+
+/** The server's League week: linked members' ranked and normal games. Nothing when no one linked. */
+export async function GuildLolWeek({ guild }: { guild: string }) {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("guild_lol_week", { g: guild });
+  if (error) return <ErrorState title="Could not load the League games">Try again in a minute.</ErrorState>;
+  const rows = (data as LolWeek[]).filter((r) => r.games > 0);
+  if (data.length === 0) return null;
+  return (
+    <StatCard title="League" description="Ranked and normal games in the last 7 days, updated every 6 hours" wide>
+      {rows.length === 0 ? (
+        <EmptyState>Nobody played League this week.</EmptyState>
+      ) : (
+        <RankList>
+          {rows.map((r, n) => (
+            <MemberRankRow
+              key={r.user_id}
+              rank={n + 1}
+              name={r.champion ? `${r.display_name} · mostly ${r.champion}` : r.display_name}
+              avatarUrl={r.avatar_url}
+              value={`${r.games.toLocaleString("en-US")} ${r.games === 1 ? "game" : "games"}`}
+              href={`/s/${guild}/member/${r.user_id}`}
+            />
+          ))}
+        </RankList>
+      )}
+    </StatCard>
   );
 }
 
