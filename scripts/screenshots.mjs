@@ -1,6 +1,11 @@
 // Build output -> full-page PNGs for visual review (forge reviewers, and you).
 // Usage: `make screenshots` (builds first). Pages are discovered from app/**/page.tsx,
-// so new pages are photographed without being registered anywhere.
+// so new pages are photographed without being registered anywhere. Dynamic segments are
+// filled from DEMO (the demo server in supabase/seed.sql); a segment DEMO does not know
+// fails the run, so no page is ever skipped silently.
+// With SCREENSHOT_EMAIL and SCREENSHOT_PASSWORD (forge sets them, against the dev database)
+// every page is photographed signed in as the demo server's member, plus the home page
+// signed out. Without them the member pages show their logged-out state.
 // `--a11y` (run by `make check`): no PNGs; runs axe-core on every page in dark and light and
 // fails on serious or critical violations, so contrast and focus states cannot regress (#56).
 // Browser: CHROME_PATH (set in the forge runner image), else an installed Google Chrome
@@ -9,6 +14,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { createRequire } from "node:module";
+import { createServerClient } from "@supabase/ssr";
 import { chromium } from "playwright-core";
 
 const OUT = ".forge/screenshots";
@@ -18,6 +24,14 @@ const A11Y = process.argv.includes("--a11y");
 const AXE = createRequire(import.meta.url).resolve("axe-core");
 // Starter-template routes that are not part of the product.
 const EXCLUDE = [/^\/auth(\/|$)/, /^\/protected(\/|$)/];
+// The demo server and member from supabase/seed.sql; `month` is last month (it has a recap).
+const lastMonth = () => {
+  const d = new Date();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() - 1);
+  return d.toISOString().slice(0, 7);
+};
+export const DEMO = { guildId: "900000000000000001", userId: "900000000000000101", month: lastMonth() };
 
 export function routesFrom(appDir = "app") {
   const routes = [];
@@ -28,8 +42,8 @@ export function routesFrom(appDir = "app") {
       else if (/^page\.(tsx|jsx|ts|js)$/.test(name)) {
         const segs = relative(appDir, dir).split(sep).filter(Boolean)
           .filter((s) => !/^\(.*\)$/.test(s)); // route groups do not appear in URLs
-        if (segs.some((s) => s.startsWith("[") || s.startsWith("@") || s.startsWith("_"))) continue;
-        routes.push("/" + segs.join("/"));
+        if (segs.some((s) => s.startsWith("@") || s.startsWith("_"))) continue;
+        routes.push("/" + segs.map(fill).join("/"));
       }
     }
   };
@@ -37,7 +51,16 @@ export function routesFrom(appDir = "app") {
   return routes.filter((r) => !EXCLUDE.some((re) => re.test(r))).sort();
 }
 
-export const slug = (route) => (route === "/" ? "home" : route.slice(1).replaceAll("/", "-"));
+function fill(seg) {
+  const m = /^\[(\w+)\]$/.exec(seg);
+  if (!m) return seg;
+  if (!(m[1] in DEMO)) throw new Error(`no demo value for [${m[1]}]: add it to DEMO in scripts/screenshots.mjs and to supabase/seed.sql`);
+  return DEMO[m[1]];
+}
+
+// Slugs name the page, not the demo ids: "s-ranked", "u", "s-member".
+const DEMO_IDS = new Set(Object.values(DEMO));
+export const slug = (route) => (route === "/" ? "home" : route.slice(1).split("/").filter((s) => !DEMO_IDS.has(s)).join("-"));
 
 async function waitForServer(url, ms = 60_000) {
   const end = Date.now() + ms;
@@ -53,6 +76,24 @@ async function waitForServer(url, ms = 60_000) {
 export const blocking = (violations) =>
   violations.filter((v) => v.impact === "serious" || v.impact === "critical");
 
+/** The screenshot user's session cookies, as @supabase/ssr writes them, or [] without a login. */
+async function signIn(base) {
+  const login = { email: process.env.SCREENSHOT_EMAIL, password: process.env.SCREENSHOT_PASSWORD };
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  if (!login.email || !login.password || !url || !key) return [];
+  const jar = new Map();
+  const supabase = createServerClient(url, key, {
+    cookies: {
+      getAll: () => [...jar].map(([name, value]) => ({ name, value })),
+      setAll: (cookies) => cookies.forEach(({ name, value }) => jar.set(name, value)),
+    },
+  });
+  const { error } = await supabase.auth.signInWithPassword(login);
+  if (error) throw new Error(`screenshot login failed: ${error.message}`);
+  return [...jar].map(([name, value]) => ({ name, value, url: base }));
+}
+
 async function main() {
   mkdirSync(OUT, { recursive: true });
   const base = `http://127.0.0.1:${PORT}`;
@@ -64,11 +105,17 @@ async function main() {
       ? await chromium.launch({ executablePath: process.env.CHROME_PATH })
       : await chromium.launch({ channel: "chrome" });
     try {
+      const cookies = await signIn(base);
       // The not-found page has no page.tsx to discover, so visit it via an unknown path.
-      for (const route of [...routesFrom(), "/not-found"]) {
+      const shots = [...routesFrom(), "/not-found"].map((route) => ({ route, name: slug(route), cookies }));
+      if (cookies.length) shots.push({ route: "/", name: "home-signed-out", cookies: [] });
+      const dupes = shots.map((s) => s.name).filter((n, i, all) => all.indexOf(n) !== i);
+      if (dupes.length) throw new Error(`two pages would share a screenshot name: ${dupes.join(", ")}`);
+      for (const { route, name, cookies } of shots) {
         for (const width of WIDTHS) {
           for (const theme of A11Y ? ["dark", "light"] : ["dark"]) {
             const ctx = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: theme });
+            await ctx.addCookies(cookies);
             // next-themes defaults to dark whatever the OS says; its stored choice is what switches.
             await ctx.addInitScript((t) => localStorage.setItem("theme", t), theme);
             const page = await ctx.newPage();
@@ -83,7 +130,7 @@ async function main() {
                 for (const n of v.nodes) console.log(`    ${n.target.join(" ")}: ${n.failureSummary.replaceAll("\n", " ")}`);
               }
             } else {
-              const file = `${OUT}/${slug(route)}-${width}.png`;
+              const file = `${OUT}/${name}-${width}.png`;
               await page.screenshot({ path: file, fullPage: true });
               console.log(file);
             }

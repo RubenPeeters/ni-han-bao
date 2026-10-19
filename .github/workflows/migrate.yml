@@ -1,10 +1,11 @@
 name: Migrate
 # Applies supabase/migrations: a push to `dev` migrates the dev project, a push to `main`
 # migrates production (#67). A manual run migrates the project of the branch it runs on.
+# Every project except production also gets supabase/seed.sql, the demo server for screenshots.
 on:
   push:
     branches: [dev, main]
-    paths: ["supabase/migrations/**"]
+    paths: ["supabase/migrations/**", "supabase/seed.sql"]
   workflow_dispatch:
 concurrency:
   group: migrate
@@ -23,3 +24,13 @@ jobs:
           version: 2.121.0
       - run: supabase link --project-ref "$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD"
       - run: supabase db push -p "$SUPABASE_DB_PASSWORD" --yes
+      # Not `db push --include-seed`: it skips a seed file that changed after its first run.
+      # seed.sql is idempotent, so it simply runs on every push, through the Management API's
+      # query endpoint (the access token is enough, as for `db push`).
+      - if: github.ref_name != 'main'
+        run: |
+          set -o pipefail
+          jq -Rs '{query: .}' supabase/seed.sql \
+            | curl -sS --fail-with-body -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+                -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" -d @- \
+            | head -c 500
