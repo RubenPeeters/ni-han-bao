@@ -187,7 +187,7 @@ export async function ProfileStats({ user }: { user: string }) {
   );
 }
 
-/** Name, avatar and the Activity / Collection tabs, on both tabs of a profile. */
+/** Name, avatar and the profile's tabs, on every tab of a profile. */
 export function ProfileHeader({ user, profile, subtitle }: { user: string; profile: Profile; subtitle: string }) {
   const name = profile.display_name ?? "You";
   return (

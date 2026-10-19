@@ -443,5 +443,80 @@
         ]
       }
     ]
+  },
+  {
+    "name": "lend",
+    "description": "Record Riftbound cards you lend to a member",
+    "admin": false,
+    "usages": [
+      {
+        "name": "lend",
+        "description": "Record Riftbound cards you lend to a member",
+        "options": [
+          {
+            "name": "member",
+            "description": "Who borrows them",
+            "type": "user",
+            "required": true,
+            "choices": []
+          },
+          {
+            "name": "cards",
+            "description": "The cards, separated by ; with a count if more than one: 2 Jinx; Ahri",
+            "type": "string",
+            "required": true,
+            "choices": []
+          },
+          {
+            "name": "due",
+            "description": "When you want them back, like 2026-11-02",
+            "type": "string",
+            "required": false,
+            "choices": []
+          },
+          {
+            "name": "fixes",
+            "description": "The number of a loan of yours this one corrects; that loan stops counting",
+            "type": "integer",
+            "required": false,
+            "choices": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "return",
+    "description": "Record that lent Riftbound cards are back with their owner",
+    "admin": false,
+    "usages": [
+      {
+        "name": "return",
+        "description": "Record that lent Riftbound cards are back with their owner",
+        "options": [
+          {
+            "name": "member",
+            "description": "The other member of the loan, lender or borrower",
+            "type": "user",
+            "required": true,
+            "choices": []
+          },
+          {
+            "name": "loan",
+            "description": "Only this loan (every open loan between you two if left out)",
+            "type": "integer",
+            "required": false,
+            "choices": []
+          },
+          {
+            "name": "lost",
+            "description": "The cards are lost: write off your loan instead (the owner only)",
+            "type": "boolean",
+            "required": false,
+            "choices": []
+          }
+        ]
+      }
+    ]
   }
 ]

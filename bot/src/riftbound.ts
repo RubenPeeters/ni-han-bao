@@ -191,7 +191,7 @@ export const CARD_COMMAND = {
 } as const;
 
 // Legends are named by epithet, so the champion goes in the label: typing "ahri" finds hers.
-const choiceLabel = (c: Card) => `${c.name} (${c.type === "Legend" ? `${c.tags.join(", ")} legend` : c.type})`;
+export const choiceLabel = (c: Card) => `${c.name} (${c.type === "Legend" ? `${c.tags.join(", ")} legend` : c.type})`;
 
 /**
  * Autocomplete: up to Discord's 25, collector codes and then names starting with what was
