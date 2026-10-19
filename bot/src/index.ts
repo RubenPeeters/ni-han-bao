@@ -80,6 +80,7 @@ import {
   storeList,
   type Store,
 } from "./stores.js";
+import { PROFILE_COMMAND, setProfileVisibility } from "./profile.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
@@ -647,6 +648,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     await tracked("command", forgetCommand(interaction));
     return;
   }
+  if (interaction.commandName === PROFILE_COMMAND.name) {
+    await tracked("command", profileCommand(interaction));
+    return;
+  }
   if (interaction.commandName === SETUP_COMMAND.name) {
     await tracked("command", setupCommand(interaction));
     return;
@@ -730,6 +735,28 @@ async function forgetCommand(interaction: ChatInputCommandInteraction<"cached">)
   );
   if (confirmed) log("info", "user_forgotten", {});
   await interaction.editReply({ content: reply, components: [] });
+}
+
+/** /profile visibility: who can see the caller's /u/[userId] page. */
+async function profileCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const reply = await setProfileVisibility(
+    {
+      async setVisibility(userId, visibility) {
+        const { data, error } = await db
+          .from("profiles")
+          .upsert({ user_id: userId, visibility, updated_at: new Date().toISOString() }, { onConflict: "user_id" })
+          .select("user_id");
+        if (error) throw new Error(`profiles upsert: ${error.message}`);
+        // skip_forgotten() drops a forgotten user's row without an error.
+        return data.length > 0;
+      },
+    },
+    interaction.user.id,
+    interaction.options.getString("level", true),
+    config.siteUrl,
+  );
+  await interaction.editReply(reply);
 }
 
 /** /setup: only members with Manage Server see it (default_member_permissions). */
@@ -1362,6 +1389,7 @@ async function startServer(guild: Guild): Promise<void> {
     await guild.commands.set([
       ...VISIBILITY_COMMANDS,
       FORGET_COMMAND,
+      PROFILE_COMMAND,
       ...STATS_COMMANDS,
       SETUP_COMMAND,
       RECAP_COMMAND,
