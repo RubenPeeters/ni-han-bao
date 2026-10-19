@@ -3,9 +3,11 @@ import { Heatmap } from "@/components/channel-stats";
 import { TopEmoji } from "@/components/emoji-stats";
 import { HomeStats, HomeStatsSkeleton } from "@/components/home-stats";
 import { Board } from "@/components/leaderboard";
-import { NotConfigured } from "@/components/stat-ui";
+import { MyServers } from "@/components/server-picker";
+import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
 import { ServersButton } from "@/components/auth-button";
 import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/server";
 import { hasEnvVars } from "@/lib/utils";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
@@ -52,6 +54,33 @@ const EXAMPLE_HEATMAP = Array.from({ length: 7 }, (_, d) =>
 );
 
 export default function Home() {
+  if (!hasEnvVars) return <Landing />;
+  return (
+    <Suspense fallback={<StatsSkeleton cards={2} />}>
+      <HomeForVisitor />
+    </Suspense>
+  );
+}
+
+// Logged in: their servers first, not the pitch for the bot they already use.
+async function HomeForVisitor() {
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  if (!claims) return <Landing />;
+  return (
+    <>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <PageHeader title="Your servers" description="This week in the servers you are in." />
+        <Button asChild variant="outline" size="sm" className="self-start sm:self-auto">
+          <a href={INSTALL_URL}>Add to Discord</a>
+        </Button>
+      </div>
+      <MyServers />
+    </>
+  );
+}
+
+function Landing() {
   return (
     <>
       <section className="hero-dim flex flex-col items-center gap-5 py-6 text-center sm:flex-row sm:items-center sm:gap-8 sm:text-left">
