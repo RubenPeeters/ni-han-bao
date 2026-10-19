@@ -792,7 +792,11 @@ async function lendCommand(interaction: ChatInputCommandInteraction<"cached">): 
   let loan: number;
   let unmarked: number;
   try {
-    const options = await db.rpc("riftbound_lend_options", { p_lender: lender, p_cards: wanted.map((w) => w.card.id) });
+    const options = await db.rpc("riftbound_lend_options", {
+      p_lender: lender,
+      p_cards: wanted.map((w) => w.card.id),
+      p_fixes: fixes,
+    });
     if (options.error) throw new Error(`riftbound_lend_options: ${options.error.message}`);
     const picked = pickCopies(options.data as CopyRow[], wanted);
     if (typeof picked === "string") {

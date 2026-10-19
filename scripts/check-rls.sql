@@ -376,7 +376,13 @@ begin
     exception when raise_exception then
         if sqlerrm <> 'not_your_loan' then raise; end if;
     end;
-    -- Lent to the wrong member: the correction frees the copy it replaces.
+    -- Lent to the wrong member: /lend offers the copies of the loan it corrects, and the
+    -- correction frees them.
+    if (select lent from public.riftbound_lend_options('rls-rls-mine', array['rls-card'], null)) <> 2
+        or (select lent from public.riftbound_lend_options('rls-rls-mine', array['rls-card'], wrong)) <> 1
+        or (select lent from public.riftbound_lend_options('rls-rls-mine', array['rls-card'], first)) <> 1 then
+        raise exception 'riftbound_lend_options() does not count only the corrected loan''s copies as free';
+    end if;
     fixed := public.lend_riftbound_cards('rls-rls-mine', 'rls-public', current_date, wrong, cards);
     if public.riftbound_loan_state(wrong) <> 'replaced' or public.riftbound_loan_state(fixed) <> 'open' then
         raise exception 'a correction does not replace the loan';

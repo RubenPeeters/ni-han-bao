@@ -144,8 +144,9 @@ create trigger lend_own_copies before insert on public.riftbound_loan_cards
     for each row execute function public.riftbound_lend_own_copies();
 
 -- /lend picks copies from these: the lender's rows of the cards, how many of each they offer
--- to lend (riftbound_lendable()) and how many are out already.
-create or replace function public.riftbound_lend_options(p_lender text, p_cards text[])
+-- to lend (riftbound_lendable()) and how many are out already, not counting p_fixes, the
+-- lender's open loan the new one replaces (lend_riftbound_cards() frees its copies too).
+create or replace function public.riftbound_lend_options(p_lender text, p_cards text[], p_fixes bigint)
 returns table (card_id text, printing_id text, finish text, condition text, language text,
     quantity integer, lendable integer, lent integer)
 language sql
@@ -153,12 +154,16 @@ stable
 set search_path = ''
 as $$
     select p.card_id, c.printing_id, c.finish, c.condition, c.language::text, c.quantity,
-        public.riftbound_lendable(c, pr), coalesce(o.lent, 0)::integer
+        public.riftbound_lendable(c, pr), (coalesce(o.lent, 0) - coalesce(f.quantity, 0))::integer
     from public.riftbound_collection c
     join public.riftbound_printings p on p.id = c.printing_id
     left join public.profiles pr on pr.user_id = c.user_id
     left join public.riftbound_lent_out(p_lender) o on o.printing_id = c.printing_id and o.finish = c.finish
         and o.condition = c.condition and o.language = c.language::text
+    left join public.riftbound_loan_cards f on f.loan_id = p_fixes and f.printing_id = c.printing_id
+        and f.finish = c.finish and f.condition = c.condition and f.language = c.language
+        and exists (select from public.riftbound_loans fl
+                    where fl.id = p_fixes and fl.lender_id = p_lender and public.riftbound_loan_state(fl.id) = 'open')
     where c.user_id = p_lender and p.card_id = any (p_cards);
 $$;
 
@@ -275,14 +280,14 @@ revoke execute on function public.riftbound_ledger_append_only() from public, an
 revoke execute on function public.riftbound_lend_own_copies() from public, anon, authenticated;
 revoke execute on function public.riftbound_loan_state(bigint) from public, anon, authenticated;
 revoke execute on function public.riftbound_lent_out(text) from public, anon, authenticated;
-revoke execute on function public.riftbound_lend_options(text, text[]) from public, anon, authenticated;
+revoke execute on function public.riftbound_lend_options(text, text[], bigint) from public, anon, authenticated;
 revoke execute on function public.lend_riftbound_cards(text, text, date, bigint, jsonb) from public, anon, authenticated;
 revoke execute on function public.answer_riftbound_loan(text, bigint, text, text) from public, anon, authenticated;
 revoke execute on function public.close_riftbound_loans(text, text, text, bigint) from public, anon, authenticated;
 revoke execute on function public.nudge_riftbound_loans(date) from public, anon, authenticated;
 grant execute on function public.riftbound_loan_state(bigint) to service_role;
 grant execute on function public.riftbound_lent_out(text) to service_role;
-grant execute on function public.riftbound_lend_options(text, text[]) to service_role;
+grant execute on function public.riftbound_lend_options(text, text[], bigint) to service_role;
 grant execute on function public.lend_riftbound_cards(text, text, date, bigint, jsonb) to service_role;
 grant execute on function public.answer_riftbound_loan(text, bigint, text, text) to service_role;
 grant execute on function public.close_riftbound_loans(text, text, text, bigint) to service_role;
