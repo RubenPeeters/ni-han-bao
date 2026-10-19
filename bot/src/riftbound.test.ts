@@ -10,6 +10,7 @@ import {
   placeholderSvg,
   resolveCard,
   type Card,
+  type Printing,
 } from "./riftbound.js";
 
 const champions = [
@@ -81,8 +82,20 @@ describe("resolveCard", () => {
     card("u-zed", "Zed", "Unit"),
     card("l-zed", "Master of Shadows", "Legend", ["Zed"]),
   ];
+  const printing = (card_id: string, collector_code: string): Printing => ({
+    id: collector_code, card_id, collector_code, set_code: collector_code.split("-")[0], collector_number: 0,
+    rarity: null, illustrator: null, image_url: null,
+  });
+  const printings = [
+    printing("s-1", "OGN-001"),
+    printing("u-ahri", "PLH-U103"),
+    printing("s-2", "OGN-007a"),
+    printing("s-3", "OGN-007b"),
+    printing("u-zed", "SFD-232"),
+    printing("u-zed", "SFD-232*"),
+  ];
   const id = (typed: string) => {
-    const r = resolveCard(cards, typed);
+    const r = resolveCard({ cards, printings }, typed);
     return r && ("card" in r ? r.card.id : r.ambiguous.map((c) => c.id));
   };
 
@@ -108,6 +121,21 @@ describe("resolveCard", () => {
     expect(id("Teemo")).toBeNull();
     expect(id("   ")).toBeNull();
   });
+
+  it("finds a collector code without case, dashes or spaces", () => {
+    for (const typed of ["OGN-001", "OGN001", "ogn-001", "OGN 001", " ogn - 001 "]) expect(id(typed)).toBe("s-1");
+    expect(id("PLHU103")).toBe("u-ahri");
+    expect(id("plh-u103")).toBe("u-ahri");
+    expect(id("OGN-007a")).toBe("s-2");
+    expect(id("OGN01")).toBeNull();
+    expect(id("OGN")).toBeNull();
+  });
+
+  it("reports a code without its variant suffix as every card it could be", () => {
+    expect(id("OGN-007")).toEqual(["s-2", "s-3"]);
+    // Two printings of one card are still that card.
+    expect(id("SFD232")).toBe("u-zed");
+  });
 });
 
 describe("/card", () => {
@@ -117,18 +145,21 @@ describe("/card", () => {
   const printed = (card: Card) => printings.filter((p) => p.card_id === card.id);
 
   it("suggests by name or champion, prefix matches first, at most 25, valued by id", () => {
-    const ahri = cardChoices(cards, "ahri");
+    const ahri = cardChoices({ cards, printings }, "ahri");
     expect(ahri.map((c) => c.value)).toEqual(expect.arrayContaining(["placeholder-legend-ahri", "placeholder-unit-ahri"]));
     expect(ahri.find((c) => c.value === legend.id)!.name).toBe(`${legend.name} (Ahri legend)`);
-    expect(cardChoices(cards, "quick")[0]).toEqual({ name: "Quick Thought (Spell)", value: spell.id });
-    expect(cardChoices(cards, "").length).toBe(25);
-    expect(cardChoices(cards, "zzzz")).toEqual([]);
+    expect(cardChoices({ cards, printings }, "quick")[0]).toEqual({ name: "Quick Thought (Spell)", value: spell.id });
+    expect(cardChoices({ cards, printings }, "").length).toBe(25);
+    expect(cardChoices({ cards, printings }, "zzzz")).toEqual([]);
+    expect(cardChoices({ cards, printings }, "plh u10")[0].value).toBe("placeholder-unit-ahri");
+    expect(cardChoices({ cards, printings }, "PLH")).toEqual([]);
   });
 
   it("takes a picked id or a typed name", () => {
-    expect(lookupCard(cards, legend.id)).toEqual({ card: legend });
-    expect(lookupCard(cards, "quick thought")).toEqual({ card: spell });
-    expect(lookupCard(cards, "nothing like this")).toBeNull();
+    expect(lookupCard({ cards, printings }, legend.id)).toEqual({ card: legend });
+    expect(lookupCard({ cards, printings }, "quick thought")).toEqual({ card: spell });
+    expect(lookupCard({ cards, printings }, "nothing like this")).toBeNull();
+    expect(lookupCard({ cards, printings }, "PLHU103")).toEqual({ card: cards.find((c) => c.id === "placeholder-unit-ahri") });
   });
 
   it("shows the stats, the art when Discord can load it, and the placeholder label", () => {
@@ -149,7 +180,7 @@ describe("/card", () => {
   });
 
   it("explains a miss", () => {
-    expect(cardMiss("Teemo", null)).toBe('No card called "Teemo". Pick one from the suggestions.');
+    expect(cardMiss("Teemo", null)).toBe('No card called or numbered "Teemo". Pick one from the suggestions.');
     expect(cardMiss("twin", [spell])).toContain("Quick Thought (Spell)");
   });
 });

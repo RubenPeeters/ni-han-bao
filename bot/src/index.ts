@@ -678,7 +678,7 @@ const catalogue = JSON.parse(readFileSync(new URL("../riftbound-catalogue.json",
 /** /card: one card from the catalogue, for everyone in the channel. */
 async function cardCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
   const typed = interaction.options.getString("name", true);
-  const found = lookupCard(catalogue.cards, typed);
+  const found = lookupCard(catalogue, typed);
   try {
     if (found && "card" in found) {
       const printings = catalogue.printings.filter((p) => p.card_id === found.card.id);
@@ -696,7 +696,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     await tracked(
       "command",
       interaction
-        .respond(cardChoices(catalogue.cards, interaction.options.getFocused()))
+        .respond(cardChoices(catalogue, interaction.options.getFocused()))
         .catch((err: unknown) => log("error", "autocomplete_failed", { command: CARD_COMMAND.name, error: err })),
     );
     return;
