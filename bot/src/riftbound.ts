@@ -141,17 +141,35 @@ export function catalogueJson({ cards, printings }: Catalogue): string {
 const normal = (text: string) =>
   text.normalize("NFD").replace(/\p{M}/gu, "").replace(/['‘’]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 
+// A collector code without case, dashes or spaces: "ogn 001" is "OGN-001".
+export const codeKey = (text: string) => text.replace(/[\s-]+/g, "").toLowerCase();
+
+/**
+ * The cards printed under a typed collector code or one of its variants ("OGN-007" for
+ * "OGN-007a" and "OGN-007b"), which can be several cards.
+ */
+function cardsByCode({ cards, printings }: Catalogue, typed: string): Card[] {
+  const q = codeKey(typed);
+  if (!/\d/.test(q)) return [];
+  // The code itself and its suffixed variants together: "OGN-007" and "OGN-007a" may be two cards.
+  const matched = printings.filter((p) => { const k = codeKey(p.collector_code); return k.startsWith(q) && /^[a-z*]*$/.test(k.slice(q.length)); });
+  const ids = new Set(matched.map((p) => p.card_id));
+  return cards.filter((c) => ids.has(c.id));
+}
+
 export type Resolved = { card: Card } | { ambiguous: Card[] } | null;
 
 /**
  * What a member typed, to one card: its exact name or, for legends, "Champion, Epithet" or
- * the bare champion name. More than one match is ambiguous, never guessed.
+ * the bare champion name, or a collector code. More than one match is ambiguous, never guessed.
  */
-export function resolveCard(cards: Card[], typed: string): Resolved {
+export function resolveCard(catalogue: Catalogue, typed: string): Resolved {
   const q = normal(typed);
   if (!q) return null;
-  const found = cards.filter(
+  const byCode = new Set(cardsByCode(catalogue, typed));
+  const found = catalogue.cards.filter(
     (c) =>
+      byCode.has(c) ||
       normal(c.name) === q ||
       (c.type === "Legend" && c.tags.some((t) => normal(t) === q || normal(`${t}, ${c.name}`) === q)),
   );
@@ -165,7 +183,7 @@ export const CARD_COMMAND = {
     {
       type: ApplicationCommandOptionType.String,
       name: "name",
-      description: "The card's name, or a legend's champion",
+      description: "The card's name or collector code, or a legend's champion",
       required: true,
       autocomplete: true,
     },
@@ -175,21 +193,28 @@ export const CARD_COMMAND = {
 // Legends are named by epithet, so the champion goes in the label: typing "ahri" finds hers.
 const choiceLabel = (c: Card) => `${c.name} (${c.type === "Legend" ? `${c.tags.join(", ")} legend` : c.type})`;
 
-/** Autocomplete: up to Discord's 25, names starting with what was typed first. The value is the card id. */
-export function cardChoices(cards: Card[], typed: string): { name: string; value: string }[] {
+/**
+ * Autocomplete: up to Discord's 25, collector codes and then names starting with what was
+ * typed first. The value is the card id.
+ */
+export function cardChoices({ cards, printings }: Catalogue, typed: string): { name: string; value: string }[] {
   const q = normal(typed);
-  const starts = (c: Card) => (normal(c.name).startsWith(q) || c.tags.some((t) => normal(t).startsWith(q)) ? 0 : 1);
+  const code = codeKey(typed);
+  // A code has a number: "plh" alone would suggest every placeholder.
+  const coded = new Set(/\d/.test(code) ? printings.filter((p) => codeKey(p.collector_code).startsWith(code)).map((p) => p.card_id) : []);
+  const starts = (c: Card) =>
+    coded.has(c.id) ? 0 : normal(c.name).startsWith(q) || c.tags.some((t) => normal(t).startsWith(q)) ? 1 : 2;
   return cards
-    .filter((c) => normal(choiceLabel(c)).includes(q))
+    .filter((c) => coded.has(c.id) || normal(choiceLabel(c)).includes(q))
     .sort((a, b) => starts(a) - starts(b) || a.name.localeCompare(b.name))
     .slice(0, 25)
     .map((c) => ({ name: choiceLabel(c).slice(0, 100), value: c.id }));
 }
 
-/** The /card option: a picked suggestion is a card id, anything else is a typed name. */
-export function lookupCard(cards: Card[], value: string): Resolved {
-  const picked = cards.find((c) => c.id === value);
-  return picked ? { card: picked } : resolveCard(cards, value);
+/** The /card option: a picked suggestion is a card id, anything else is a typed name or code. */
+export function lookupCard(catalogue: Catalogue, value: string): Resolved {
+  const picked = catalogue.cards.find((c) => c.id === value);
+  return picked ? { card: picked } : resolveCard(catalogue, value);
 }
 
 export function cardEmbed(card: Card, printings: Printing[], siteUrl: string | null): APIEmbed {
@@ -213,8 +238,8 @@ export function cardEmbed(card: Card, printings: Printing[], siteUrl: string | n
   };
 }
 
-/** The reply to a name that is not exactly one card. */
+/** The reply to a name or code that is not exactly one card. */
 export function cardMiss(typed: string, ambiguous: Card[] | null): string {
-  if (!ambiguous) return `No card called "${typed.slice(0, 100)}". Pick one from the suggestions.`;
-  return `More than one card is called that: ${ambiguous.slice(0, 10).map(choiceLabel).join(", ")}. Pick one from the suggestions.`;
+  if (!ambiguous) return `No card called or numbered "${typed.slice(0, 100)}". Pick one from the suggestions.`;
+  return `More than one card matches that: ${ambiguous.slice(0, 10).map(choiceLabel).join(", ")}. Pick one from the suggestions.`;
 }

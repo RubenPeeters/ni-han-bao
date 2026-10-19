@@ -16,12 +16,15 @@ export interface LibraryCard {
   tags: string[];
   placeholder: boolean;
   sets: string[];
+  codes: string[];
   image_url: string | null;
 }
 
 // Case, accents and apostrophes do not matter, as in the bot's resolveCard(): "kaisa" finds "Kai'Sa".
 const normal = (text: string) =>
   text.normalize("NFD").replace(/\p{M}/gu, "").replace(/['‘’]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+// A collector code without case, dashes or spaces, as in the bot's codeKey(): "ogn 001" finds "OGN-001".
+const codeKey = (text: string) => text.replace(/[\s-]+/g, "").toLowerCase();
 const sorted = <T,>(values: T[]) => [...new Set(values)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 // Hundreds of tiles at once are a long page and many image loads on a phone.
 const PAGE = 24;
@@ -37,9 +40,10 @@ export function CardGrid({ cards }: { cards: LibraryCard[] }) {
   const [set, setSet] = useState("");
   const [limit, setLimit] = useState(PAGE);
   const q = normal(query);
+  const code = codeKey(query);
   const shown = cards.filter(
     (c) =>
-      (!q || normal(c.name).includes(q) || c.tags.some((t) => normal(t).includes(q))) &&
+      (!q || normal(c.name).includes(q) || c.tags.some((t) => normal(t).includes(q)) || (code && c.codes.some((k) => codeKey(k).startsWith(code)))) &&
       (!type || c.type === type) &&
       (!domain || c.domains.includes(domain)) &&
       (!cost || String(c.energy) === cost) &&
@@ -63,8 +67,8 @@ export function CardGrid({ cards }: { cards: LibraryCard[] }) {
       <div role="search" className="sticky top-0 z-10 -mx-5 flex flex-col gap-2 border-b bg-background/95 px-5 py-3 backdrop-blur">
         <Input
           type="search"
-          aria-label="Search cards by name or champion"
-          placeholder="Search by name or champion"
+          aria-label="Search cards by name, champion or collector code"
+          placeholder="Search by name, champion or code"
           enterKeyHint="search"
           autoComplete="off"
           value={query}

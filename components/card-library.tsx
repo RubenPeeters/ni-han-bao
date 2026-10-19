@@ -62,6 +62,7 @@ export async function CardLibrary() {
       tags: c.tags,
       placeholder: c.placeholder,
       sets: [...new Set(c.printings.map((p) => p.set_code))],
+      codes: c.printings.map((p) => p.collector_code),
       image_url: c.printings.find((p) => p.image_url)?.image_url ?? null,
     }));
   return <CardGrid cards={library} />;
