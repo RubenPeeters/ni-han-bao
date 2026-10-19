@@ -34,6 +34,11 @@ export default function AboutPage() {
           <li>Messages: how many, per member, per channel and per hour.</li>
           <li>Reactions and emoji: which ones are used, and by whom.</li>
           <li>Voice: how long members spend in voice channels.</li>
+          <li>
+            Games: from your Discord status, the name of the game you are playing or competing
+            in, or that you are streaming, and for how long, per day. Nothing else from your
+            status is stored: no rich presence details, no Spotify songs, no custom status.
+          </li>
           <li>Joins and leaves.</li>
         </ul>
         <p>
@@ -49,7 +54,16 @@ export default function AboutPage() {
         </p>
         <p>
           Logged in with Discord, you see the servers you are a member of, and only those. Other
-          members of a server can see your name and stats on that server&apos;s pages.
+          members of a server can see your name and stats on that server&apos;s pages. Game
+          time is the exception: a server&apos;s game totals count everyone, but its Playing now
+          list only names members whose profile is not private.
+        </p>
+        <p>
+          Your profile page, which brings your servers together, is private until you change it
+          there or with <Cmd>/profile visibility</Cmd>: only you, people who share a server
+          with you (for the servers you share), or anyone logged in (your name; stats only for
+          the servers you share). While you are hidden with{" "}
+          <Cmd>/hide-me</Cmd> in a server, nobody else sees it.
         </p>
         <p>
           Logging in stores your Discord id, name, avatar and email address. The email comes
@@ -62,13 +76,14 @@ export default function AboutPage() {
           Type <Cmd>/hide-me</Cmd> in a server to disappear from that server&apos;s lists and
           charts on the website. <Cmd>/show-me</Cmd> brings you back. It applies per server, so
           run it in each server you want to hide from. Your messages still count towards the
-          server&apos;s totals, without your name.
+          server&apos;s totals, without your name. Game time is not counted at all while you
+          are hidden in any server.
         </p>
         <p>
           To have your data deleted instead, type <Cmd>/forget-me</Cmd> in any server and
           confirm. It deletes everything the bot stored about you, in every server: your
-          message, reaction and voice counts, your name and avatar, your server memberships and
-          your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
+          message, reaction and voice counts, your game time, your name and avatar, your server memberships, your
+          profile setting and your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
           their counts, without anything that points to you. The bot then stops counting you,
           keeping only a scrambled (hashed) copy of your Discord id to recognise you by. Until
           you type <Cmd>/show-me</Cmd>, which starts counting you again, you also cannot open

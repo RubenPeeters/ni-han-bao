@@ -1,6 +1,7 @@
 -- Proves per-server data is readable only by members of that server (#45): anon reads zero
 -- rows from every table with a guild_id, and a logged-in user reads rows of their own
--- servers only; then that /forget-me deletes and keeps out a user (#72). Needs a database,
+-- servers only; that profiles follow their visibility (#100); then that /forget-me deletes
+-- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`. Run against a local Supabase or the dev project
 -- (never production); everything is rolled back:
 --   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/check-rls.sql
@@ -50,6 +51,19 @@ begin
     select 'rls-mine', id, 'rls-hidden' from public.stores where guild_id = 'rls-mine';
     insert into public.event_attendees (guild_id, event_id, user_id)
     select 'rls-mine', id, 'rls-hidden' from public.events where guild_id = 'rls-mine';
+    -- Profiles (#100): one per visibility. rls-rls-mine shares rls-mine with the test user,
+    -- rls-public shares nothing with them.
+    insert into public.members (guild_id, user_id, display_name) values ('rls-mine', 'rls-rls-mine', 'x');
+    insert into public.members (guild_id, user_id, display_name) values ('rls-other', 'rls-rls-other', 'x');
+    insert into public.members (guild_id, user_id, display_name) values ('rls-other', 'rls-public', 'x');
+    insert into public.guild_members (guild_id, user_id) values ('rls-other', 'rls-public');
+    insert into public.profiles (user_id, visibility)
+    values ('rls-rls-mine', 'members'), ('rls-rls-other', 'members'), ('rls-public', 'public'), ('rls-hidden', 'public');
+    -- Game time (#101): one row each, all playing now. rls-hidden is a member of rls-mine.
+    insert into public.guild_members (guild_id, user_id) values ('rls-mine', 'rls-hidden');
+    insert into public.activity_seconds (user_id, day, kind, name, seconds, live_at)
+    select u, current_date, 'playing', 'Game', 3600, now()
+    from unnest(array['rls-user', 'rls-rls-mine', 'rls-hidden', 'rls-public']) u;
     -- anon cannot read keys itself, so hand it one for the recap checks below.
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
@@ -71,6 +85,10 @@ begin
         execute format('select count(*) from public.%I', t) into n;
         if n <> 0 then raise exception 'anon reads % rows from %', n, t; end if;
     end loop;
+    if exists (select from public.activity_seconds) then raise exception 'anon reads game time'; end if;
+    if exists (select from public.profiles) or exists (select from public.profile('rls-public')) then
+        raise exception 'anon reads a profile';
+    end if;
     if (select servers from public.public_totals('2026-01-01')) < 2 then
         raise exception 'anon cannot read public_totals()';
     end if;
@@ -113,9 +131,81 @@ begin
     if exists (select from public.upcoming_events('rls-other')) then
         raise exception 'a member reads another server''s events';
     end if;
+    -- Profiles (#100): visibility and shared servers, checked in the database.
+    if not exists (select from public.profile('rls-rls-mine')) then
+        raise exception 'a member cannot see the profile of someone they share a server with';
+    end if;
+    if exists (select from public.profile('rls-rls-other')) or exists (select from public.profiles where user_id = 'rls-rls-other') then
+        raise exception 'a member sees a members-only profile without a shared server';
+    end if;
+    if exists (select from public.profile('rls-hidden')) or exists (select from public.profiles where user_id = 'rls-hidden') then
+        raise exception 'a member sees the profile of a hidden member';
+    end if;
+    if not exists (select from public.profile('rls-public')) or exists (select from public.profile_servers('rls-public')) then
+        raise exception 'a public profile does not show, or shows servers the visitor is not in';
+    end if;
+    if (select visibility from public.profile('rls-user')) <> 'private' then
+        raise exception 'your own profile is not there, or not private by default';
+    end if;
+    if (select array_agg(guild_id) from public.profile_servers('rls-user')) <> array['rls-mine'] then
+        raise exception 'profile_servers() is not just the shared servers';
+    end if;
+    if (select longest_streak from public.profile_badges('rls-user')) <> 1 then
+        raise exception 'profile_badges() does not count the streak';
+    end if;
+    if not exists (select from public.profile_badges('rls-rls-mine')) then
+        raise exception 'profile_badges() is empty for a members profile in a shared server';
+    end if;
+    if exists (select from public.profile_badges('rls-public')) then
+        raise exception 'profile_badges() covers servers the visitor is not in';
+    end if;
+    begin
+        perform public.set_profile_visibility('everyone');
+        raise exception 'set_profile_visibility() accepts a value that is not a visibility';
+    exception when check_violation then null;
+    end;
+    perform public.set_profile_visibility('public');
+    if (select visibility from public.profiles where user_id = 'rls-user') <> 'public' then
+        raise exception 'set_profile_visibility() does not save your own setting';
+    end if;
+    -- Game time (#101): read through functions only, per shared server, hidden members left out.
+    -- Private again, so guild_playing_now() must count rls-user without naming them.
+    perform public.set_profile_visibility('private');
+    if exists (select from public.activity_seconds) then raise exception 'a member reads game time directly'; end if;
+    if (select players from public.guild_games('rls-mine', current_date)) <> 2 then
+        raise exception 'guild_games() does not count just the visible members';
+    end if;
+    if exists (select from public.guild_games('rls-other', current_date))
+        or exists (select from public.guild_playing_now('rls-other')) then
+        raise exception 'a member reads another server''s games';
+    end if;
+    if (select players from public.guild_playing_now('rls-mine')) <> array['x']
+        or (select others from public.guild_playing_now('rls-mine')) <> 1 then
+        raise exception 'guild_playing_now() names a private profile or a hidden member';
+    end if;
+    if not exists (select from public.profile_games('rls-rls-mine')) or exists (select from public.profile_games('rls-public'))
+        or exists (select from public.profile_games('rls-hidden')) then
+        raise exception 'profile_games() does not follow the profile and shared servers';
+    end if;
     if (select count(*) from public.my_guilds()) <> 1 then raise exception 'my_guilds() is not just mine'; end if;
     if public.monthly_recap('rls-mine', '2025-12-01') is null then raise exception 'a member cannot read their recap'; end if;
     if public.monthly_recap('rls-other', '2025-12-01') is not null then raise exception 'a member reads another server''s recap'; end if;
+end $$;
+
+-- Your own profile still shows your stats in a server where you ran /hide-me (#100).
+reset role;
+update public.members set hidden = true where guild_id = 'rls-mine' and user_id = 'rls-user';
+set local role authenticated;
+do $$
+begin
+    if (select message_count from public.profile_servers('rls-user')) <> 1
+        or (select voice_seconds from public.profile_servers('rls-user')) <> 60 then
+        raise exception 'profile_servers() drops your own counts where you are hidden';
+    end if;
+    if (select longest_streak from public.profile_badges('rls-user')) <> 1
+        or (select channel_name from public.profile_badges('rls-user')) is null then
+        raise exception 'profile_badges() drops your own badges where you are hidden';
+    end if;
 end $$;
 
 -- /forget-me (#72): no row about the user is left anywhere, and none can be written again
@@ -141,6 +231,12 @@ begin
     if exists (select from public.members where user_id = 'rls-user') then
         raise exception 'a forgotten user is written again';
     end if;
+    begin
+        perform public.set_profile_visibility('members');
+        raise exception 'set_profile_visibility() reports a save for a forgotten user';
+    exception when raise_exception then
+        if sqlerrm not like '%/show-me%' then raise; end if;
+    end;
     perform public.remember_user('rls-user');
     insert into public.members (guild_id, user_id, display_name) values ('rls-mine', 'rls-user', 'x');
     if not exists (select from public.members where user_id = 'rls-user') then

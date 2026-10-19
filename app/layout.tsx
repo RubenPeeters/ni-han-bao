@@ -24,11 +24,11 @@ export const metadata: Metadata = {
 };
 
 // Vercel Web Analytics, cookieless. The script is served by Vercel itself, so it is only
-// added in production; member ids are cut from the URLs it reports, server ids are kept for
+// added in production; user ids are cut from the URLs it reports, server ids are kept for
 // the "servers with a visit per week" metric (README).
 const analytics =
   process.env.VERCEL_ENV === "production"
-    ? `window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments)};window.va("beforeSend",function(e){return Object.assign({},e,{url:e.url.replace(/\\/member\\/[^/?#]+/,"/member/[userId]")})});`
+    ? `window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments)};window.va("beforeSend",function(e){return Object.assign({},e,{url:e.url.replace(/\\/member\\/[^/?#]+/,"/member/[userId]").replace(/\\/u\\/[^/?#]+/,"/u/[userId]")})});`
     : null;
 
 const geistSans = Geist({

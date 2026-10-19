@@ -40,6 +40,7 @@ import {
   type UpcomingEvent,
 } from "./events.js";
 import { Backoff, flushUntil, InFlight } from "./backoff.js";
+import { flushGames, GameBuffer, gameKeys, GameSessions } from "./games.js";
 import { loadConfig } from "./config.js";
 import { countsLive, loadBeforeId } from "./history.js";
 import { createLogger } from "./log.js";
@@ -80,6 +81,7 @@ import {
   storeList,
   type Store,
 } from "./stores.js";
+import { PROFILE_COMMAND, setProfileVisibility } from "./profile.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility, VISIBILITY_COMMANDS } from "./visibility.js";
 import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
@@ -111,6 +113,9 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates,
     // Not privileged: the server's Discord events and who clicked Interested (#115).
     GatewayIntentBits.GuildScheduledEvents,
+    // Privileged: must be switched on in the Developer Portal, or login fails (#97). Only the
+    // type and name of an activity are read, for game time (#101).
+    GatewayIntentBits.GuildPresences,
   ],
   // Without these, reactions on messages sent before the bot (re)started are not emitted,
   // nor Interested clicks on an event the cache does not hold.
@@ -224,14 +229,32 @@ function writerFor(guildId: string): ServerWriter {
   };
 }
 
+// Game time is per user across servers (#101), so it is kept and written outside `servers`.
+const games = new GameSessions();
+const gameBuffer = new GameBuffer();
+
 /** Logs each stream that failed and reports whether all of them were written. */
-function flushAll(): Promise<boolean> {
-  return flushServers(
+async function flushAll(): Promise<boolean> {
+  const now = new Date();
+  const ok = await flushServers(
     servers.values(),
     writerFor,
     (guild, stream, err) => log("warn", "flush_failed", { guild, stream, error: err }),
-    new Date(),
+    now,
   );
+  gameBuffer.add(games.collect(now));
+  try {
+    await flushGames(gameBuffer, {
+      async incrementGames(batch) {
+        const { error } = await db.rpc("increment_games", { batch: batch.id, games: batch.games });
+        if (error) throw new Error(`increment_games: ${error.message}`);
+      },
+    });
+  } catch (err) {
+    log("warn", "flush_failed", { stream: "games", error: err });
+    return false;
+  }
+  return ok;
 }
 
 // One flush at a time, so shutdown can wait for the one in flight before writing the rest.
@@ -282,7 +305,7 @@ function unwritten() {
     flow.push(...t.flow, ...(timeline.pending?.flow ?? []));
     voiceRows.push(...t.voice, ...(timeline.pending?.voice ?? []));
   }
-  return totals(counts, emojiCounts, flow, voiceRows);
+  return { ...totals(counts, emojiCounts, flow, voiceRows), game_seconds: gameBuffer.seconds };
 }
 
 // Failed writes stay buffered, so retrying later loses nothing; backing off spares a
@@ -393,6 +416,7 @@ client.on(Events.GuildMemberAdd, (member) => {
 
 client.on(Events.GuildMemberRemove, (member) => {
   servers.get(member.guild.id)?.timeline.addLeave(new Date());
+  gameBuffer.add(games.closeUnless((u) => u !== member.id || sharesServer(u), new Date()));
   void tracked("member_remove", membership(member.guild.id, () => removeMembers(member.guild.id, [member.id])));
 });
 
@@ -518,6 +542,7 @@ client.on(Events.GuildDelete, (guild) => {
   const server = servers.get(guild.id);
   // Otherwise every flush would keep adding voice time for sessions nobody can end.
   server?.timeline.addVoice(server.voice.closeAll(new Date()));
+  gameBuffer.add(games.closeUnless(sharesServer, new Date()));
   void tracked(
     "guild_delete",
     membership(guild.id, async () => {
@@ -541,6 +566,15 @@ client.on(Events.VoiceStateUpdate, (_old, state) => {
   if (!state.member || state.member.user.bot) return;
   server.timeline.setMember(memberRow(state.member.user, state.member));
   server.voice.update(state.id, true, new Date());
+});
+
+// discord.js drops the member or guild from its cache before emitting the leave or delete.
+const sharesServer = (userId: string) => client.guilds.cache.some((g) => g.members.cache.has(userId));
+
+// Arrives once per shared server; GameSessions counts the user once. Offline presences have no activities.
+client.on(Events.PresenceUpdate, (_old, presence) => {
+  if (presence.user?.bot) return;
+  gameBuffer.add(games.update(presence.userId, gameKeys(presence.activities), new Date()));
 });
 
 // shortcut: rank needs every member's total, fetched via leaderboard() up to this many rows
@@ -647,6 +681,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     await tracked("command", forgetCommand(interaction));
     return;
   }
+  if (interaction.commandName === PROFILE_COMMAND.name) {
+    await tracked("command", profileCommand(interaction));
+    return;
+  }
   if (interaction.commandName === SETUP_COMMAND.name) {
     await tracked("command", setupCommand(interaction));
     return;
@@ -687,6 +725,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
             { onConflict: "guild_id,user_id" },
           );
           if (error) throw new Error(`members upsert: ${error.message}`);
+          // Game time restarts now: nothing buffered across a hide or show may reach the database,
+          // which drops only what arrives while the member is hidden.
+          games.drop(row.user_id);
+          gameBuffer.drop(row.user_id);
+          gameBuffer.add(games.update(row.user_id, gameKeys(interaction.member.presence?.activities ?? []), new Date()));
         },
       },
       memberRow(interaction.user, interaction.member),
@@ -730,6 +773,28 @@ async function forgetCommand(interaction: ChatInputCommandInteraction<"cached">)
   );
   if (confirmed) log("info", "user_forgotten", {});
   await interaction.editReply({ content: reply, components: [] });
+}
+
+/** /profile visibility: who can see the caller's /u/[userId] page. */
+async function profileCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const reply = await setProfileVisibility(
+    {
+      async setVisibility(userId, visibility) {
+        const { data, error } = await db
+          .from("profiles")
+          .upsert({ user_id: userId, visibility, updated_at: new Date().toISOString() }, { onConflict: "user_id" })
+          .select("user_id");
+        if (error) throw new Error(`profiles upsert: ${error.message}`);
+        // skip_forgotten() drops a forgotten user's row without an error.
+        return data.length > 0;
+      },
+    },
+    interaction.user.id,
+    interaction.options.getString("level", true),
+    config.siteUrl,
+  );
+  await interaction.editReply(reply);
 }
 
 /** /setup: only members with Manage Server see it (default_member_permissions). */
@@ -1362,6 +1427,7 @@ async function startServer(guild: Guild): Promise<void> {
     await guild.commands.set([
       ...VISIBILITY_COMMANDS,
       FORGET_COMMAND,
+      PROFILE_COMMAND,
       ...STATS_COMMANDS,
       SETUP_COMMAND,
       RECAP_COMMAND,
@@ -1396,6 +1462,10 @@ async function startServer(guild: Guild): Promise<void> {
     );
     for (const m of inVoice) server.timeline.setMember(memberRow(m.user, m));
     server.timeline.addVoice(server.voice.sync(inVoice.map((m) => m.id), new Date()));
+    // Whoever was already playing is counted from now on, like voice.
+    for (const p of guild.presences.cache.values()) {
+      if (!p.user?.bot) gameBuffer.add(games.update(p.userId, gameKeys(p.activities), new Date()));
+    }
   } catch (err) {
     log("error", "member_sync_failed", { guild: guild.id, error: err });
   }
@@ -1452,6 +1522,7 @@ async function shutdown(code: number): Promise<void> {
   await inFlight.settle();
   // Close open voice sessions now, so the next start does not have to guess when they ended.
   for (const { timeline, voice } of servers.values()) timeline.addVoice(voice.closeAll(new Date()));
+  gameBuffer.add(games.closeAll(new Date()));
   const clock = {
     now: Date.now,
     sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),

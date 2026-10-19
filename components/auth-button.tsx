@@ -80,7 +80,11 @@ export function AuthButton() {
           className="size-7 shrink-0 rounded-full bg-muted object-cover"
         />
       )}
-      <span className="truncate text-sm">{name}</span>
+      <span className="hidden truncate text-sm sm:inline">{name}</span>
+      {/* Only a link target: the profile page itself checks who is logged in. */}
+      <Button asChild size="sm" variant="ghost">
+        <Link href={`/u/${meta.provider_id ?? meta.sub}`}>My profile</Link>
+      </Button>
       <Button size="sm" variant="ghost" onClick={() => void createClient().auth.signOut()}>
         Log out
       </Button>
