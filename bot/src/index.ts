@@ -40,6 +40,7 @@ import {
   type UpcomingEvent,
 } from "./events.js";
 import { Backoff, flushUntil, InFlight } from "./backoff.js";
+import { flushGames, GameBuffer, gameKeys, GameSessions } from "./games.js";
 import { loadConfig } from "./config.js";
 import { countsLive, loadBeforeId } from "./history.js";
 import { createLogger } from "./log.js";
@@ -112,6 +113,9 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates,
     // Not privileged: the server's Discord events and who clicked Interested (#115).
     GatewayIntentBits.GuildScheduledEvents,
+    // Privileged: must be switched on in the Developer Portal, or login fails (#97). Only the
+    // type and name of an activity are read, for game time (#101).
+    GatewayIntentBits.GuildPresences,
   ],
   // Without these, reactions on messages sent before the bot (re)started are not emitted,
   // nor Interested clicks on an event the cache does not hold.
@@ -225,14 +229,32 @@ function writerFor(guildId: string): ServerWriter {
   };
 }
 
+// Game time is per user across servers (#101), so it is kept and written outside `servers`.
+const games = new GameSessions();
+const gameBuffer = new GameBuffer();
+
 /** Logs each stream that failed and reports whether all of them were written. */
-function flushAll(): Promise<boolean> {
-  return flushServers(
+async function flushAll(): Promise<boolean> {
+  const now = new Date();
+  const ok = await flushServers(
     servers.values(),
     writerFor,
     (guild, stream, err) => log("warn", "flush_failed", { guild, stream, error: err }),
-    new Date(),
+    now,
   );
+  gameBuffer.add(games.collect(now));
+  try {
+    await flushGames(gameBuffer, {
+      async incrementGames(batch) {
+        const { error } = await db.rpc("increment_games", { batch: batch.id, games: batch.games });
+        if (error) throw new Error(`increment_games: ${error.message}`);
+      },
+    });
+  } catch (err) {
+    log("warn", "flush_failed", { stream: "games", error: err });
+    return false;
+  }
+  return ok;
 }
 
 // One flush at a time, so shutdown can wait for the one in flight before writing the rest.
@@ -283,7 +305,7 @@ function unwritten() {
     flow.push(...t.flow, ...(timeline.pending?.flow ?? []));
     voiceRows.push(...t.voice, ...(timeline.pending?.voice ?? []));
   }
-  return totals(counts, emojiCounts, flow, voiceRows);
+  return { ...totals(counts, emojiCounts, flow, voiceRows), game_seconds: gameBuffer.seconds };
 }
 
 // Failed writes stay buffered, so retrying later loses nothing; backing off spares a
@@ -542,6 +564,12 @@ client.on(Events.VoiceStateUpdate, (_old, state) => {
   if (!state.member || state.member.user.bot) return;
   server.timeline.setMember(memberRow(state.member.user, state.member));
   server.voice.update(state.id, true, new Date());
+});
+
+// Arrives once per shared server; GameSessions counts the user once. Offline presences have no activities.
+client.on(Events.PresenceUpdate, (_old, presence) => {
+  if (presence.user?.bot) return;
+  gameBuffer.add(games.update(presence.userId, gameKeys(presence.activities), new Date()));
 });
 
 // shortcut: rank needs every member's total, fetched via leaderboard() up to this many rows
@@ -1424,6 +1452,10 @@ async function startServer(guild: Guild): Promise<void> {
     );
     for (const m of inVoice) server.timeline.setMember(memberRow(m.user, m));
     server.timeline.addVoice(server.voice.sync(inVoice.map((m) => m.id), new Date()));
+    // Whoever was already playing is counted from now on, like voice.
+    for (const p of guild.presences.cache.values()) {
+      if (!p.user?.bot) gameBuffer.add(games.update(p.userId, gameKeys(p.activities), new Date()));
+    }
   } catch (err) {
     log("error", "member_sync_failed", { guild: guild.id, error: err });
   }
@@ -1480,6 +1512,7 @@ async function shutdown(code: number): Promise<void> {
   await inFlight.settle();
   // Close open voice sessions now, so the next start does not have to guess when they ended.
   for (const { timeline, voice } of servers.values()) timeline.addVoice(voice.closeAll(new Date()));
+  gameBuffer.add(games.closeAll(new Date()));
   const clock = {
     now: Date.now,
     sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),

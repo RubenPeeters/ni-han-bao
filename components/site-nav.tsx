@@ -10,6 +10,7 @@ const SERVER_PAGES = [
   { page: "emoji", label: "Emoji" },
   { page: "timeline", label: "Timeline" },
   { page: "stores", label: "Where we play" },
+  { page: "games", label: "What we play" },
 ];
 
 export function SiteNav() {
