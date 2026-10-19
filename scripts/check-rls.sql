@@ -77,6 +77,10 @@ begin
     -- League games (#104): read through functions only, per server.
     insert into public.lol_matches (user_id, puuid, match_id, queue_id, champion, played_at)
     select u, u, 'EUW1_' || u, 420, 'Ahri', now() from unnest(array['rls-rls-mine', 'rls-rls-other', 'rls-hidden']) u;
+    -- The Riftbound catalogue (#148): global, for anyone logged in.
+    insert into public.riftbound_cards (id, name, type) values ('rls-card', 'x', 'Spell');
+    insert into public.riftbound_printings (id, card_id, set_code, collector_code, collector_number)
+    values ('rls-printing', 'rls-card', 'RLS', 'RLS-001', 1);
     -- anon cannot read keys itself, so hand it one for the recap checks below.
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
@@ -100,6 +104,9 @@ begin
     end loop;
     if exists (select from public.activity_seconds) then raise exception 'anon reads game time'; end if;
     if exists (select from public.games) then raise exception 'anon reads game icons'; end if;
+    if exists (select from public.riftbound_cards) or exists (select from public.riftbound_printings) then
+        raise exception 'anon reads the card catalogue';
+    end if;
     if exists (select from public.game_accounts) then raise exception 'anon reads linked accounts'; end if;
     if exists (select from public.lol_ranks) or exists (select from public.profile_ranks('rls-rls-mine')) then
         raise exception 'anon reads a rank';
@@ -219,6 +226,10 @@ begin
         raise exception 'profile_lol_champion() does not follow the profile';
     end if;
     if exists (select from public.games) then raise exception 'a member reads game icons directly'; end if;
+    if not exists (select from public.riftbound_cards where id = 'rls-card')
+        or not exists (select from public.riftbound_printings where id = 'rls-printing') then
+        raise exception 'a logged-in user cannot read the card catalogue';
+    end if;
     if (select icon from public.guild_games('rls-mine', current_date)) is distinct from 'i' then
         raise exception 'guild_games() does not return the game icon';
     end if;
