@@ -1,11 +1,67 @@
 import { ReplyExample } from "@/components/discord-message";
 
-export const metadata = { title: "Your server's stats · ni han bao docs" };
+export const metadata = { title: "A month of activity · ni han bao docs" };
 
-# Your server's stats
+# A month of activity
 
-Draft. This page will walk through a server's pages: leaderboard, channels, emoji and timeline.
+A month after Anna [added the bot](/docs/tutorial/new-server), the Demo server's pages are full. The numbers in the pictures change every day; what each page shows does not.
 
-`/recap` posts last month's recap card:
+## Monday: the weekly report
+
+Every Monday morning, Brussels time, the bot posts last week in `#weekly-report`:
+
+<ReplyExample name="report" />
+
+Top talkers, the busiest channel, the favourite emoji, who joined and left, the coming week's events and who played the most League. It is the page most members read, without ever opening the site.
+
+## The leaderboard
+
+**Leaderboard** ranks the members by messages: this week, and all time. A name opens that member's page in this server.
+
+![The leaderboard](/docs/shots/leaderboard.png)
+
+In Discord, `/leaderboard` gives the same top 10, and `/me` your own counts, which only you see:
+
+<ReplyExample name="leaderboard" />
+
+## Channels
+
+**Channels** shows where people talk and when. The heatmap is by weekday and hour, in the server's time zone: the Demo server is quiet at night and busy from 18:00. A good hour for an announcement, or for a game night.
+
+![The Channels page](/docs/shots/channels.png)
+
+`/channel` gives one channel's message count over the last 30 days.
+
+## Emoji
+
+**Emoji** lists what everyone reacts with, and who gets the most reactions. Custom emoji show with their picture.
+
+![The Emoji page](/docs/shots/emoji.png)
+
+## Timeline and voice
+
+**Timeline** charts the member count per day, joins against leaves per week, and who spent the most time in voice this month.
+
+![The Timeline page](/docs/shots/timeline.png)
+
+## What we play
+
+**What we play** adds up the games in members' Discord status over the last 30 days. The Demo server plays Valorant, Teamfight Tactics, League and Riftbound. **Playing now** names only members whose profile is not private; the totals count everyone.
+
+![The What we play page](/docs/shots/games.png)
+
+## One member's page
+
+A name on any list opens that member's page: their messages per week, their top channels and their favourite emoji, in this server only. This is Anna's:
+
+![Anna's page in the Demo server](/docs/shots/member.png)
+
+## The monthly recap
+
+On the first of the month the bot posts the month as one image in the report channel, with a link to it on the site. `/recap` posts last month's card on demand:
 
 <ReplyExample name="recap" />
+
+![The monthly recap](/docs/shots/recap.png)
+
+Next: [League](/docs/tutorial/league).

@@ -16,7 +16,7 @@
         {
           "title": "Leaderboard: this week",
           "url": "https://ni-han-bao.example/leaderboard",
-          "description": "**1.** Mira: 1,284\n**2.** Joost: 967\n**3.** Sanne: 412",
+          "description": "**1.** Anna: 1,284\n**2.** Bram: 967\n**3.** Chloé: 412",
           "footer": {
             "text": "Since Monday 2026-10-12 (Europe/Brussels)"
           }
@@ -31,7 +31,7 @@
       "900000000000000201": "weekly-report"
     },
     "message": {
-      "content": "Weekly report card: <#900000000000000201>\nTime zone: Europe/Brussels\nPublic totals: included\nRank roles: off (existing rank roles stay until you delete them)"
+      "content": "Weekly report card: <#900000000000000201>\nTime zone: Europe/Brussels\nPublic totals: left out\nRank roles: off (existing rank roles stay until you delete them)"
     }
   },
   "report": {
@@ -47,7 +47,7 @@
           "fields": [
             {
               "name": "Top talkers",
-              "value": "🥇 Mira: 1,284 messages\n🥈 Joost: 967 messages\n🥉 Sanne: 412 messages"
+              "value": "🥇 Anna: 1,284 messages\n🥈 Bram: 967 messages\n🥉 Chloé: 412 messages"
             },
             {
               "name": "Busiest channel",
@@ -65,11 +65,11 @@
             },
             {
               "name": "League",
-              "value": "Joost: 14 games, mostly Ahri\n14 games between you. Ranked and normals only."
+              "value": "Bram: 14 games, mostly Ahri\n14 games between you. Ranked and normals only."
             },
             {
               "name": "Coming up this week",
-              "value": "**Sat 17 Oct, 19:00 · Riftbound night · The Dice Tower \\(Gent\\)**: Mira, Joost"
+              "value": "**Sat 17 Oct, 19:00 · Riftbound Nexus Night · The Card Corner \\(Leuven\\)**: Anna, Bram"
             }
           ],
           "footer": {
@@ -142,7 +142,7 @@
     "ephemeral": false,
     "channels": {},
     "message": {
-      "content": "Someone is going at The Dice Tower \\(Gent\\) on Sat 17 Oct, 19:00.\nComing too? Click Going.",
+      "content": "Someone is going at The Card Corner \\(Leuven\\) on Sat 17 Oct, 19:00.\nComing too? Click Going.",
       "components": [
         {
           "type": 1,
@@ -163,13 +163,35 @@
     "ephemeral": true,
     "channels": {},
     "message": {
-      "content": "To prove Mira#EUW is yours, set your League profile icon to **Debonair Rose Icon** (icon 7, a starter icon), then press Verify. Search for it by name in the client's icon picker, or pick the icon shown below. It can take up to 5 minutes to show up. You can change it back afterwards.",
+      "content": "To prove Anna#EUW is yours, set your League profile icon to **Debonair Rose Icon** (icon 7, a starter icon), then press Verify. Search for it by name in the client's icon picker, or pick the icon shown below. It can take up to 5 minutes to show up. You can change it back afterwards.",
       "components": [
         {
           "components": [
             {
               "label": "Verify",
               "style": 1
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "forget-me": {
+    "command": "/forget-me",
+    "ephemeral": true,
+    "channels": {},
+    "message": {
+      "content": "This deletes everything ni han bao has stored about you, in every server: your message, reaction, voice and game time counts, your name and avatar, your membership, your regular stores, the events you are going to, your linked League account with its ranks and games, your Riftbound collection and lending setting, your card loans (gone for the other member too), your profile visibility and your /hide-me setting. It cannot be undone. The bot stops counting you until you use /show-me. You also lose access to the servers' pages on the website until then.",
+      "components": [
+        {
+          "components": [
+            {
+              "label": "Delete my data",
+              "style": 4
+            },
+            {
+              "label": "Cancel",
+              "style": 2
             }
           ]
         }

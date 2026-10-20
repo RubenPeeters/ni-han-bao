@@ -1,15 +1,61 @@
+import { DiscordShot } from "@/components/discord-shot";
 import { ReplyExample } from "@/components/discord-message";
 
-export const metadata = { title: "Riftbound · ni han bao docs" };
+export const metadata = { title: "Riftbound night · ni han bao docs" };
 
-# Riftbound
+# Riftbound night
 
-Draft. This page will show how to look up cards and keep your collection.
+The other half of the Demo server plays Riftbound, at three stores. This page follows Anna through a week: a store, an event, a deck that is missing a card, and the cards she lends and borrows. The cards are placeholders for now, until Riot's card data is available.
 
-`/card` shows a card:
+## The stores
+
+Anna plays at The Card Corner in Leuven, so she adds it and marks it as hers:
+
+- `/store add name:The Card Corner city:Leuven`. A city, never an address: the list is for members, but it is still about where people are.
+- `/store mine store:The Card Corner`.
+
+Bram adds Dragon's Den Games in Brussels, Daan Meeple Market in Ghent. **Where we play** lists all three, with their regulars.
+
+![The Where we play page](/docs/shots/stores.png)
+
+## An event, and who is going
+
+The Card Corner holds a Nexus Night on Saturday. Anna runs `/event going store:The Card Corner when:` with the date and 19:00, in Brussels time because that is the server's [time zone](/docs/tutorial/new-server#choosing-the-settings). The channel sees:
+
+<ReplyExample name="going" />
+
+Bram presses **Going**. Under **Coming up**, Where we play shows who goes where, and Monday's report lists the event with its names. An event made in Discord's own Events list works too: **Interested** counts as going.
+
+## Looking up a card
+
+Anna's deck is built around Ahri. In Discord, `/card name:Ahri` finds her legend, Hollow Echo (a placeholder name):
 
 <ReplyExample name="card" />
 
-`/event going` tells the server where you play, with a button to join you:
+The card's page on the site lists its printings, and under **Who has it?** the members of her servers with copies to lend. Bram and Chloé are there. Daan has one too, but his profile is private, so he is not listed.
 
-<ReplyExample name="going" />
+![Hollow Echo, Ahri's legend, on the site](/docs/shots/card.png)
+
+## Collection and trades
+
+Anna keeps her collection on the site: **Cards**, **Edit my collection**, and the steppers on each card. **What the steppers count** switches between **Owned**, **For trade** and **To lend**. Her profile's **Collection** tab sums it up per set, rarity and language, and members of her servers see it, because her profile is set to Server members.
+
+![Anna's collection](/docs/shots/collection.png)
+
+Cards marked **For trade** are counted in the collection. Trading itself happens in `#trades`, between people; the bot does not broker it.
+
+## Lending
+
+Bram lends everything he owns, so his copies show under **Who has it?** without marking each one. He brings two cards to Nexus Night and records it:
+
+`/lend member:@Anna cards:…` with the cards, and a `due` date.
+
+Anna gets **Confirm** and **Dispute** buttons in the channel, and confirms. Anna lends her own cards the same way: to Chloé, who has not confirmed yet, and to Finn, who disputed because he got one card, not two. Elise gave hers back, so Anna ran `/return member:@Elise`.
+
+Her profile's **Loans** tab keeps it all in one place: what she has of Bram's, who has hers, and what is unconfirmed, disputed or overdue. Only Anna and the other member see a loan.
+
+![Anna's loans](/docs/shots/loans.png)
+
+<DiscordShot name="lend-confirm" alt="A loan in Discord, with the Confirm and Dispute buttons" />
+
+Next: [privacy and leaving](/docs/tutorial/privacy).
