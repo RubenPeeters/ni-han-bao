@@ -2,7 +2,8 @@
 -- rows from every table with a guild_id, and a logged-in user reads rows of their own
 -- servers only; that profiles follow their visibility (#100); that the lending ledger holds
 -- (#172); that decks follow their visibility (#173) and only public ones are remembered as
--- opened (#174), their versions with them (#176), and wishlists their profile (#177); then that /forget-me deletes
+-- opened (#174), their versions with them (#176), and wishlists their profile (#177); that trade
+-- matches follow it too (#178); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`. Run against a local Supabase or the dev project
 -- (never production); everything is rolled back:
@@ -104,6 +105,8 @@ begin
     update public.riftbound_decks set wishlist_mode = 'shared' where user_id = 'rls-rls-mine';
     insert into public.riftbound_wishlist (user_id, card_id, quantity)
     values ('rls-rls-mine', 'rls-card-2', 2), ('rls-rls-other', 'rls-card-2', 1), ('rls-hidden', 'rls-card-2', 1);
+    -- Trades (#178): everyone but the test user has a copy of rls-card for trade.
+    update public.riftbound_collection set for_trade = 1 where user_id <> 'rls-user';
     -- anon cannot read keys itself, so hand it one for the recap checks below.
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
@@ -146,6 +149,7 @@ begin
     if exists (select from public.riftbound_wishlist) or exists (select from public.profile_wishlist('rls-rls-mine')) then
         raise exception 'anon reads a wishlist';
     end if;
+    if exists (select from public.riftbound_trade_matches) then raise exception 'anon reads trade matches'; end if;
     if exists (select from public.lol_ranks) or exists (select from public.profile_ranks('rls-rls-mine')) then
         raise exception 'anon reads a rank';
     end if;
@@ -373,9 +377,9 @@ begin
     end if;
     -- Wishlists (#177): your own entries directly, others' as their profile, a shared deck numbered per card only.
     if exists (select from public.riftbound_wishlist) then raise exception 'a member reads someone else''s wishlist entries'; end if;
-    if (select string_agg(card_id || ':' || coalesce(deck::text, '-') || ':' || decks || ':' || coalesce(manual::text, '-')
-            || ':' || jsonb_array_length(copies), ',' order by card_id, deck)
-            from public.profile_wishlist('rls-rls-mine')) <> 'rls-card:1:1:-:1,rls-card:2:1:-:1,rls-card-2:-:0:2:0'
+    if (select string_agg(card_id || ':' || coalesce(w.deck::text, '-') || ':' || decks || ':' || coalesce(manual::text, '-')
+            || ':' || jsonb_array_length(copies), ',' order by card_id, w.deck)
+            from public.profile_wishlist('rls-rls-mine') w) <> 'rls-card:1:1:-:1,rls-card:2:1:-:1,rls-card-2:-:0:2:0'
         or exists (select from public.profile_wishlist('rls-rls-other')) or exists (select from public.profile_wishlist('rls-hidden')) then
         raise exception 'profile_wishlist() does not follow the profile, or does not keep shared decks apart';
     end if;
@@ -400,6 +404,18 @@ begin
     if (select wishlist_mode from public.riftbound_decks where id = deck) <> 'dedicated' then
         raise exception 'a save without a wishlist mode changes the deck''s';
     end if;
+    -- Trades (#178): only visible members of the visitor's server, never the bot's bookkeeping.
+    if (select array_agg(user_id || ':' || copies || ':' || place_kind) from public.guild_trade_offers('rls-mine', array['rls-card']))
+            <> array['rls-rls-mine:1:city']
+        or exists (select from public.guild_trade_offers('rls-other', array['rls-card'])) then
+        raise exception 'guild_trade_offers() lists a hidden or private member, or another server''s';
+    end if;
+    if exists (select from public.riftbound_trade_matches) then raise exception 'a member reads trade matches'; end if;
+    begin
+        perform public.riftbound_wish_rows('rls-rls-other');
+        raise exception 'a member reads a wishlist past its profile''s visibility';
+    exception when insufficient_privilege then null;
+    end;
     -- One left for /forget-me to delete, with the wishlist entry above.
     perform public.save_riftbound_deck(null, 'kept', null, null, null, null, null, null, null);
     if (select icon from public.guild_games('rls-mine', current_date)) is distinct from 'i' then
@@ -430,6 +446,32 @@ begin
     if (select count(*) from public.my_guilds()) <> 1 then raise exception 'my_guilds() is not just mine'; end if;
     if public.monthly_recap('rls-mine', '2025-12-01') is null then raise exception 'a member cannot read their recap'; end if;
     if public.monthly_recap('rls-other', '2025-12-01') is not null then raise exception 'a member reads another server''s recap'; end if;
+end $$;
+
+-- Trade matches as the bot reads them (#178): the test user wants rls-card (set_riftbound_wish()
+-- above); only rls-rls-mine may be named to them, once, and they meet at the best place known.
+reset role;
+do $$
+begin
+    if (select array_agg(trader_id || ':' || guild_id || ':' || place_kind) from public.riftbound_trade_candidates()
+            where user_id = 'rls-user') <> array['rls-rls-mine:rls-mine:city'] then
+        raise exception 'riftbound_trade_candidates() names a hidden or private member, or one in no shared server';
+    end if;
+    insert into public.store_regulars (guild_id, store_id, user_id)
+    select 'rls-mine', id, 'rls-rls-mine' from public.stores where guild_id = 'rls-mine';
+    if (select kind from public.riftbound_meeting_place('rls-mine', 'rls-user', 'rls-rls-mine')) <> 'regulars' then
+        raise exception 'riftbound_meeting_place() does not prefer a store both are regulars of';
+    end if;
+    insert into public.event_attendees (guild_id, event_id, user_id)
+    select 'rls-mine', id, 'rls-rls-mine' from public.events where guild_id = 'rls-mine';
+    if (select kind from public.riftbound_meeting_place('rls-mine', 'rls-user', 'rls-rls-mine')) <> 'event' then
+        raise exception 'riftbound_meeting_place() does not prefer an event both are going to';
+    end if;
+    insert into public.riftbound_trade_matches (user_id, trader_id, card_id)
+    values ('rls-user', 'rls-rls-mine', 'rls-card'), ('rls-rls-mine', 'rls-user', 'rls-card');
+    if exists (select from public.riftbound_trade_candidates() where user_id = 'rls-user') then
+        raise exception 'riftbound_trade_candidates() offers a match the bot DMed about already';
+    end if;
 end $$;
 
 -- Your own profile still shows your stats in a server where you ran /hide-me (#100).
@@ -539,6 +581,9 @@ begin
     end loop;
     if exists (select from public.stores where added_by = 'rls-user') then
         raise exception 'forget_user() leaves the user on the stores they added';
+    end if;
+    if exists (select from public.riftbound_trade_matches where trader_id = 'rls-user') then
+        raise exception 'forget_user() leaves the matches where the user is the trader';
     end if;
     if exists (select from public.riftbound_deck_versions where name = 'kept') then
         raise exception 'forget_user() leaves the versions of the user''s decks';

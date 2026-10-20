@@ -77,6 +77,14 @@ export default function AboutPage() {
             decks and your collection when the page is shown, on your profile&apos;s Wishlist tab,
             for whoever may see your profile.
           </li>
+          <li>
+            Riftbound trades: once you mark cards for trade, members of your servers whose wishlist
+            has them see your name, how many you have for trade and where you could meet (an event
+            you are both going to, a store you are both regulars at, or a store in a city you play
+            in, never an address) on the server&apos;s Trades page, unless your profile is private. The
+            bot DMs them once per match, if they accept DMs, and keeps which matches it told them
+            about. No prices or payments go through the bot.
+          </li>
           <li>Joins and leaves.</li>
         </ul>
         <p>
@@ -121,7 +129,7 @@ export default function AboutPage() {
           To have your data deleted instead, type <Cmd>/forget-me</Cmd> in any server and
           confirm. It deletes everything the bot stored about you, in every server: your
           message, reaction and voice counts, your game time, your name and avatar, your server memberships, your
-          linked League account with its ranks and games, your Riftbound collection, decks, wishlist and loans (they go for the other member too), your profile and lending settings and your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
+          linked League account with its ranks and games, your Riftbound collection, decks, wishlist, trade matches and loans (they go for the other member too), your profile and lending settings and your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
           their counts, without anything that points to you. The bot then stops counting you,
           keeping only a scrambled (hashed) copy of your Discord id to recognise you by. Until
           you type <Cmd>/show-me</Cmd>, which starts counting you again, you also cannot open
