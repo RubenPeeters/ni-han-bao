@@ -43,11 +43,12 @@ export function GuildIcon({ guild, className }: { guild: Guild; className: strin
   );
 }
 
-// The brand links home, so the site-wide pages left are the server picker, the cards and the docs.
+// The brand links home, so the site-wide pages left are the server picker, the cards, the decks and the docs.
 // Server pages have their own row of tabs, so only the picker itself marks Servers; a card page marks Cards.
 const MAIN = [
   { href: "/s", label: "Servers", nested: false },
   { href: "/cards", label: "Cards", nested: true },
+  { href: "/decks", label: "Decks", nested: true },
   { href: "/docs", label: "Docs", nested: true },
 ];
 

@@ -35,12 +35,14 @@ const lastMonth = () => {
   d.setUTCMonth(d.getUTCMonth() - 1);
   return d.toISOString().slice(0, 7);
 };
-// `cardId` is a placeholder card from bot/riftbound-catalogue.json, which the seed loads.
+// `cardId` is a placeholder card from bot/riftbound-catalogue.json, which the seed loads;
+// `deckId` the demo member's public deck.
 export const DEMO = {
   guildId: "900000000000000001",
   userId: "900000000000000101",
   month: lastMonth(),
   cardId: "placeholder-legend-ahri",
+  deckId: "00000000-0000-4000-8000-0000000d0001",
 };
 
 // The docs' images by name, as /docs/shots/<name>.png. Remove one only once no docs page uses it.
