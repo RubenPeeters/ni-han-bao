@@ -1,7 +1,7 @@
 "use client";
 
+import { cardImageUrl } from "@/bot/src/card-match";
 import { addToDeck, type MyDeck } from "@/components/add-to-deck";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/stat-ui";
@@ -35,7 +35,6 @@ export interface LibraryCard {
   domains: string[];
   energy: number | null;
   tags: string[];
-  placeholder: boolean;
   sets: string[];
   codes: string[];
   /** Collector order; the steppers change the first, or the one a typed code finds. */
@@ -255,12 +254,6 @@ export function CardGrid({ cards, mine }: { cards: LibraryCard[]; mine: MyCollec
                     <span className="truncate text-xs text-muted-foreground">
                       {[c.type, c.energy !== null && `${c.energy} energy`, ...c.domains].filter(Boolean).join(" · ")}
                     </span>
-                    {/* Made up until Riot approves the API key: nobody may mistake it for a real card. */}
-                    {c.placeholder && (
-                      <Badge variant="secondary" className="w-fit">
-                        Placeholder card
-                      </Badge>
-                    )}
                     {owned > 0 && <span className="text-xs font-medium">{owned.toLocaleString("en-US")} owned</span>}
                   </span>
                 </Link>
@@ -302,18 +295,20 @@ export function CardGrid({ cards, mine }: { cards: LibraryCard[]; mine: MyCollec
 
 export function CardImage({ url, eager }: { url: string | null; eager?: boolean }) {
   return url ? (
-    // Data Dragon art is referenced, never rehosted (Riot's terms), and next/image would copy it.
+    // Riot's card art is referenced, never rehosted (Riot's terms), and next/image would copy it.
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={url}
+      src={cardImageUrl(url, 320)}
+      srcSet={`${cardImageUrl(url, 320)} 1x, ${cardImageUrl(url, 640)} 2x`}
       alt=""
-      width={308}
-      height={560}
+      width={744}
+      height={1039}
       loading={eager ? "eager" : "lazy"}
-      className="aspect-[308/560] w-full rounded-lg bg-muted object-cover"
+      // Battlefields are printed sideways: whole, not cropped.
+      className="aspect-[744/1039] w-full rounded-lg bg-muted object-contain"
     />
   ) : (
-    <div aria-hidden className="aspect-[308/560] w-full rounded-lg bg-muted" />
+    <div aria-hidden className="aspect-[744/1039] w-full rounded-lg bg-muted" />
   );
 }
 

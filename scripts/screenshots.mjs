@@ -35,13 +35,13 @@ const lastMonth = () => {
   d.setUTCMonth(d.getUTCMonth() - 1);
   return d.toISOString().slice(0, 7);
 };
-// `cardId` is a placeholder card from bot/riftbound-catalogue.json, which the seed loads;
+// `cardId` is Ahri's Legend from bot/riftbound-cards.json, which the seed loads;
 // `deckId` the demo member's public deck, `version` its version with changes to list.
 export const DEMO = {
   guildId: "900000000000000001",
   userId: "900000000000000101",
   month: lastMonth(),
-  cardId: "placeholder-legend-ahri",
+  cardId: "nine-tailed-fox",
   deckId: "00000000-0000-4000-8000-0000000d0001",
   version: 2,
 };
@@ -91,7 +91,7 @@ function fill(seg) {
   return DEMO[m[1]];
 }
 
-// Slugs name the page, not the demo ids: "s-ranked", "u", "s-member", "cards-placeholder-legend-ahri".
+// Slugs name the page, not the demo ids: "s-ranked", "u", "s-member", "cards-nine-tailed-fox".
 // The card id stays: without it the card page would be named "cards", like the library.
 const DEMO_IDS = new Set([DEMO.guildId, DEMO.userId, DEMO.month]);
 export const slug = (route) => (route === "/" ? "home" : route.slice(1).split("/").filter((s) => !DEMO_IDS.has(s)).join("-"));

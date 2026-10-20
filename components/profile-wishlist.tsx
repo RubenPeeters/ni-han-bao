@@ -11,8 +11,8 @@ import { WISHLIST_MODES, wishlist, type WishRow } from "@/lib/wishlist";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-// shortcut: PostgREST caps a response at 1000 rows, as on the Cards page; page it when the real API (#96) lands.
-const MAX_CARDS = 1000;
+// The columns of a Printing: not the printing's own text, which the editors do not show.
+const PRINTING = "id, card_id, set_code, collector_code, collector_number, rarity, illustrator, image_url";
 
 /**
  * A profile's Wishlist tab: what its owner still wants, worked out from their decks, their own
@@ -23,8 +23,8 @@ export async function ProfileWishlist({ user }: { user: string }) {
   const [profile, rows, cards, printings] = await Promise.all([
     supabase.rpc("profile", { u: user }).maybeSingle<Profile>(),
     allPages<WishRow, { message: string }>((from, to) => supabase.rpc("profile_wishlist", { u: user }).range(from, to)),
-    supabase.from("riftbound_cards").select("*").order("name").limit(MAX_CARDS),
-    supabase.from("riftbound_printings").select("*").order("collector_number").order("collector_code").limit(MAX_CARDS),
+    allPages((from, to) => supabase.from("riftbound_cards").select("*").order("name").order("id").range(from, to)),
+    allPages((from, to) => supabase.from("riftbound_printings").select(PRINTING).order("collector_number").order("id").range(from, to)),
   ]);
   if (profile.error || rows.error || cards.error || printings.error) {
     return <ErrorState title="Could not load this wishlist">Try again in a minute.</ErrorState>;

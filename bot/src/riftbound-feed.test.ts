@@ -134,4 +134,10 @@ describe("bot/riftbound-cards.json", () => {
     expect(cardsJson({ ...JSON.parse(committed), untyped: [], textDifferences: [] })).toBe(committed);
     expect(createHash("sha256").update(committed).digest("hex")).toBe(m.sha256);
   });
+
+  it("is the catalogue supabase/seed.sql loads into the dev database", () => {
+    const committed = readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8");
+    const seed = readFileSync(new URL("../../supabase/seed.sql", import.meta.url), "utf8");
+    expect(seed).toContain(`select private.load_riftbound_catalogue($catalogue$\n${committed}$catalogue$::jsonb);\n`);
+  });
 });

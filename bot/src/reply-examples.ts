@@ -2,12 +2,13 @@
 // demo data, so the docs show what the bot says today. Only the demo data is written here:
 // the demo server's people and stores (supabase/seed.sql), so the drawings match the screenshots.
 import type { APIEmbed } from "discord.js";
+import { readFileSync } from "node:fs";
 import { goingMessage } from "./events.js";
 import { FORGET_PROMPT } from "./forget.js";
 import { challengeText } from "./lol.js";
 import { recapMessage } from "./recap.js";
 import { reportEmbed } from "./report.js";
-import { cardEmbed, placeholderCatalogue } from "./riftbound.js";
+import { cardEmbed, type Catalogue } from "./riftbound.js";
 import { settingsText } from "./setup.js";
 import { leaderboardEmbed } from "./stats.js";
 import { welcomeText } from "./welcome.js";
@@ -31,8 +32,9 @@ const reply = (command: string | null, message: ReplyExample["message"], more: P
   ({ command, ephemeral: false, channels: {}, message, ...more });
 
 export function replyExamples(): Record<string, ReplyExample> {
-  const catalogue = placeholderCatalogue([{ id: "Ahri", key: "103", name: "Ahri" }]);
-  const card = catalogue.cards.find((c) => c.id === "placeholder-legend-ahri")!;
+  // Riot's Ahri Legend, the tutorial's deck (#206).
+  const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue;
+  const card = catalogue.cards.find((c) => c.id === "nine-tailed-fox")!;
   const { files: _image, ...recap } = recapMessage("2026-09-01", Buffer.alloc(0), `${SITE}/recap`);
   const going = goingMessage(1, { game: "Riftbound", name: "The Card Corner", city: "Leuven" }, SATURDAY, ZONE, null);
   const rows = [

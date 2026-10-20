@@ -3,7 +3,6 @@
 import { codeKey, normal, resolveCard, type Card, type Catalogue } from "@/bot/src/card-match";
 import { missingCards, type OwnedCopy } from "@/bot/src/deck-match";
 import { EmptyState, StatCard } from "@/components/stat-ui";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -100,7 +99,7 @@ export function DeckEditor({
   const legends = useMemo(() => catalogue.cards.filter((c) => c.type === "Legend").toSorted((a, b) => legendLabel(a).localeCompare(legendLabel(b))), [catalogue]);
   const legend = settings.legend_id ? cards.get(settings.legend_id) : undefined;
   const champions = catalogue.cards.filter((c) => c.supertypes.includes("Champion") && (!legend || championOf(legend, c)));
-  const { warnings, placeholder } = deckWarnings(settings, list, cards);
+  const warnings = deckWarnings(settings, list, cards);
   const missing = missingCards(settings, list, owned);
   const codes = useMemo(() => new Map(catalogue.printings.map((p) => [p.id, p.collector_code])), [catalogue]);
 
@@ -219,7 +218,7 @@ export function DeckEditor({
       {children}
 
       <StatCard
-        title={placeholder ? "Rules check on placeholder data" : "Rules check"}
+        title="Rules check"
         description="Warnings only: a deck is saved whatever they say"
       >
         {warnings.length === 0 ? (
@@ -547,11 +546,6 @@ function EntryRow({
             {[card?.type, ...(card?.domains ?? []), pinned ? `Only ${pinned.collector_code}` : null].filter(Boolean).join(" · ")}
           </span>
         </Link>
-        {card?.placeholder && (
-          <Badge variant="secondary" className="hidden shrink-0 sm:inline-flex">
-            Placeholder card
-          </Badge>
-        )}
         {mine ? (
           <span className="flex shrink-0 items-center gap-1">
             <Button variant="secondary" size="icon" className="size-11" aria-label={`One fewer: ${name}`} onClick={() => onChange((l) => changeEntry(l, entry, -1))}>

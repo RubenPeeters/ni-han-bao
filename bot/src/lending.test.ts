@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   answerId,
@@ -19,15 +20,15 @@ import {
   type CopyRow,
   type Wanted,
 } from "./lending.js";
-import { choiceLabel, placeholderCatalogue } from "./riftbound.js";
+import { choiceLabel, type Catalogue } from "./riftbound.js";
 
-const catalogue = placeholderCatalogue([{ id: "Ahri", key: "103", name: "Ahri" }]);
-const unit = catalogue.cards.find((c) => c.id === "placeholder-unit-ahri")!;
-const legend = catalogue.cards.find((c) => c.id === "placeholder-legend-ahri")!;
+const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue;
+const unit = catalogue.cards.find((c) => c.id === "ahri-alluring")!;
+const legend = catalogue.cards.find((c) => c.id === "nine-tailed-fox")!;
 
 describe("parseCards", () => {
   it("reads counts before or after a name, and adds up a card named twice", () => {
-    const parsed = parseCards(catalogue, `2 ${unit.name}; PLH-L103 x2;1x plh-l103`) as Wanted[];
+    const parsed = parseCards(catalogue, `2 ${unit.name}; OGN-255 x2;1x ogn-255/298`) as Wanted[];
     expect(parsed.map((w) => [w.card.id, w.count])).toEqual([
       [unit.id, 2],
       [legend.id, 3],
@@ -41,14 +42,14 @@ describe("parseCards", () => {
   it("says which card it does not know, and rejects an empty list or a count of 0", () => {
     expect(parseCards(catalogue, `${choiceLabel(unit)}; nope`)).toContain('"nope"');
     expect(parseCards(catalogue, " ; ")).toBe("Name at least one card.");
-    expect(parseCards(catalogue, "0 PLH-L103")).toContain("at least 1");
+    expect(parseCards(catalogue, "0 OGN-255")).toContain("at least 1");
   });
 });
 
 describe("lendChoices", () => {
   it("completes the last card and keeps the ones before it with their counts", () => {
-    const choices = lendChoices(catalogue, "2 PLH-L103; 3 ahri, ");
-    expect(choices.map((c) => c.value)).toContain(`2 PLH-L103; 3 ${choiceLabel(unit)}`);
+    const choices = lendChoices(catalogue, "2 OGN-255; 3 ahri, a");
+    expect(choices.map((c) => c.value)).toContain(`2 OGN-255; 3 ${choiceLabel(unit)}`);
     expect(choices.every((c) => c.name === c.value)).toBe(true);
     // Every suggestion parses back to the cards it shows.
     expect(parseCards(catalogue, choices[0].value)).toHaveLength(2);
@@ -72,7 +73,7 @@ describe("parseDue", () => {
 describe("pickCopies", () => {
   const row = (over: Partial<CopyRow>): CopyRow => ({
     card_id: unit.id,
-    printing_id: "PLH-U103",
+    printing_id: "ogn-066-298",
     finish: "normal",
     condition: "NM",
     language: "en",
@@ -87,8 +88,8 @@ describe("pickCopies", () => {
     const rows = [row({ finish: "foil", quantity: 3, lendable: 0 }), row({ quantity: 2, lendable: 2, lent: 1 })];
     expect(pickCopies(rows, [{ card: unit, count: 3 }])).toEqual({
       cards: [
-        { printing_id: "PLH-U103", finish: "foil", condition: "NM", language: "en", quantity: 2 },
-        { printing_id: "PLH-U103", finish: "normal", condition: "NM", language: "en", quantity: 1 },
+        { printing_id: "ogn-066-298", finish: "foil", condition: "NM", language: "en", quantity: 2 },
+        { printing_id: "ogn-066-298", finish: "normal", condition: "NM", language: "en", quantity: 1 },
       ],
       unmarked: 2,
     });
@@ -157,7 +158,7 @@ describe("lending a deck", () => {
 
 describe("replies", () => {
   it("names the cards of a loan from the catalogue", () => {
-    expect(loanCardList(catalogue, [{ printing_id: "PLH-L103", quantity: 2 }])).toBe(`2 × ${legend.name}`);
+    expect(loanCardList(catalogue, [{ printing_id: "ogn-255-298", quantity: 2 }])).toBe(`2 × ${legend.name}`);
   });
 
   it("warns the lender about copies not marked to lend, and names a corrected loan", () => {

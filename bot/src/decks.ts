@@ -80,7 +80,6 @@ export function deckEmbed(deck: SharedDeck, entries: DeckEntry[], catalogue: Pic
     const total = [...counts.values()].reduce((a, b) => a + b, 0);
     return [{ name: `${label} (${total})`, value: value() }];
   });
-  const placeholder = [legend, ...entries.map((e) => cards.get(e.card_id))].some((c) => c?.placeholder);
   return {
     title: deck.name.slice(0, 256),
     url: siteUrl ? `${siteUrl.replace(/\/$/, "")}/decks/${deck.id}` : undefined,
@@ -90,9 +89,7 @@ export function deckEmbed(deck: SharedDeck, entries: DeckEntry[], catalogue: Pic
     ].join("\n"),
     fields,
     footer: {
-      text: [missing ? `${sharer} is missing ${missing} ${missing === 1 ? "card" : "cards"}` : `${sharer} owns every card`, placeholder && "Placeholder cards"]
-        .filter(Boolean)
-        .join(" · "),
+      text: missing ? `${sharer} is missing ${missing} ${missing === 1 ? "card" : "cards"}` : `${sharer} owns every card`,
     },
   };
 }
