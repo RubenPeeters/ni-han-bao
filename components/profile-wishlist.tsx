@@ -1,6 +1,6 @@
 import { setWishlistMode } from "@/app/u/[userId]/actions";
 import type { Card, Printing } from "@/bot/src/card-match";
-import { ProfileHeader, type Profile } from "@/components/profile-stats";
+import { ProfileHeader, SettingsLink, type Profile } from "@/components/profile-stats";
 import { EmptyState, ErrorState, StatCard } from "@/components/stat-ui";
 import { Button } from "@/components/ui/button";
 import { WishlistEditor } from "@/components/wishlist-editor";
@@ -32,8 +32,6 @@ export async function ProfileWishlist({ user }: { user: string }) {
   // Private, hidden, forgotten or unknown: the same 404 as the other tabs.
   if (!profile.data) notFound();
   const { mine } = profile.data;
-  const asked = mine ? await supabase.from("profiles").select("wishlist_mode").eq("user_id", user).maybeSingle() : null;
-  if (asked?.error) return <ErrorState title="Could not load this wishlist">Try again in a minute.</ErrorState>;
   const names = new Map((cards.data as Card[]).map((c) => [c.id, c.name]));
   const codes = new Map((printings.data as Printing[]).map((p) => [p.id, p.collector_code]));
   const wanted = wishlist(rows.data)
@@ -47,7 +45,7 @@ export async function ProfileWishlist({ user }: { user: string }) {
         profile={profile.data}
         subtitle={mine ? "The Riftbound cards you still want." : "The Riftbound cards they still want."}
       />
-      {mine && !asked?.data?.wishlist_mode && <WishlistModeQuestion />}
+      {mine && <SettingsLink href="/settings#riftbound">How your new decks count on your wishlist is a setting.</SettingsLink>}
       <StatCard title="Wanted" description={`${total.toLocaleString("en-US")} ${total === 1 ? "card" : "cards"} still to get`}>
         {wanted.length === 0 ? (
           <EmptyState>
@@ -100,7 +98,7 @@ export async function ProfileWishlist({ user }: { user: string }) {
   );
 }
 
-/** Asked once, on the Decks and Wishlist pages: how new decks count on the wishlist. */
+/** Asked once, on the Decks page: how new decks count on the wishlist. Changed later on /settings. */
 export function WishlistModeQuestion() {
   return (
     <form action={setWishlistMode} className="card flex flex-col gap-4">
