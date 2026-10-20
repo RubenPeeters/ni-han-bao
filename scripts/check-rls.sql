@@ -100,7 +100,7 @@ begin
     insert into public.riftbound_deck_cards (deck_id, section, card_id, quantity)
     select id, 'main', 'rls-card', 1 from public.riftbound_decks where user_id like 'rls-%';
     perform public.snapshot_riftbound_deck(id) from public.riftbound_decks where user_id like 'rls-%';
-    -- Wishlists (#177): rls-rls-mine's two shared decks need one rls-card between them.
+    -- Wishlists (#177): rls-rls-mine's two shared decks need one rls-card each.
     update public.riftbound_decks set wishlist_mode = 'shared' where user_id = 'rls-rls-mine';
     insert into public.riftbound_wishlist (user_id, card_id, quantity)
     values ('rls-rls-mine', 'rls-card-2', 2), ('rls-rls-other', 'rls-card-2', 1), ('rls-hidden', 'rls-card-2', 1);
@@ -371,12 +371,13 @@ begin
     if (select array_agg(d.name) from public.riftbound_deck_opens o join public.riftbound_decks d on d.id = o.deck_id) <> array['public'] then
         raise exception 'open_riftbound_deck() remembers a deck that is not someone else''s public one';
     end if;
-    -- Wishlists (#177): your own entries directly, others' as their profile, per card and never per deck.
+    -- Wishlists (#177): your own entries directly, others' as their profile, a shared deck numbered per card only.
     if exists (select from public.riftbound_wishlist) then raise exception 'a member reads someone else''s wishlist entries'; end if;
-    if (select string_agg(card_id || ':' || decks || ':' || coalesce(manual::text, '-') || ':' || jsonb_array_length(copies), ','
-            order by card_id) from public.profile_wishlist('rls-rls-mine')) <> 'rls-card:1:-:1,rls-card-2:0:2:0'
+    if (select string_agg(card_id || ':' || coalesce(deck::text, '-') || ':' || decks || ':' || coalesce(manual::text, '-')
+            || ':' || jsonb_array_length(copies), ',' order by card_id, deck)
+            from public.profile_wishlist('rls-rls-mine')) <> 'rls-card:1:1:-:1,rls-card:2:1:-:1,rls-card-2:-:0:2:0'
         or exists (select from public.profile_wishlist('rls-rls-other')) or exists (select from public.profile_wishlist('rls-hidden')) then
-        raise exception 'profile_wishlist() does not follow the profile, or does not take the largest shared need';
+        raise exception 'profile_wishlist() does not follow the profile, or does not keep shared decks apart';
     end if;
     perform public.set_riftbound_wish('rls-card', 'rls-printing', 3);
     perform public.set_riftbound_wish('rls-card', 'rls-printing', 5);

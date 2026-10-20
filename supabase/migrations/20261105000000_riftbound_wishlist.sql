@@ -88,11 +88,12 @@ revoke execute on function public.set_wishlist_mode(text) from public, anon;
 grant execute on function public.set_wishlist_mode(text) to authenticated;
 
 -- The profile's Wishlist tab, for whoever may see the profile (can_see_profile()): per card,
--- printing pin and language (null: any) how many the decks need (the sum of dedicated decks
--- plus the largest shared one) and the hand-set target, with u's copies of the card. What is
--- still wanted is wishlist() in lib/wishlist.ts. Per key, not per deck: no deck shows through.
+-- printing pin and language (null: any) how many the decks need and the hand-set target, with
+-- u's copies of the card. Dedicated decks add up into one row (deck null); each shared deck keeps
+-- its own row, since its copies may move to another shared deck: deck numbers it per card only,
+-- so no deck is followed across cards. What is still wanted is wishlist() in lib/wishlist.ts.
 create or replace function public.profile_wishlist(u text)
-returns table (card_id text, printing_id text, language text, decks integer, manual integer, copies jsonb)
+returns table (card_id text, printing_id text, language text, deck integer, decks integer, manual integer, copies jsonb)
 language sql
 stable
 security definer
@@ -111,17 +112,19 @@ as $$
         group by d.id, d.wishlist_mode, x.card_id, x.printing_id, 5
     ),
     wants as (
-        -- shortcut: the largest shared need is taken per pin and language, so shared decks wanting a card under different pins add up; per card once someone pins across shared decks.
-        select w.card_id, w.printing_id, w.language,
-            (coalesce(sum(w.q) filter (where w.wishlist_mode = 'dedicated'), 0)
-                + coalesce(max(w.q) filter (where w.wishlist_mode = 'shared'), 0))::integer as decks,
-            null::integer as manual
+        select w.card_id, w.printing_id, w.language, null::integer as deck, sum(w.q)::integer as decks, null::integer as manual
         from per_deck w
+        where w.wishlist_mode = 'dedicated'
         group by w.card_id, w.printing_id, w.language
         union all
-        select w.card_id, w.printing_id, null, 0, w.quantity from public.riftbound_wishlist w where w.user_id = u
+        select w.card_id, w.printing_id, w.language, dense_rank() over (partition by w.card_id order by w.id)::integer,
+            w.q::integer, null
+        from per_deck w
+        where w.wishlist_mode = 'shared'
+        union all
+        select w.card_id, w.printing_id, null, null, 0, w.quantity from public.riftbound_wishlist w where w.user_id = u
     )
-    select w.card_id, w.printing_id, w.language, max(w.decks)::integer, max(w.manual)::integer,
+    select w.card_id, w.printing_id, w.language, w.deck, max(w.decks)::integer, max(w.manual)::integer,
         coalesce((
             select jsonb_agg(jsonb_build_object('printing_id', o.printing_id, 'language', o.language, 'quantity', o.quantity))
             from (
@@ -134,8 +137,8 @@ as $$
         ), '[]')
     from wants w
     where public.can_see_profile(u)
-    group by w.card_id, w.printing_id, w.language
-    order by w.card_id, w.printing_id nulls last, w.language nulls last;
+    group by w.card_id, w.printing_id, w.language, w.deck
+    order by w.card_id, w.deck nulls first, w.printing_id nulls last, w.language nulls last;
 $$;
 
 revoke execute on function public.profile_wishlist(text) from public;
