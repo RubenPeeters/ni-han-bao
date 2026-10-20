@@ -1,14 +1,26 @@
-/** A server's tabs, in header order. */
-export const SERVER_PAGES = [
-  { page: "leaderboard", label: "Leaderboard" },
-  { page: "channels", label: "Channels" },
-  { page: "emoji", label: "Emoji" },
-  { page: "timeline", label: "Timeline" },
-  { page: "stores", label: "Where we play" },
-  { page: "games", label: "What we play" },
-  { page: "trades", label: "Trades" },
-  { page: "ranked", label: "Ranked" },
+/** A server's tabs, grouped, in header order. A group with one page is a plain tab. */
+export const SERVER_GROUPS = [
+  {
+    label: "Stats",
+    pages: [
+      { page: "leaderboard", label: "Leaderboard" },
+      { page: "channels", label: "Channels" },
+      { page: "emoji", label: "Emoji" },
+      { page: "timeline", label: "Timeline" },
+      { page: "games", label: "What we play" },
+    ],
+  },
+  {
+    label: "Local play",
+    pages: [
+      { page: "stores", label: "Where we play" },
+      { page: "trades", label: "Trades" },
+    ],
+  },
+  { label: "League", pages: [{ page: "ranked", label: "Ranked" }] },
 ];
+
+export const SERVER_PAGES = SERVER_GROUPS.flatMap((g) => g.pages);
 
 /** Where the server switcher goes: the same tab on the other server, else its leaderboard. */
 export function switchPath(pathname: string, guildId: string) {

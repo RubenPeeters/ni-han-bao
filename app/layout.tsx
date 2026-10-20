@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { AuthButton } from "@/components/auth-button";
 import { BotStatusDot } from "@/components/bot-status";
-import { MainNav, SiteNav } from "@/components/site-nav";
+import { MainNav, RiftboundNav, SiteNav } from "@/components/site-nav";
 import { hasEnvVars, RIOT_DISCLAIMER } from "@/lib/utils";
 import "./globals.css";
 
@@ -59,24 +59,26 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-10 px-5 py-6">
-            {/* On a phone the tabs get their own row: with Docs they no longer fit beside Log in. */}
-            <header className="flex flex-wrap items-center gap-2 border-b pb-4">
+            <header className="flex items-center gap-1 border-b pb-4 sm:gap-2">
               <Link
                 href="/"
                 className="whitespace-nowrap rounded-md text-lg font-semibold font-heading transition-colors hover:text-gold active:text-gold/80"
               >
                 ni han bao
               </Link>
-              <div className="order-last -ml-3 w-full sm:order-none sm:ml-0 sm:w-auto">
-                <Suspense fallback={<MainNav pathname={null} />}>
-                  <SiteNav />
-                </Suspense>
-              </div>
+              <Suspense fallback={<MainNav pathname={null} me={null} />}>
+                <SiteNav />
+              </Suspense>
               <div className="ml-auto flex items-center">
                 <AuthButton />
               </div>
             </header>
-            <main className="flex flex-1 flex-col gap-8">{children}</main>
+            <main className="flex flex-1 flex-col gap-8">
+              <Suspense>
+                <RiftboundNav />
+              </Suspense>
+              {children}
+            </main>
             <footer className="flex flex-wrap items-center justify-between gap-2 border-t pt-4 text-xs text-muted-foreground">
               <span className="flex gap-3">
                 <span>made by forge</span>
