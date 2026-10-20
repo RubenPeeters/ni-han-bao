@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
-import { wishlist } from "./wishlist.ts";
+import { test } from "vitest";
+import { wishlist, type WishRow } from "./wishlist.js";
 
-const row = (r) => ({ card_id: "x", printing_id: null, language: null, deck: null, decks: 0, manual: null, copies: [], ...r });
-const copy = (printing_id, quantity, language = "en") => ({ printing_id, language, quantity });
-const wanted = (rows) => wishlist(rows).map((r) => r.wanted);
+const row = (r: Partial<WishRow>): WishRow => ({ card_id: "x", printing_id: null, language: null, deck: null, decks: 0, manual: null, copies: [], ...r });
+const copy = (printing_id: string, quantity: number, language = "en") => ({ printing_id, language, quantity });
+const wanted = (rows: WishRow[]) => wishlist(rows).map((r) => r.wanted);
 
 test("what the decks need, minus what is owned", () => {
   assert.deepEqual(wanted([row({ decks: 5, copies: [copy("P1", 2)] })]), [3]);

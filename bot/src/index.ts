@@ -116,7 +116,9 @@ import { CARD_COMMAND, cardChoices, cardEmbed, cardMiss, lookupCard, type Catalo
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility } from "./visibility.js";
 import { COMMANDS } from "./commands.js";
+import { newMatches, tradeDm, type Candidate } from "./trades.js";
 import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
+import { wishlist, type WishRow } from "./wishlist.js";
 import { dayStart, fromWallClock, localDay, weekStart } from "./zone.js";
 
 const HEARTBEAT_MS = 60_000;
@@ -129,6 +131,7 @@ const REPORT_CHECK_MS = 60_000;
 const RANKS_MS = 3 * 60 * 60_000;
 const MATCHES_MS = 6 * 60 * 60_000;
 const NUDGE_MS = 60 * 60_000;
+const TRADES_MS = 60 * 60_000;
 
 const config = loadConfig();
 const log = createLogger();
@@ -925,6 +928,46 @@ async function nudgeDueLoans(): Promise<void> {
     }
   } catch (err) {
     log("error", "loan_nudges_failed", { error: err });
+  }
+}
+
+/** One DM per member for the trade matches found since their last, if they accept DMs from the bot. */
+async function notifyTradeMatches(): Promise<void> {
+  try {
+    const candidates = await readAll(async (from, to) => {
+      const { data, error } = await db.rpc("riftbound_trade_candidates").range(from, to);
+      if (error) throw new Error(`riftbound_trade_candidates: ${error.message}`);
+      return data as Candidate[];
+    });
+    const rows = new Map<string, WishRow[]>();
+    for (const user of new Set(candidates.map((c) => c.user_id))) {
+      const wishes = await readAll(async (from, to) => {
+        const { data, error } = await db.rpc("riftbound_wish_rows", { u: user }).range(from, to);
+        if (error) throw new Error(`riftbound_wish_rows: ${error.message}`);
+        return data as WishRow[];
+      });
+      rows.set(user, wishes);
+    }
+    const cardName = (id: string) => catalogue.cards.find((c) => c.id === id)?.name ?? id;
+    for (const [user, matches] of newMatches(candidates, (u) => wishlist(rows.get(u) ?? []))) {
+      // Recorded before the DM, and only what this run recorded is sent (a forgotten user's
+      // rows are dropped): a closed DM or a failure is not retried, so each match is one DM.
+      const { data, error } = await db
+        .from("riftbound_trade_matches")
+        .upsert(
+          matches.map((m) => ({ user_id: user, trader_id: m.trader_id, card_id: m.card_id })),
+          { onConflict: "user_id,trader_id,card_id", ignoreDuplicates: true },
+        )
+        .select("trader_id, card_id");
+      if (error) throw new Error(`riftbound_trade_matches upsert: ${error.message}`);
+      const fresh = matches.filter((m) => data.some((d) => d.trader_id === m.trader_id && d.card_id === m.card_id));
+      if (fresh.length === 0) continue;
+      await client.users
+        .send(user, { content: tradeDm(fresh, cardName, (g) => settingsFor(g).timezone, config.siteUrl), allowedMentions: { parse: [] } })
+        .catch((err: unknown) => log("info", "trade_dm_not_sent", { user, error: err }));
+    }
+  } catch (err) {
+    log("error", "trade_matches_failed", { error: err });
   }
 }
 
@@ -2173,6 +2216,7 @@ client.once(Events.ClientReady, async (c) => {
   setInterval(() => void refreshRanks(), RANKS_MS);
   setInterval(() => void refreshAllMatches(), MATCHES_MS);
   setInterval(() => void nudgeDueLoans(), NUDGE_MS);
+  setInterval(() => void notifyTradeMatches(), TRADES_MS);
   // An overdue report waits for the games played while the bot was down.
   void refreshAllMatches().finally(() => {
     weeklyReports();

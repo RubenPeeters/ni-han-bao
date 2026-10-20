@@ -58,6 +58,7 @@ begin
     delete from public.riftbound_collection where user_id = any (users);
     delete from public.riftbound_decks where user_id = any (users);
     delete from public.riftbound_wishlist where user_id = any (users);
+    delete from public.riftbound_trade_matches where user_id = any (users) or trader_id = any (users);
     delete from public.profiles where user_id = any (users);
     delete from public.guild_members where guild_id = g;
     delete from public.members where guild_id = g;
@@ -258,6 +259,12 @@ begin
     where user_id = users[1];
     insert into public.riftbound_wishlist (user_id, card_id, printing_id, quantity)
     values (users[1], 'placeholder-legend-annie', null, 2), (users[1], 'placeholder-unit-ahri', 'PLH-U103', 3);
+    -- Trades (#178): Bram and Chloé have copies of cards on Anna's wishlist for trade, for her
+    -- Trades page. Daan does too, but his profile is private, so he does not show.
+    insert into public.riftbound_collection as c (user_id, printing_id, finish, condition, language, quantity, for_trade)
+    values (users[2], 'PLH-U103', 'normal', 'NM', 'en', 2, 2), (users[3], 'PLH-L001', 'normal', 'NM', 'en', 1, 1),
+           (users[3], 'PLH-U103', 'foil', 'LP', 'en', 1, 1), (users[4], 'PLH-L001', 'normal', 'NM', 'en', 1, 1)
+    on conflict (user_id, printing_id, finish, condition, language) do update set for_trade = c.quantity;
 
     -- Riftbound local play: stores, regulars and upcoming events.
     insert into public.stores (guild_id, name, city, url, added_by) values
