@@ -445,6 +445,26 @@
     ]
   },
   {
+    "name": "deck",
+    "description": "Your Riftbound decks",
+    "admin": false,
+    "usages": [
+      {
+        "name": "deck share",
+        "description": "Post one of your decks in this channel",
+        "options": [
+          {
+            "name": "deck",
+            "description": "Start typing its name",
+            "type": "string",
+            "required": true,
+            "choices": []
+          }
+        ]
+      }
+    ]
+  },
+  {
     "name": "lend",
     "description": "Record Riftbound cards you lend to a member",
     "admin": false,

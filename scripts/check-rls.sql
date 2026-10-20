@@ -1,8 +1,8 @@
 -- Proves per-server data is readable only by members of that server (#45): anon reads zero
 -- rows from every table with a guild_id, and a logged-in user reads rows of their own
 -- servers only; that profiles follow their visibility (#100); that the lending ledger holds
--- (#172); that decks follow their visibility (#173) and only public ones are remembered as
--- opened (#174); then that /forget-me deletes
+-- (#172); that decks follow their visibility (#173), only public ones are remembered as
+-- opened (#174) and read logged out (#175); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`. Run against a local Supabase or the dev project
 -- (never production); everything is rolled back:
@@ -99,6 +99,9 @@ begin
            ('rls-rls-other', 'servers-not-shared', 'servers'), ('rls-public', 'public', 'public');
     insert into public.riftbound_deck_cards (deck_id, section, card_id, quantity)
     select id, 'main', 'rls-card', 1 from public.riftbound_decks where user_id like 'rls-%';
+    -- Nor deck ids, for the public deck checks (#175) below.
+    perform set_config('rls.public_deck', (select id::text from public.riftbound_decks where name = 'public'), true);
+    perform set_config('rls.servers_deck', (select id::text from public.riftbound_decks where name = 'servers-shared'), true);
     -- anon cannot read keys itself, so hand it one for the recap checks below.
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
@@ -137,6 +140,15 @@ begin
         raise exception 'anon reads a deck, even a public one';
     end if;
     if exists (select from public.riftbound_deck_opens) then raise exception 'anon reads an opened deck'; end if;
+    -- Public deck pages (#175): a public deck by its id, without its owner; no other deck.
+    if public.public_deck(current_setting('rls.public_deck')::uuid) is null
+        or public.public_deck(current_setting('rls.public_deck')::uuid)->'deck' ? 'user_id'
+        or jsonb_array_length(public.public_deck(current_setting('rls.public_deck')::uuid)->'cards') <> 1 then
+        raise exception 'public_deck() does not return a public deck with its cards only, or names its owner';
+    end if;
+    if public.public_deck(current_setting('rls.servers_deck')::uuid) is not null then
+        raise exception 'public_deck() returns a deck that is not public';
+    end if;
     if exists (select from public.lol_ranks) or exists (select from public.profile_ranks('rls-rls-mine')) then
         raise exception 'anon reads a rank';
     end if;

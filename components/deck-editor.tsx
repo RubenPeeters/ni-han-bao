@@ -1,6 +1,7 @@
 "use client";
 
 import { codeKey, normal, resolveCard, type Card, type Catalogue } from "@/bot/src/card-match";
+import { missingCards, type OwnedCopy } from "@/bot/src/deck-match";
 import { EmptyState, StatCard } from "@/components/stat-ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,15 +13,14 @@ import {
   addCard,
   championOf,
   changeEntry,
+  deckText,
   deckWarnings,
-  missingCards,
   parseDeckList,
   replaceEntry,
   SECTIONS,
   VISIBILITIES,
   type DeckCards,
   type Entry,
-  type OwnedCopy,
   type PastedLine,
   type Section,
   withoutLine,
@@ -64,8 +64,8 @@ export function DeckEditor({
   deck: Deck;
   entries: Entry[];
   catalogue: Catalogue;
-  /** The visitor's copies, for Missing cards (of their own collection, whoever owns the deck). */
-  owned: OwnedCopy[];
+  /** The visitor's copies, for Missing cards (of their own collection, whoever owns the deck); null logged out. */
+  owned: OwnedCopy[] | null;
   mine: boolean;
 }) {
   const router = useRouter();
@@ -76,13 +76,14 @@ export function DeckEditor({
   const [query, setQuery] = useState("");
   const [pasted, setPasted] = useState("");
   const [problems, setProblems] = useState<Problem[]>([]);
+  const [copied, setCopied] = useState("");
   const cards = useMemo(() => new Map(catalogue.cards.map((c) => [c.id, c])), [catalogue]);
   const printings = useMemo(() => Map.groupBy(catalogue.printings, (p) => p.card_id), [catalogue]);
   const legends = useMemo(() => catalogue.cards.filter((c) => c.type === "Legend").toSorted((a, b) => legendLabel(a).localeCompare(legendLabel(b))), [catalogue]);
   const legend = settings.legend_id ? cards.get(settings.legend_id) : undefined;
   const champions = catalogue.cards.filter((c) => c.supertypes.includes("Champion") && (!legend || championOf(legend, c)));
   const { warnings, placeholder } = deckWarnings(settings, list, cards);
-  const missing = missingCards(settings, list, owned);
+  const missing = owned && missingCards(settings, list, owned);
   const codes = useMemo(() => new Map(catalogue.printings.map((p) => [p.id, p.collector_code])), [catalogue]);
 
   // Leaving with unsaved changes asks first.
@@ -156,6 +157,11 @@ export function DeckEditor({
     router.refresh();
   };
 
+  const copy = async () => {
+    const text = deckText(current, (id) => cards.get(id)?.name ?? id);
+    setCopied(await navigator.clipboard.writeText(text).then(() => "Copied", () => "Not copied: the browser blocked it"));
+  };
+
   const remove = async () => {
     if (!window.confirm(`Delete ${settings.name}? This cannot be undone.`)) return;
     const { error } = await createClient().rpc("delete_riftbound_deck", { p_deck: settings.id });
@@ -177,6 +183,14 @@ export function DeckEditor({
             .filter(Boolean)
             .join(" · ")}
         </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="secondary" className="h-11" onClick={copy}>
+            Copy as text
+          </Button>
+          <p aria-live="polite" className="text-xs text-muted-foreground">
+            {copied}
+          </p>
+        </div>
       </div>
 
       <StatCard
@@ -194,36 +208,38 @@ export function DeckEditor({
         )}
       </StatCard>
 
-      <StatCard
-        title="Missing cards"
-        description={`${missing.missing ? `${missing.missing} missing` : "Nothing missing"} against your collection${settings.allow_other_languages ? "" : `, ${languageName(settings.language)} copies only`}`}
-      >
-        {missing.rows.length === 0 ? (
-          <EmptyState>No cards yet.</EmptyState>
-        ) : (
-          <ul className="flex flex-col divide-y">
-            {missing.rows.map((r) => (
-              <li key={`${r.section}|${r.card_id}|${r.printing_id}`} className="flex items-center gap-3 py-2 text-sm first:pt-0 last:pb-0">
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate font-medium">{cards.get(r.card_id)?.name ?? r.card_id}</span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    {[
-                      r.section === "legend" ? "Legend" : SECTIONS.find((x) => x.value === r.section)?.label,
-                      r.printing_id && codes.get(r.printing_id),
-                      `you own ${r.owned} of ${r.quantity}`,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
+      {missing && (
+        <StatCard
+          title="Missing cards"
+          description={`${missing.missing ? `${missing.missing} missing` : "Nothing missing"} against your collection${settings.allow_other_languages ? "" : `, ${languageName(settings.language)} copies only`}`}
+        >
+          {missing.rows.length === 0 ? (
+            <EmptyState>No cards yet.</EmptyState>
+          ) : (
+            <ul className="flex flex-col divide-y">
+              {missing.rows.map((r) => (
+                <li key={`${r.section}|${r.card_id}|${r.printing_id}`} className="flex items-center gap-3 py-2 text-sm first:pt-0 last:pb-0">
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate font-medium">{cards.get(r.card_id)?.name ?? r.card_id}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {[
+                        r.section === "legend" ? "Legend" : SECTIONS.find((x) => x.value === r.section)?.label,
+                        r.printing_id && codes.get(r.printing_id),
+                        `you own ${r.owned} of ${r.quantity}`,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
                   </span>
-                </span>
-                <span className={`shrink-0 tabular-nums ${r.owned < r.quantity ? "font-medium" : "text-muted-foreground"}`}>
-                  {r.owned < r.quantity ? `${r.quantity - r.owned} missing` : "Complete"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </StatCard>
+                  <span className={`shrink-0 tabular-nums ${r.owned < r.quantity ? "font-medium" : "text-muted-foreground"}`}>
+                    {r.owned < r.quantity ? `${r.quantity - r.owned} missing` : "Complete"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </StatCard>
+      )}
 
       {mine && (
         <StatCard title="Add cards" description="Search by name, champion or collector code">

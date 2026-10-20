@@ -5,7 +5,8 @@ import { EmptyState, ErrorState, RankList, RankRow, StatCard } from "@/component
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Card, Printing } from "@/bot/src/card-match";
-import { allPages, missingCards, VISIBILITIES, type Entry, type OwnedCopy } from "@/lib/decks";
+import { missingCards, type OwnedCopy } from "@/bot/src/deck-match";
+import { allPages, VISIBILITIES, type Entry } from "@/lib/decks";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -146,13 +147,22 @@ export async function DeckList() {
   );
 }
 
+/** A logged-out visitor's deck page: a public deck read-only, without its owner; any other asks to log in. */
+async function PublicDeck({ id, supabase }: { id: string; supabase: Awaited<ReturnType<typeof createClient>> }) {
+  const { data, error } = await supabase.rpc("public_deck", { p_deck: id });
+  if (error) return <ErrorState title="Could not load this deck">Try again in a minute.</ErrorState>;
+  if (!data) return <LogInPrompt text="Log in to see this deck." />;
+  const { deck, entries, cards, printings } = data as { deck: Deck; entries: Entry[]; cards: Card[]; printings: Printing[] };
+  return <DeckEditor deck={deck} entries={entries} catalogue={{ cards, printings }} owned={null} mine={false} />;
+}
+
 /** One deck: the editor for its owner, read-only for anyone else RLS lets see it; a 404 for the rest. */
 export async function DeckDetail({ id }: { id: string }) {
   const supabase = await createClient();
-  const { data: claims } = await supabase.auth.getClaims();
-  if (!claims) return <LogInPrompt text="Log in to see this deck." />;
   // Not a uuid is no deck, rather than a database error.
   if (!UUID.test(id)) notFound();
+  const { data: claims } = await supabase.auth.getClaims();
+  if (!claims) return <PublicDeck id={id} supabase={supabase} />;
   const [deck, entries, cards, printings, me, owned] = await Promise.all([
     supabase
       .from("riftbound_decks")

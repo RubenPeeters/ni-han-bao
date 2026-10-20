@@ -92,6 +92,19 @@ import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type
 import { rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
 import { addToCollection, COLLECTION_COMMAND, setLending } from "./collection.js";
+import { missingCards, type DeckEntry, type OwnedCopy } from "./deck-match.js";
+import {
+  DECK_COMMAND,
+  deckChoices,
+  deckMessage,
+  missingDeckId,
+  missingText,
+  pickDeck,
+  privatePrompt,
+  SHARE_CANCEL_ID,
+  SHARE_PUBLIC_ID,
+  type SharedDeck,
+} from "./decks.js";
 import {
   answerId,
   answerReply,
@@ -910,6 +923,99 @@ async function returnCommand(interaction: ChatInputCommandInteraction<"cached">)
   if (reply.announce) await interaction.followUp({ content: reply.content, allowedMentions: { users: [other] } });
 }
 
+const SHARE_PROMPT_MS = 60_000;
+
+/** The caller's decks for /deck share, most recently changed first. */
+async function decksOf(userId: string): Promise<{ id: string; name: string }[]> {
+  const { data, error } = await db.from("riftbound_decks").select("id, name").eq("user_id", userId).order("updated_at", { ascending: false });
+  if (error) throw new Error(`riftbound_decks select: ${error.message}`);
+  return data;
+}
+
+async function deckWithCards(id: string): Promise<{ deck: SharedDeck & { user_id: string }; entries: DeckEntry[] } | null> {
+  const [deck, entries] = await Promise.all([
+    db.from("riftbound_decks").select("id, user_id, name, legend_id, champion_id, visibility, language, allow_other_languages").eq("id", id).maybeSingle(),
+    db.from("riftbound_deck_cards").select("section, card_id, printing_id, quantity").eq("deck_id", id),
+  ]);
+  if (deck.error) throw new Error(`riftbound_decks select: ${deck.error.message}`);
+  if (entries.error) throw new Error(`riftbound_deck_cards select: ${entries.error.message}`);
+  return deck.data ? { deck: deck.data, entries: entries.data } : null;
+}
+
+/** A member's copies, for missingCards(). */
+async function ownedCopies(userId: string): Promise<OwnedCopy[]> {
+  // shortcut: one response, so at most PostgREST's 1000 rows (printing, finish, condition, language); page it if collections get that big.
+  const { data, error } = await db
+    .from("riftbound_collection")
+    .select("printing_id, language, quantity, printing:riftbound_printings(card_id)")
+    .eq("user_id", userId);
+  if (error) throw new Error(`riftbound_collection select: ${error.message}`);
+  const rows = data as unknown as (Omit<OwnedCopy, "card_id"> & { printing: { card_id: string } })[];
+  return rows.map(({ printing, ...c }) => ({ ...c, card_id: printing.card_id }));
+}
+
+/** /deck share: one of the caller's decks for everyone in the channel; a private one is made visible first. */
+async function deckCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  try {
+    const typed = interaction.options.getString("deck", true);
+    const picked = pickDeck(await decksOf(interaction.user.id), typed);
+    const found = picked && (await deckWithCards(picked.id));
+    if (!found) {
+      const make = config.siteUrl ? ` Make one at ${config.siteUrl.replace(/\/$/, "")}/decks.` : "";
+      await interaction.editReply(`You have no deck called "${typed.slice(0, 100)}". Pick one from the suggestions.${make}`);
+      return;
+    }
+    const { deck, entries } = found;
+    if (deck.visibility === "private") {
+      const prompt = await interaction.editReply(privatePrompt(deck.name));
+      const click = await prompt
+        .awaitMessageComponent({ filter: (i) => i.user.id === interaction.user.id, time: SHARE_PROMPT_MS })
+        // Timed out: same as Cancel.
+        .catch(() => null);
+      if (click) await click.deferUpdate();
+      if (!click || click.customId === SHARE_CANCEL_ID) {
+        await interaction.editReply({ content: "Not shared: the deck stays private.", components: [] });
+        return;
+      }
+      deck.visibility = click.customId === SHARE_PUBLIC_ID ? "public" : "servers";
+      const { error } = await db
+        .from("riftbound_decks")
+        .update({ visibility: deck.visibility, updated_at: new Date().toISOString() })
+        .eq("id", deck.id)
+        .eq("user_id", interaction.user.id);
+      if (error) throw new Error(`riftbound_decks update: ${error.message}`);
+    }
+    const { missing } = missingCards(deck, entries, await ownedCopies(interaction.user.id));
+    await interaction.editReply({ content: `Shared (${deck.visibility === "public" ? "public" : "your servers' members"}).`, components: [] });
+    await interaction.followUp({
+      ...deckMessage(deck, entries, catalogue, interaction.member.displayName, missing, config.siteUrl),
+      allowedMentions: { parse: [] },
+    });
+  } catch (err) {
+    log("error", "command_failed", { command: DECK_COMMAND.name, error: err });
+    await interaction.editReply({ content: FAILED, components: [] });
+  }
+}
+
+/** What am I missing? under a shared deck: the clicker's own count, only they see it. */
+async function deckMissingButton(interaction: ButtonInteraction<"cached">, id: string): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  try {
+    const found = await deckWithCards(id);
+    // Made private again (or deleted) since it was shared.
+    if (!found || (found.deck.visibility === "private" && found.deck.user_id !== interaction.user.id)) {
+      await interaction.editReply("That deck is not shared any more.");
+      return;
+    }
+    const { missing } = missingCards(found.deck, found.entries, await ownedCopies(interaction.user.id));
+    await interaction.editReply(missingText(found.deck, missing, config.siteUrl));
+  } catch (err) {
+    log("error", "command_failed", { command: DECK_COMMAND.name, error: err });
+    await interaction.editReply("Could not count your cards. Please try again later.");
+  }
+}
+
 /** One DM per loan on its due date (UTC), if the borrower accepts DMs from the bot. */
 async function nudgeDueLoans(): Promise<void> {
   try {
@@ -948,6 +1054,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
     );
     return;
   }
+  if (interaction.isAutocomplete() && interaction.commandName === DECK_COMMAND.name) {
+    await tracked(
+      "command",
+      decksOf(interaction.user.id)
+        .then((decks) => interaction.respond(deckChoices(decks, interaction.options.getFocused())))
+        .catch((err: unknown) => log("error", "autocomplete_failed", { command: interaction.commandName, error: err })),
+    );
+    return;
+  }
   const autocompleted = [STORE_COMMAND.name, EVENT_COMMAND.name] as string[];
   if (interaction.isAutocomplete() && interaction.inCachedGuild() && autocompleted.includes(interaction.commandName)) {
     const focused = interaction.options.getFocused(true);
@@ -970,6 +1085,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (eventId !== null) await tracked("command", goingButton(interaction, eventId));
     const answer = parseAnswerId(interaction.customId);
     if (answer !== null) await tracked("command", loanAnswerButton(interaction, answer));
+    const deck = missingDeckId(interaction.customId);
+    if (deck !== null) await tracked("command", deckMissingButton(interaction, deck));
     return;
   }
   if (interaction.isModalSubmit() && interaction.inCachedGuild()) {
@@ -1028,6 +1145,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
   if (interaction.commandName === COLLECTION_COMMAND.name) {
     await tracked("command", collectionCommand(interaction));
+    return;
+  }
+  if (interaction.commandName === DECK_COMMAND.name) {
+    await tracked("command", deckCommand(interaction));
     return;
   }
   if (interaction.commandName === LEND_COMMAND.name) {

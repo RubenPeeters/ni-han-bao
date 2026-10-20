@@ -12,7 +12,7 @@ export type Section = (typeof SECTIONS)[number]["value"];
 export const VISIBILITIES = [
   { value: "private", label: "Private: only you" },
   { value: "servers", label: "Servers: your servers' members" },
-  // Anyone logged in, as with a public profile: logged-out pages show nothing per person.
+  // Logged out too (#175), by its link alone; the page never names the owner.
   { value: "public", label: "Public: anyone with the link" },
 ] as const;
 export type Visibility = (typeof VISIBILITIES)[number]["value"];
@@ -107,6 +107,32 @@ export function addCard(deck: DeckCards, card: RuleCard, quantity: number, headi
   };
 }
 
+/**
+ * Copy as text (#175): "3 Card Name" lines under headings, which parseDeckList() and addCard()
+ * read back into the same deck, without pinned printings. The Chosen Champion's main deck
+ * copies go under "Champion:", as that heading adds them to the main deck.
+ */
+export function deckText(deck: DeckCards, name: (cardId: string) => string): string {
+  const lines = (counts: Map<string, number>) =>
+    [...counts]
+      .map(([id, n]) => ({ n, card: name(id) }))
+      .toSorted((a, b) => a.card.localeCompare(b.card))
+      .map((l) => `${l.n} ${l.card}`);
+  const out: string[] = [];
+  if (deck.legend_id) out.push("Legend:", `1 ${name(deck.legend_id)}`);
+  const champion = deck.entries.filter((e) => e.section === "main" && e.card_id === deck.champion_id).reduce((n, e) => n + e.quantity, 0);
+  if (deck.champion_id) out.push("Champion:", `${champion} ${name(deck.champion_id)}`);
+  for (const { value, label } of SECTIONS) {
+    const counts = new Map<string, number>();
+    for (const e of deck.entries) {
+      if (e.section !== value || (value === "main" && e.card_id === deck.champion_id)) continue;
+      counts.set(e.card_id, (counts.get(e.card_id) ?? 0) + e.quantity);
+    }
+    if (counts.size) out.push(`${label}:`, ...lines(counts));
+  }
+  return out.join("\n");
+}
+
 /** What the rules need of a card. */
 export interface RuleCard {
   id: string;
@@ -154,53 +180,6 @@ export function deckWarnings(
   }
   const placeholder = [legend, champion, ...used].some((c) => c?.placeholder);
   return { warnings, placeholder };
-}
-
-/** Copies the viewer owns, as riftbound_collection counts them (a lent copy is still theirs). */
-export interface OwnedCopy {
-  card_id: string;
-  printing_id: string;
-  language: string;
-  quantity: number;
-}
-
-export interface Owning extends Omit<Entry, "section"> {
-  section: Section | "legend";
-  owned: number;
-}
-
-/**
- * What the viewer owns of each card the deck needs (its Legend first, then the entries) and how
- * many are missing in all. A copy counts once across entries: pinned entries take their printing
- * first, unpinned ones any printing left. With other languages off, only the deck's language counts.
- */
-export function missingCards(
-  deck: { legend_id: string | null; language: string; allow_other_languages: boolean },
-  entries: Entry[],
-  owned: OwnedCopy[],
-): { rows: Owning[]; missing: number } {
-  const left = new Map<string, number>();
-  const byCard = new Map<string, string[]>();
-  for (const o of owned) {
-    if (!deck.allow_other_languages && o.language !== deck.language) continue;
-    if (!left.has(o.printing_id)) byCard.set(o.card_id, [...(byCard.get(o.card_id) ?? []), o.printing_id]);
-    left.set(o.printing_id, (left.get(o.printing_id) ?? 0) + o.quantity);
-  }
-  const take = (printing: string, want: number) => {
-    const n = Math.min(want, left.get(printing) ?? 0);
-    left.set(printing, (left.get(printing) ?? 0) - n);
-    return n;
-  };
-  const needs: Omit<Owning, "owned">[] = [
-    ...(deck.legend_id ? [{ section: "legend" as const, card_id: deck.legend_id, printing_id: null, quantity: 1 }] : []),
-    ...entries,
-  ];
-  const got = needs.map((n) => (n.printing_id ? take(n.printing_id, n.quantity) : 0));
-  needs.forEach((n, i) => {
-    if (!n.printing_id) got[i] = (byCard.get(n.card_id) ?? []).reduce((sum, p) => sum + take(p, n.quantity - sum), 0);
-  });
-  const rows = needs.map((n, i) => ({ ...n, owned: got[i] }));
-  return { rows, missing: rows.reduce((sum, r) => sum + r.quantity - r.owned, 0) };
 }
 
 /** Every row of a query, `size` at a time: PostgREST caps a response at 1000 rows. `page` must order deterministically. */
