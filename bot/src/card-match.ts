@@ -34,6 +34,16 @@ export interface Catalogue {
 export const normal = (text: string) =>
   text.normalize("NFD").replace(/\p{M}/gu, "").replace(/['‘’]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 
+/** Riot's sets in release order, by code, with the feed's name for each (riftbound-feed.ts checks it). */
+export const SET_NAMES: Record<string, string> = {
+  OGN: "Origins",
+  OGS: "Proving Grounds",
+  SFD: "Spiritforged",
+  UNL: "Unleashed",
+  VEN: "Vendetta",
+  RAD: "Radiance",
+};
+
 // A collector code without case, dashes or spaces: "ogn 001" is "OGN-001".
 export const codeKey = (text: string) => text.replace(/[\s-]+/g, "").toLowerCase();
 

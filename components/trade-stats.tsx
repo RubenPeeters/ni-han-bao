@@ -1,3 +1,6 @@
+import type { Printing } from "@/bot/src/card-match";
+import { CardThumb } from "@/components/card-thumb";
+import { cardImage } from "@/components/deck-cards";
 import { EmptyState, ErrorState, MemberRankRow, RankList, StatCard } from "@/components/stat-ui";
 import { allPages } from "@/lib/decks";
 import { guildTimeZone } from "@/lib/guild";
@@ -35,13 +38,16 @@ export async function TradeStats({ guild }: { guild: string }) {
   if (rows.error) return <ErrorState title="Could not load your trades">Try again in a minute.</ErrorState>;
   const wanted = wishlist(rows.data).filter((w) => w.wanted > 0);
   const ids = [...new Set(wanted.map((w) => w.card_id))];
-  const [timeZone, offers, cards] = await Promise.all([
+  const [timeZone, offers, cards, printings] = await Promise.all([
     guildTimeZone(guild),
     allPages<Offer, { message: string }>((from, to) => supabase.rpc("guild_trade_offers", { guild, p_cards: ids }).range(from, to)),
-    supabase.from("riftbound_cards").select("id, name").in("id", ids),
+    supabase.from("riftbound_cards").select("id, name, type").in("id", ids),
+    supabase.from("riftbound_printings").select("id, card_id, image_url").in("card_id", ids).order("collector_number").order("id"),
   ]);
-  if (offers.error || cards.error) return <ErrorState title="Could not load your trades">Try again in a minute.</ErrorState>;
+  if (offers.error || cards.error || printings.error) return <ErrorState title="Could not load your trades">Try again in a minute.</ErrorState>;
   const names = new Map(cards.data.map((c) => [c.id as string, c.name as string]));
+  const battlefields = new Set(cards.data.filter((c) => c.type === "Battlefield").map((c) => c.id as string));
+  const image = cardImage(printings.data as Printing[]);
   const when = new Intl.DateTimeFormat("en-GB", {
     timeZone,
     weekday: "short",
@@ -79,9 +85,12 @@ export async function TradeStats({ guild }: { guild: string }) {
       ) : (
         matches.map((m) => (
           <div key={m.card} className="flex min-w-0 flex-col gap-2">
-            <h3 className="flex items-baseline justify-between gap-3 text-sm font-medium">
-              <Link href={`/cards/${m.card}`} className="min-w-0 truncate underline-offset-4 hover:text-gold hover:underline">
-                {names.get(m.card) ?? m.card}
+            <h3 className="flex items-center justify-between gap-3 text-sm font-medium">
+              <Link href={`/cards/${m.card}`} className="flex min-w-0 items-center gap-3 rounded-md underline-offset-4 hover:text-gold hover:underline">
+                <span className="w-12 shrink-0">
+                  <CardThumb url={image(m.card, null)} name="" width={48} landscape={battlefields.has(m.card)} />
+                </span>
+                <span className="truncate">{names.get(m.card) ?? m.card}</span>
               </Link>
               <span className="shrink-0 tabular-nums text-muted-foreground">You want {m.want}</span>
             </h3>

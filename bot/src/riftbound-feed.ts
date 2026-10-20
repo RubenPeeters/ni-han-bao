@@ -2,6 +2,7 @@
 // authentication, ported from riftbound-db's scripts/fetch-cards.ts. The feed is an internal
 // detail of Riot's site, so every shape it relies on is checked and a change fails loudly.
 import { createHash } from "node:crypto";
+import { SET_NAMES } from "./card-match.js";
 import { catalogueJson, type Card, type Printing } from "./riftbound.js";
 
 export const SITE_URL = "https://playriftbound.com/en-us/";
@@ -11,8 +12,8 @@ export const galleryUrl = (buildId: string) =>
 // Release order, oldest first. The feed has no dates. Source: Riot's "Products and Sets into
 // 2027" (https://playriftbound.com/en-us/news/announcements/products-and-sets-into-2027/):
 // Origins and its Proving Grounds, Spiritforged, Unleashed ("third set"), Vendetta, Radiance
-// ("Set 5"). A new set must be added here, or the script fails.
-export const SET_ORDER = ["OGN", "OGS", "SFD", "UNL", "VEN", "RAD"];
+// ("Set 5"). A new set must be added to SET_NAMES, with the feed's name for it, or the script fails.
+export const SET_ORDER = Object.keys(SET_NAMES);
 
 // Riot's empty card types (tokens, some RAD cards) are a null type, unlike the placeholders.
 export type FeedCard = Omit<Card, "type"> & { type: string | null };
@@ -146,9 +147,12 @@ function parse(raw: unknown): Parsed {
     for (const x of f.values === undefined ? [f.value] : list(f.values, code, field))
       icon("glyph", field, str(f.label, code, `${field} label`), obj(x, code, field).icon);
   }
-  const set = str(obj(obj(r.set, code, "set").value, code, "set").id, code, "set id");
+  const setValue = obj(obj(r.set, code, "set").value, code, "set");
+  const set = str(setValue.id, code, "set id");
   const rank = SET_ORDER.indexOf(set);
   if (rank < 0) throw new Error(`feed card ${code}: set ${set} is not in SET_ORDER, add it with its release order`);
+  // The site shows SET_NAMES: a renamed set fails here, never shows a stale name.
+  if (str(setValue.label, code, "set label") !== SET_NAMES[set]) fail(code, `set ${set} label`);
   const cardType = obj(r.cardType, code, "cardType");
   const types = facets(cardType.type, "type");
   if (types.length > 1) fail(code, `types ${types.join(", ")}`);
