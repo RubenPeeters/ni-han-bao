@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allSubscriberIds, eventChoices, eventLabel, eventsField, goingEventId, goingId, goingText, matchStore, parseWhen, unticked, type UpcomingEvent } from "./events.js";
+import { allSubscriberIds, eventChoices, eventLabel, eventsField, goingEventId, goingId, goingMessage, goingText, matchStore, parseWhen, unticked, type UpcomingEvent } from "./events.js";
 
 const now = new Date("2026-10-18T12:00:00Z");
 const event = (id: number, extra: Partial<UpcomingEvent> = {}): UpcomingEvent => ({
@@ -64,6 +64,14 @@ describe("eventLabel and eventChoices", () => {
       { name: "Sun 25 Oct, 17:00 · Other (Gent)", value: 2 },
     ]);
     expect(eventChoices(Array.from({ length: 30 }, (_, i) => event(i)), "", "UTC")).toHaveLength(25);
+  });
+});
+
+describe("goingMessage", () => {
+  it("has a Going button for the event", () => {
+    const { components } = goingMessage(42, null, "2026-10-25T17:00:00Z", "UTC", null);
+    const button = components[0].components[0];
+    expect([button.label, "custom_id" in button && goingEventId(button.custom_id)]).toEqual(["Going", 42]);
   });
 });
 

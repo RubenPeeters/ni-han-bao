@@ -1,5 +1,38 @@
+import { DiscordShot } from "@/components/discord-shot";
+import { ReplyExample } from "@/components/discord-message";
+
 export const metadata = { title: "Set it up · ni han bao docs" };
 
 # Set it up
 
-Draft. This page will explain [`/setup`](/docs/commands#setup): the report channel, the time zone and the public totals.
+ni han bao works without setup. [`/setup`](/docs/commands#setup) changes a few things per server. Only members with **Manage Server** see it, and only you see its answers.
+
+<DiscordShot name="setup-options" alt="/setup with its subcommands listed" />
+
+## What to do
+
+1. **Report channel**: `/setup report-channel channel:#weekly-report`. The bot posts the weekly report card there every Monday, and the monthly recap on the first of the month. Leave `channel` out to turn both off.
+2. **Time zone**: `/setup timezone timezone:Europe/Brussels`. It decides when "today" and "this week" start, and when the report is posted. Use an [IANA name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones), like `America/New_York`. The default is UTC.
+3. **Public totals**: `/setup public-totals include:False` leaves your server out of the totals on the public home page. They never show your server's name either way.
+4. **Rank roles**: `/setup rank-roles state:on` gives members who [linked a League account](/docs/get-started/link-accounts) a role for their tier, kept in sync. The bot needs **Manage Roles**, and its own role must be above the tier roles.
+5. **Check**: `/setup show` lists the settings.
+
+## What you should see
+
+`/setup show` answers with the settings, and only you see it:
+
+<ReplyExample name="setup" />
+
+With a report channel set, the bot posts a report card there every Monday:
+
+<ReplyExample name="report" />
+
+## If you don't
+
+- **No `/setup` in the command list**: you need Manage Server. A server admin can change who sees it under Server Settings, Integrations, ni han bao.
+- **"I cannot post in #channel"**: give the bot View Channel and Send Messages in that channel, then run the command again.
+- **"… is not a time zone"**: check the spelling against the IANA list, like `Europe/Brussels`.
+- **No report on Monday**: check `/setup show` for the channel, and that the bot can still post there. Embed Links is needed for the card.
+- **Rank roles answers with a problem**: it says what to fix: the Manage Roles permission, or the bot's role must be above the tier roles (Server Settings > Roles).
+
+Next: [link your accounts](/docs/get-started/link-accounts).

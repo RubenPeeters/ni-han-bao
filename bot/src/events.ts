@@ -1,4 +1,4 @@
-import { ApplicationCommandOptionType } from "discord.js";
+import { type APIActionRowComponent, type APIButtonComponent, ApplicationCommandOptionType, ButtonStyle, ComponentType } from "discord.js";
 import { escapeMarkdown, storeLabel, type Store } from "./stores.js";
 import { fromWallClock } from "./zone.js";
 
@@ -150,6 +150,15 @@ export function goingText(store: Pick<Store, "game" | "name" | "city"> | null, a
   const where = store ? ` at ${escapeMarkdown(storeLabel(store))}` : "";
   const link = url ? ` <${url}>` : "";
   return `Someone is going${where} on ${eventTime(at, timeZone)}.${link}\nComing too? Click Going.`;
+}
+
+/** The public message after /event going, with the button that lets others join. */
+export function goingMessage(eventId: number, store: Pick<Store, "game" | "name" | "city"> | null, at: string, timeZone: string, url: string | null) {
+  const row: APIActionRowComponent<APIButtonComponent> = {
+    type: ComponentType.ActionRow,
+    components: [{ type: ComponentType.Button, custom_id: goingId(eventId), label: "Going", style: ButtonStyle.Primary }],
+  };
+  return { content: goingText(store, at, timeZone, url), components: [row] };
 }
 
 /** The weekly report's field: the coming week's events with who is going. */

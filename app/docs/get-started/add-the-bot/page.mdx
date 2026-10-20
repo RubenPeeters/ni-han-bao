@@ -1,5 +1,48 @@
+import { DiscordShot } from "@/components/discord-shot";
+import { ReplyExample } from "@/components/discord-message";
+
 export const metadata = { title: "Add the bot · ni han bao docs" };
 
 # Add the bot
 
-Draft. This page will show how to add ni han bao to a server.
+You need the **Manage Server** permission on the server you add ni han bao to.
+
+## What to do
+
+1. Open the [invite link](https://discord.com/oauth2/authorize?client_id=1561027678838980680&permissions=117760&scope=bot+applications.commands). It is the **Add to Discord** button on the [home page](/) too.
+2. Pick your server and press **Continue**.
+3. Leave the permissions ticked and press **Authorise**.
+
+<DiscordShot name="add-app" alt="Discord's Add App dialog, with a server picked" />
+
+## The permissions it asks for
+
+<DiscordShot name="permissions" alt="The permissions on Discord's Add App dialog" />
+
+- **View Channels**: to see the channels it counts in.
+- **Send Messages**: for the welcome message, the weekly report and the replies that everyone sees.
+- **Embed Links**: the report cards are embeds.
+- **Attach Files**: the monthly recap is an image.
+- **Read Message History**: to count the messages sent before it joined.
+
+The bot never reads what anyone writes. It stores counts, times, ids and names only.
+
+## What you should see
+
+The bot appears in the member list and posts a welcome message, in the server's system channel or else the first channel it can post in:
+
+<ReplyExample name="welcome" />
+
+Type `/` in a channel: ni han bao's commands are in the list.
+
+<DiscordShot name="slash-picker" alt="Typing / in a channel, with ni han bao's commands listed" />
+
+It then counts the server's past messages in the background. The pages fill up over the next minutes to hours, depending on how big the server is.
+
+## If you don't
+
+- **Your server is not in the list on Discord's dialog**: you need Manage Server there. Ask an admin to add the bot.
+- **No welcome message**: the bot could not post in any channel. Give it Send Messages in one, and it will answer commands. The welcome is sent only once.
+- **No commands when you type `/`**: restart Discord (Ctrl+R on desktop). New commands can take a moment to show up.
+
+Next: [set it up](/docs/get-started/set-up).

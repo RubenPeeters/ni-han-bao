@@ -1,0 +1,201 @@
+{
+  "welcome": {
+    "command": null,
+    "ephemeral": false,
+    "channels": {},
+    "message": {
+      "content": "Hi, I'm ni han bao! I count messages, reactions and voice time in this server: counts and timestamps only, never what anyone writes.\nSee the stats (members only, log in with Discord): https://ni-han-bao.example/s/900000000000000001/leaderboard\nRather not appear in the lists and charts? Use /hide-me, and /show-me to come back."
+    }
+  },
+  "leaderboard": {
+    "command": "/leaderboard",
+    "ephemeral": false,
+    "channels": {},
+    "message": {
+      "embeds": [
+        {
+          "title": "Leaderboard: this week",
+          "url": "https://ni-han-bao.example/leaderboard",
+          "description": "**1.** Anna: 1,284\n**2.** Bram: 967\n**3.** Chloé: 412",
+          "footer": {
+            "text": "Since Monday 2026-10-12 (Europe/Brussels)"
+          }
+        }
+      ]
+    }
+  },
+  "setup": {
+    "command": "/setup show",
+    "ephemeral": true,
+    "channels": {
+      "900000000000000201": "weekly-report"
+    },
+    "message": {
+      "content": "Weekly report card: <#900000000000000201>\nTime zone: Europe/Brussels\nPublic totals: left out\nRank roles: off (existing rank roles stay until you delete them)"
+    }
+  },
+  "report": {
+    "command": null,
+    "ephemeral": false,
+    "channels": {},
+    "message": {
+      "embeds": [
+        {
+          "title": "Weekly report card: week of 2026-10-12",
+          "url": "https://ni-han-bao.example",
+          "description": "Report card's in. Sit down, we need to talk.",
+          "fields": [
+            {
+              "name": "Top talkers",
+              "value": "🥇 Anna: 1,284 messages\n🥈 Bram: 967 messages\n🥉 Chloé: 412 messages"
+            },
+            {
+              "name": "Busiest channel",
+              "value": "#general: 1,712 messages",
+              "inline": true
+            },
+            {
+              "name": "Top emoji",
+              "value": "😂 58 times",
+              "inline": true
+            },
+            {
+              "name": "Member growth",
+              "value": "+2 (3 joined, 1 left)\nWelcome to the family. Wipe your feet."
+            },
+            {
+              "name": "League",
+              "value": "Bram: 14 games, mostly Ahri\n14 games between you. Ranked and normals only."
+            },
+            {
+              "name": "Coming up this week",
+              "value": "**Sat 17 Oct, 19:00 · Riftbound Nexus Night · The Card Corner \\(Leuven\\)**: Anna, Bram"
+            }
+          ],
+          "footer": {
+            "text": "Monday 2026-10-12 to Sunday 2026-10-18 (Europe/Brussels)"
+          }
+        }
+      ]
+    }
+  },
+  "recap": {
+    "command": "/recap",
+    "ephemeral": false,
+    "channels": {},
+    "message": {
+      "embeds": [
+        {
+          "title": "Monthly recap: September 2026",
+          "url": "https://ni-han-bao.example/recap",
+          "image": {
+            "url": "attachment://recap-2026-09.png"
+          }
+        }
+      ]
+    }
+  },
+  "card": {
+    "command": "/card",
+    "ephemeral": false,
+    "channels": {},
+    "message": {
+      "embeds": [
+        {
+          "title": "Hollow Echo",
+          "url": "https://ni-han-bao.example/cards/placeholder-legend-ahri",
+          "description": "Placeholder legend for Ahri. It has no real rules yet.",
+          "fields": [
+            {
+              "name": "Type",
+              "value": "Legend",
+              "inline": true
+            },
+            {
+              "name": "Cost",
+              "value": "-",
+              "inline": true
+            },
+            {
+              "name": "Might",
+              "value": "-",
+              "inline": true
+            },
+            {
+              "name": "Domains",
+              "value": "Calm, Mind",
+              "inline": true
+            }
+          ],
+          "image": {
+            "url": "https://ddragon.leagueoflegends.com/cdn/img/champion/loading/Ahri_0.jpg"
+          },
+          "footer": {
+            "text": "Placeholder card · PLH-L103"
+          }
+        }
+      ]
+    }
+  },
+  "going": {
+    "command": "/event going",
+    "ephemeral": false,
+    "channels": {},
+    "message": {
+      "content": "Someone is going at The Card Corner \\(Leuven\\) on Sat 17 Oct, 19:00.\nComing too? Click Going.",
+      "components": [
+        {
+          "type": 1,
+          "components": [
+            {
+              "type": 2,
+              "custom_id": "event-going:1",
+              "label": "Going",
+              "style": 1
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "lol-link": {
+    "command": "/lol link",
+    "ephemeral": true,
+    "channels": {},
+    "message": {
+      "content": "To prove Anna#EUW is yours, set your League profile icon to **Debonair Rose Icon** (icon 7, a starter icon), then press Verify. Search for it by name in the client's icon picker, or pick the icon shown below. It can take up to 5 minutes to show up. You can change it back afterwards.",
+      "components": [
+        {
+          "components": [
+            {
+              "label": "Verify",
+              "style": 1
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "forget-me": {
+    "command": "/forget-me",
+    "ephemeral": true,
+    "channels": {},
+    "message": {
+      "content": "This deletes everything ni han bao has stored about you, in every server: your message, reaction, voice and game time counts, your name and avatar, your membership, your regular stores, the events you are going to, your linked League account with its ranks and games, your Riftbound collection and lending setting, your card loans (gone for the other member too), your profile visibility and your /hide-me setting. It cannot be undone. The bot stops counting you until you use /show-me. You also lose access to the servers' pages on the website until then.",
+      "components": [
+        {
+          "components": [
+            {
+              "label": "Delete my data",
+              "style": 4
+            },
+            {
+              "label": "Cancel",
+              "style": 2
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

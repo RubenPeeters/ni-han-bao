@@ -1,0 +1,46 @@
+import { DiscordShot } from "@/components/discord-shot";
+import { ReplyExample } from "@/components/discord-message";
+
+export const metadata = { title: "A new server · ni han bao docs" };
+
+# A new server
+
+This tutorial follows one server through its first months with ni han bao: the **Demo server**, a community of League and Riftbound players around Leuven, Brussels and Ghent. Anna runs it. Every picture in the tutorial is of that server, so you can compare them with your own.
+
+[Get started](/docs/get-started/add-the-bot) lists the steps. This tutorial explains why Anna chose what she did, so you can choose for your server.
+
+## Adding the bot
+
+Anna has **Manage Server**, so she opens the invite link, picks the Demo server and leaves the permissions ticked. Each one has a job: Read Message History lets the bot count the messages from before it joined, so the pages are not empty on day one.
+
+The bot greets the server:
+
+<ReplyExample name="welcome" />
+
+That message is also the first thing her members learn about privacy: the bot counts, it does not read, and `/hide-me` is there for anyone who would rather not be in the lists.
+
+## Choosing the settings
+
+Anna types `/setup` and goes through it once.
+
+<DiscordShot name="setup-options" alt="/setup with its subcommands listed" />
+
+**Report channel.** She makes a `#weekly-report` channel and runs `/setup report-channel channel:#weekly-report`. The report could go in `#general`, but a channel of its own keeps the weekly card and the monthly recap from drowning in chat, and members who do not care can mute it.
+
+**Time zone.** Everyone lives in Belgium, so `/setup timezone timezone:Europe/Brussels`. Without it, "this week" would start at midnight UTC, an hour or two off, and the Monday report would land in the middle of the night. The time zone also sets the hours on the Channels heatmap and the time you give to `/event going`.
+
+**Rank roles.** Not yet. Rank roles give every member with a linked League account a role for their tier. That is fun in a League server, but it takes Manage Roles and nobody has linked an account yet. She comes back to it in [League](/docs/tutorial/league).
+
+**Public totals.** The home page adds up every server's messages, without names. Anna's members are a small group who know each other, so she runs `/setup public-totals include:False` and leaves the Demo server out. Nothing about the server would show either way; this is about not being counted at all.
+
+`/setup show` confirms it:
+
+<ReplyExample name="setup" />
+
+## Telling the members
+
+Anna posts the site's link in `#general`. Members log in with Discord and see the Demo server under **Your servers**. Someone who is not in the server gets a "not found" page: each server's pages are for its members only.
+
+![Your servers, after logging in](/docs/shots/servers.png)
+
+Next: [a month of activity](/docs/tutorial/server-stats).
