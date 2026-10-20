@@ -18,6 +18,8 @@ Discord ──gateway──► bot/ (discord.js, container on the Hetzner box)
 - Website: the Next.js app at the repo root (App Router, `cacheComponents`), deployed by
   Vercel, from `main` only (`vercel.json`): other branches get no preview deployment, which
   keeps the Hobby plan under its daily deploy limit. Check visual changes with `make screenshots`.
+  For UI work (pages, components, styling, colours, typography) use the `ui-ux-pro-max`
+  skill: its design-system and stack guidance for Next.js, Tailwind and shadcn/ui.
   Public: the home page (`public_totals()`, no names) and the server picker `/s`. Private:
   `/s/[guildId]/...`, read with the visitor's session, a 404 for non-members (`lib/guild.ts`).
 - Database: `supabase/migrations/*.sql`, applied by `.github/workflows/migrate.yml` on push
