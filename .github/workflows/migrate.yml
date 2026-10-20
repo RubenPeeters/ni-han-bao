@@ -1,11 +1,12 @@
 name: Migrate
 # Applies supabase/migrations: a push to `dev` migrates the dev project, a push to `main`
 # migrates production (#67). A manual run migrates the project of the branch it runs on.
-# Every project except production also gets supabase/seed.sql, the demo server for screenshots.
+# Every project except production also gets supabase/seed.sql, the demo server for screenshots,
+# and is then checked with scripts/check-rls.sql (rolled back, so it changes nothing).
 on:
   push:
     branches: [dev, main]
-    paths: ["supabase/migrations/**", "supabase/seed.sql"]
+    paths: ["supabase/migrations/**", "supabase/seed.sql", "scripts/check-rls.sql"]
   workflow_dispatch:
 concurrency:
   group: migrate
@@ -36,5 +37,7 @@ jobs:
           host=$(sed -E 's|.*@([^:/]+).*|\1|' supabase/.temp/pooler-url)
           export PGPASSWORD=$(jq -r .password <<<"$login")
           echo "::add-mask::$PGPASSWORD"
+          user="$(jq -r .role <<<"$login").$PROJECT_REF"
           { echo "set role postgres;"; cat supabase/seed.sql; } \
-            | psql -h "$host" -p 5432 -U "$(jq -r .role <<<"$login").$PROJECT_REF" -d postgres -v ON_ERROR_STOP=1 -q
+            | psql -h "$host" -p 5432 -U "$user" -d postgres -v ON_ERROR_STOP=1 -q
+          psql -h "$host" -p 5432 -U "$user" -d postgres -v ON_ERROR_STOP=1 -q -f scripts/check-rls.sql

@@ -1,8 +1,9 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { addToCollection, setLending, type CollectionWriter } from "./collection.js";
-import { placeholderCatalogue } from "./riftbound.js";
+import type { Catalogue } from "./riftbound.js";
 
-const catalogue = placeholderCatalogue([{ id: "Ahri", key: "103", name: "Ahri" }]);
+const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue;
 
 function writer(overrides: Partial<CollectionWriter> = {}): CollectionWriter {
   return {
@@ -15,8 +16,8 @@ function writer(overrides: Partial<CollectionWriter> = {}): CollectionWriter {
 describe("/collection add", () => {
   it("adds copies of the card's printing in the chosen language and says the new count", async () => {
     const w = writer();
-    const reply = await addToCollection(w, catalogue, "u", "placeholder-unit-ahri", 2, "fr");
-    expect(w.add).toHaveBeenCalledWith("u", "PLH-U103", 2, "fr");
+    const reply = await addToCollection(w, catalogue, "u", "ahri-alluring", 2, "fr");
+    expect(w.add).toHaveBeenCalledWith("u", "ogn-066-298", 2, "fr");
     expect(reply).toContain("now have 3 normal NM in French");
   });
 
@@ -29,8 +30,8 @@ describe("/collection add", () => {
 
   it("finds a typed collector code and keeps the count within 1 to 99", async () => {
     const w = writer();
-    await addToCollection(w, catalogue, "u", "plh l103", 500, null);
-    expect(w.add).toHaveBeenCalledWith("u", "PLH-L103", 99, null);
+    await addToCollection(w, catalogue, "u", "ogn 255", 500, null);
+    expect(w.add).toHaveBeenCalledWith("u", "ogn-255-298", 99, null);
   });
 
   it("writes nothing for an unknown card", async () => {

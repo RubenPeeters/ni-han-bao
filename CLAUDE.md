@@ -33,7 +33,7 @@ Discord ──gateway──► bot/ (discord.js, container on the Hetzner box)
   The secret key never appears in website code. A per-server table's only policy is
   `select to authenticated using (public.is_guild_member(guild_id))` (plus the opt-out for
   per-member rows): anon reads nothing per server. Logged-out pages read security definer
-  aggregates such as `public_totals()`. `scripts/check-rls.sql` checks this against a database.
+  aggregates such as `public_totals()`. `scripts/check-rls.sql` checks this; `migrate.yml` runs it on dev after every migration.
 - Two databases: `dev` migrates the **dev** Supabase project, `main` migrates **production**
   (`migrate.yml`). A migration reaches production only with the release that carries the
   code using it, so a breaking change (rename, drop) is allowed when it ships together with

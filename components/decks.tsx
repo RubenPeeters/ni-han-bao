@@ -17,8 +17,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 const LOG_IN = "Log in to build Riftbound decks.";
-// shortcut: PostgREST caps a response at 1000 rows, as on the Cards page; page it when the real API (#96) lands.
-const MAX_CARDS = 1000;
+// The columns of a Printing: not the printing's own text, which the editors do not show.
+const PRINTING = "id, card_id, set_code, collector_code, collector_number, rarity, illustrator, image_url";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The visitor's copies (RLS returns their own rows only). */
@@ -172,8 +172,8 @@ export async function DeckDetail({ id }: { id: string }) {
       .eq("id", id)
       .maybeSingle(),
     supabase.from("riftbound_deck_cards").select("section, card_id, printing_id, quantity").eq("deck_id", id),
-    supabase.from("riftbound_cards").select("*").order("name").limit(MAX_CARDS),
-    supabase.from("riftbound_printings").select("*").order("collector_number").order("collector_code").limit(MAX_CARDS),
+    allPages((from, to) => supabase.from("riftbound_cards").select("*").order("name").order("id").range(from, to)),
+    allPages((from, to) => supabase.from("riftbound_printings").select(PRINTING).order("collector_number").order("id").range(from, to)),
     supabase.rpc("current_discord_id"),
     ownedCopies(supabase),
     versionList(supabase, id),
@@ -382,8 +382,8 @@ export async function DeckVersionDetail({ id, version, from }: { id: string; ver
   const [deck, versions, cards, printings, me, owned] = await Promise.all([
     supabase.from("riftbound_decks").select("user_id, visibility, wishlist_mode").eq("id", id).maybeSingle(),
     versionList(supabase, id),
-    supabase.from("riftbound_cards").select("*").order("name").limit(MAX_CARDS),
-    supabase.from("riftbound_printings").select("*").order("collector_number").order("collector_code").limit(MAX_CARDS),
+    allPages((from, to) => supabase.from("riftbound_cards").select("*").order("name").order("id").range(from, to)),
+    allPages((from, to) => supabase.from("riftbound_printings").select(PRINTING).order("collector_number").order("id").range(from, to)),
     supabase.rpc("current_discord_id"),
     ownedCopies(supabase),
   ]);

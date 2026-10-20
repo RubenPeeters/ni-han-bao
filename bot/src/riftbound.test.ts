@@ -4,72 +4,31 @@ import {
   cardChoices,
   cardEmbed,
   cardMiss,
-  catalogueJson,
   lookupCard,
-  placeholderCatalogue,
-  placeholderSvg,
   resolveCard,
   type Card,
+  type Catalogue,
   type Printing,
 } from "./riftbound.js";
+import { plainText } from "./card-match.js";
 
-const champions = [
-  { id: "Ahri", key: "103", name: "Ahri" },
-  { id: "Kaisa", key: "145", name: "Kai'Sa" },
-  { id: "Annie", key: "1", name: "Annie" },
-];
+// Riot's real cards (#206), as the feed gave them.
+const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue;
 
-describe("placeholderCatalogue", () => {
-  const { cards, printings } = placeholderCatalogue(champions);
-
-  it("makes a legend and a unit per champion, all marked as placeholders", () => {
-    const ahri = cards.filter((c) => c.tags.includes("Ahri"));
-    expect(ahri.map((c) => c.type)).toEqual(["Legend", "Unit"]);
-    expect(ahri[0].name).not.toContain("Ahri");
-    expect(ahri[1].name).toMatch(/^Ahri, /);
-    expect(cards.every((c) => c.placeholder)).toBe(true);
-    expect(cards.filter((c) => c.type === "Spell" || c.type === "Gear").length).toBeGreaterThan(24);
-    expect(new Set(cards.map((c) => c.name.toLowerCase())).size).toBe(cards.length);
-  });
-
-  it("gives one printing per card, with Data Dragon art for champions and an svg for the rest", () => {
-    expect(printings.map((p) => p.card_id)).toEqual(cards.map((c) => c.id));
-    expect(printings.find((p) => p.card_id === "placeholder-unit-ahri")).toMatchObject({
-      collector_code: "PLH-U103",
-      collector_number: 103,
-      image_url: "https://ddragon.leagueoflegends.com/cdn/img/champion/loading/Ahri_0.jpg",
-    });
-    expect(printings.find((p) => p.card_id === "placeholder-spell-quick-thought")?.image_url).toBe(
-      "/riftbound/placeholder-spell-quick-thought.svg",
+describe("plainText", () => {
+  it("keeps Riot's words and lines, without the HTML", () => {
+    expect(plainText("<p>[Empowered][&gt;] I have +1 :rb_might:.<br />Draw 1.</p><p>Then &quot;this&quot;.</p>")).toBe(
+      '[Empowered][>] I have +1 :rb_might:.\nDraw 1.\nThen "this".',
     );
-  });
-
-  it("is byte-identical for the same champions in any order, and a new champion moves no id", () => {
-    const again = placeholderCatalogue([...champions].reverse());
-    expect(catalogueJson(again)).toBe(catalogueJson({ cards, printings }));
-    const more = placeholderCatalogue([...champions, { id: "Zed", key: "238", name: "Zed" }]);
-    const ids = (c: typeof more) => c.printings.map((p) => `${p.card_id} ${p.collector_code}`);
-    expect(ids(more)).toEqual(expect.arrayContaining(ids({ cards, printings })));
-  });
-
-  it("matches the committed catalogue's format", () => {
-    const committed = readFileSync(new URL("../riftbound-catalogue.json", import.meta.url), "utf8");
-    expect(catalogueJson(JSON.parse(committed))).toBe(committed);
-  });
-});
-
-describe("placeholderSvg", () => {
-  it("shows the name and type, escaped", () => {
-    const svg = placeholderSvg({ name: "Salt & <Pepper>", type: "Spell" });
-    expect(svg).toContain("Salt &amp; &lt;Pepper&gt;");
-    expect(svg).toContain(">Spell<");
-    expect(svg).not.toMatch(/href|https?:\/\/(?!www\.w3\.org)/);
+    expect(plainText("<p>Choose one —</p><ul><li>Ready 2 runes.</li><li>[Buff] a unit.</li></ul>")).toBe(
+      "Choose one —\nReady 2 runes.\n[Buff] a unit.",
+    );
   });
 });
 
 describe("resolveCard", () => {
   const card = (id: string, name: string, type: string, tags: string[] = []): Card => ({
-    id, name, type, tags, supertypes: [], domains: [], energy: null, might: null, rules_text: null, placeholder: true,
+    id, name, type, tags, supertypes: [], domains: [], energy: null, might: null, rules_text: null, placeholder: false,
   });
   const cards = [
     card("l-ahri", "Nine Lives", "Legend", ["Ahri"]),
@@ -88,7 +47,8 @@ describe("resolveCard", () => {
   });
   const printings = [
     printing("s-1", "OGN-001"),
-    printing("u-ahri", "PLH-U103"),
+    printing("u-ahri", "OGN-066/298"),
+    printing("u-ahri", "OGN-066a/298"),
     printing("s-2", "OGN-007a"),
     printing("s-3", "OGN-007b"),
     printing("u-zed", "SFD-232"),
@@ -126,8 +86,9 @@ describe("resolveCard", () => {
 
   it("finds a collector code without case, dashes or spaces", () => {
     for (const typed of ["OGN-001", "OGN001", "ogn-001", "OGN 001", " ogn - 001 "]) expect(id(typed)).toBe("s-1");
-    expect(id("PLHU103")).toBe("u-ahri");
-    expect(id("plh-u103")).toBe("u-ahri");
+    expect(id("OGN066")).toBe("u-ahri");
+    expect(id("ogn-066/298")).toBe("u-ahri");
+    expect(id("OGN-06")).toBeNull();
     expect(id("OGN-007a")).toBe("s-2");
     expect(id("OGN01")).toBeNull();
     expect(id("OGN")).toBeNull();
@@ -144,48 +105,52 @@ describe("resolveCard", () => {
 });
 
 describe("/card", () => {
-  const { cards, printings } = placeholderCatalogue(champions);
-  const legend = cards.find((c) => c.id === "placeholder-legend-ahri")!;
-  const spell = cards.find((c) => c.name === "Quick Thought")!;
+  const { cards, printings } = catalogue;
+  const legend = cards.find((c) => c.id === "nine-tailed-fox")!;
+  const unit = cards.find((c) => c.id === "ahri-alluring")!;
   const printed = (card: Card) => printings.filter((p) => p.card_id === card.id);
 
   it("suggests by name or champion, prefix matches first, at most 25, valued by id", () => {
-    const ahri = cardChoices({ cards, printings }, "ahri");
-    expect(ahri.map((c) => c.value)).toEqual(expect.arrayContaining(["placeholder-legend-ahri", "placeholder-unit-ahri"]));
-    expect(ahri.find((c) => c.value === legend.id)!.name).toBe(`${legend.name} (Ahri legend)`);
-    expect(cardChoices({ cards, printings }, "quick")[0]).toEqual({ name: "Quick Thought (Spell)", value: spell.id });
-    expect(cardChoices({ cards, printings }, "").length).toBe(25);
-    expect(cardChoices({ cards, printings }, "zzzz")).toEqual([]);
-    expect(cardChoices({ cards, printings }, "plh u10")[0].value).toBe("placeholder-unit-ahri");
-    expect(cardChoices({ cards, printings }, "PLH")).toEqual([]);
+    const ahri = cardChoices(catalogue, "ahri");
+    expect(ahri.map((c) => c.value)).toEqual(expect.arrayContaining(["nine-tailed-fox", "ahri-alluring"]));
+    expect(ahri.find((c) => c.value === legend.id)!.name).toBe("Nine-Tailed Fox (Ahri legend)");
+    expect(cardChoices(catalogue, "ahri, all")[0]).toEqual({ name: "Ahri, Alluring (Unit)", value: unit.id });
+    expect(cardChoices(catalogue, "").length).toBe(25);
+    expect(cardChoices(catalogue, "zzzz")).toEqual([]);
+    expect(cardChoices(catalogue, "ogn 255")[0].value).toBe(legend.id);
+    expect(cardChoices(catalogue, "OGN")).toEqual([]);
   });
 
-  it("takes a picked id or a typed name", () => {
-    expect(lookupCard({ cards, printings }, legend.id)).toEqual({ card: legend });
-    expect(lookupCard({ cards, printings }, "quick thought")).toEqual({ card: spell });
-    expect(lookupCard({ cards, printings }, "nothing like this")).toBeNull();
-    expect(lookupCard({ cards, printings }, "PLHU103")).toEqual({ card: cards.find((c) => c.id === "placeholder-unit-ahri") });
+  it("takes a picked id, a typed name or a collector code", () => {
+    expect(lookupCard(catalogue, legend.id)).toEqual({ card: legend });
+    expect(lookupCard(catalogue, "ahri, alluring")).toEqual({ card: unit });
+    expect(lookupCard(catalogue, "Ahri")).toEqual({ card: legend });
+    expect(lookupCard(catalogue, "nothing like this")).toBeNull();
+    expect(lookupCard(catalogue, "OGN-066")).toEqual({ card: unit });
   });
 
-  it("shows the stats, the art when Discord can load it, and the placeholder label", () => {
+  it("shows the stats, Riot's text without its HTML, and the art sized on Riot's CDN", () => {
     const embed = cardEmbed(legend, printed(legend), "https://site.test/");
-    expect(embed.title).toBe(legend.name);
-    expect(embed.url).toBe("https://site.test/cards/placeholder-legend-ahri");
-    expect(embed.image?.url).toMatch(/^https:\/\/ddragon\.leagueoflegends\.com\//);
+    expect(embed.title).toBe("Nine-Tailed Fox");
+    expect(embed.url).toBe("https://site.test/cards/nine-tailed-fox");
+    expect(embed.description).toBe(
+      "When an enemy unit attacks a battlefield you control, give it -1 :rb_might: this turn, to a minimum of 1 :rb_might:.",
+    );
+    const image = new URL(embed.image!.url);
+    expect(image.host).toBe("cmsassets.rgpub.io");
+    expect(Object.fromEntries(image.searchParams)).toMatchObject({ w: "400", fm: "webp", q: "75" });
     expect(embed.fields?.map((f) => [f.name, f.value])).toEqual([
       ["Type", "Legend"],
       ["Cost", "-"],
       ["Might", "-"],
-      ["Domains", legend.domains.join(", ")],
+      ["Domains", "Calm, Mind"],
     ]);
-    expect(embed.footer?.text).toBe("Placeholder card · PLH-L103");
-    // The generated SVG is relative, and Discord shows no SVG anyway.
-    expect(cardEmbed(spell, printed(spell), null)).toMatchObject({ url: undefined, image: undefined });
-    expect(cardEmbed({ ...spell, placeholder: false }, [], null).footer).toBeUndefined();
+    expect(embed.footer?.text).toBe("OGN-255/298 · OGN-303/298 · OGN-303*/298");
+    expect(cardEmbed(unit, [], null)).toMatchObject({ url: undefined, image: undefined, footer: undefined });
   });
 
   it("explains a miss", () => {
     expect(cardMiss("Teemo", null)).toBe('No card called or numbered "Teemo". Pick one from the suggestions.');
-    expect(cardMiss("twin", [spell])).toContain("Quick Thought (Spell)");
+    expect(cardMiss("twin", [unit])).toContain("Ahri, Alluring (Unit)");
   });
 });

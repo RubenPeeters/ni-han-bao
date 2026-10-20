@@ -21,13 +21,13 @@ import {
   type PartialMessageReaction,
   type PartialUser,
   PermissionFlagsBits,
+  Team,
   type TextChannel,
   TextInputBuilder,
   TextInputStyle,
   type User,
 } from "discord.js";
 import { createClient } from "@supabase/supabase-js";
-import { readFileSync } from "node:fs";
 import { FORGET_CANCEL_ID, FORGET_COMMAND, FORGET_CONFIRM_ID, FORGET_PROMPT, forgetMe } from "./forget.js";
 import { channelRow, memberRow, shouldCount, type MemberRow } from "./activity.js";
 import {
@@ -119,6 +119,18 @@ import {
   type Wanted,
 } from "./lending.js";
 import { CARD_COMMAND, cardChoices, cardEmbed, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
+import { feedItems, fetchFeed, transformFeed, type FeedCard, type FeedPrinting } from "./riftbound-feed.js";
+import {
+  brokenText,
+  CARD_COLUMNS,
+  checksum,
+  diffCatalogue,
+  parseProposalButtonId,
+  PRINTING_COLUMNS,
+  proposalButtonId,
+  proposalCounts,
+  proposalText,
+} from "./catalogue-check.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility } from "./visibility.js";
 import { COMMANDS } from "./commands.js";
@@ -138,6 +150,7 @@ const RANKS_MS = 3 * 60 * 60_000;
 const MATCHES_MS = 6 * 60 * 60_000;
 const NUDGE_MS = 60 * 60_000;
 const TRADES_MS = 60 * 60_000;
+const FEED_CHECK_MS = 24 * 60 * 60_000;
 
 const config = loadConfig();
 const log = createLogger();
@@ -707,8 +720,8 @@ async function statsReply(interaction: ChatInputCommandInteraction<"cached">) {
   return { embeds: [channelEmbed(target.name, data, config.siteUrl, timezone)] };
 }
 
-// The committed placeholder catalogue (#148), one level above both src/ and dist/.
-const catalogue = JSON.parse(readFileSync(new URL("../riftbound-catalogue.json", import.meta.url), "utf8")) as Catalogue;
+// The catalogue in the database (#206), read on start and after an Accept: empty until then.
+let catalogue: Catalogue = { cards: [], printings: [] };
 
 /** /card: one card from the catalogue, for everyone in the channel. */
 async function cardCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
@@ -1141,6 +1154,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .catch((err: unknown) => log("error", "autocomplete_failed", { command: interaction.commandName, error: err })),
     );
     return;
+  }
+  // In a DM, so before the server-only handlers below.
+  if (interaction.isButton()) {
+    const decision = parseProposalButtonId(interaction.customId);
+    if (decision !== null) {
+      await tracked("command", proposalButton(interaction, decision));
+      return;
+    }
   }
   if (interaction.isButton() && interaction.inCachedGuild()) {
     const eventId = goingEventId(interaction.customId);
@@ -2329,16 +2350,145 @@ async function startServer(guild: Guild): Promise<void> {
   queueBackfill(guild.id);
 }
 
-/** The committed placeholder catalogue (#148), upserted on every start: only the bot writes it. */
+/** The catalogue the commands read, from the database: Accept (#204) is the only thing that changes it. */
 async function loadCatalogue(): Promise<void> {
-  const { cards, printings } = catalogue;
-  // shortcut: a card dropped from the file stays in the table; delete it by hand until the real API (#96) replaces them all.
-  const updated_at = new Date().toISOString();
-  const written = await db.from("riftbound_cards").upsert(cards.map((r) => ({ ...r, updated_at })), { onConflict: "id" });
-  if (written.error) throw new Error(`riftbound_cards upsert: ${written.error.message}`);
-  const printed = await db.from("riftbound_printings").upsert(printings.map((r) => ({ ...r, updated_at })), { onConflict: "id" });
-  if (printed.error) throw new Error(`riftbound_printings upsert: ${printed.error.message}`);
-  log("info", "riftbound_catalogue_loaded", { cards: cards.length });
+  // A null type (Riot's tokens) is only shown, never compared with a type.
+  catalogue = (await storedCatalogue()) as Catalogue;
+  log("info", "riftbound_catalogue_loaded", { cards: catalogue.cards.length });
+}
+
+/** The application's owner as Discord reports it: the team owner if the app belongs to a team. */
+async function ownerId(): Promise<string | null> {
+  const { owner } = await client.application!.fetch();
+  return owner instanceof Team ? owner.ownerId : (owner?.id ?? null);
+}
+
+async function readFeedCatalogue() {
+  const { buildId, feed } = await fetchFeed();
+  const catalogue = transformFeed(feedItems(feed));
+  return { buildId, catalogue, checksum: checksum(catalogue) };
+}
+
+async function storedCatalogue(): Promise<{ cards: FeedCard[]; printings: FeedPrinting[] }> {
+  const read = <T>(table: string, columns: string) =>
+    readAll(async (from, to) => {
+      const { data, error } = await db.from(table).select(columns).order("id").range(from, to);
+      if (error) throw new Error(`${table} select: ${error.message}`);
+      return data as T[];
+    });
+  return { cards: await read("riftbound_cards", CARD_COLUMNS), printings: await read("riftbound_printings", PRINTING_COLUMNS) };
+}
+
+/** Riot's card feed against the catalogue (#204): a difference not proposed before goes to the owner. */
+async function checkCardFeed(): Promise<void> {
+  let fetched: Awaited<ReturnType<typeof readFeedCatalogue>>;
+  try {
+    fetched = await readFeedCatalogue();
+  } catch (err) {
+    log("error", "riftbound_feed_broken", { error: err });
+    // In the database, so a restart does not DM again the same day.
+    const day = new Date().toISOString().slice(0, 10);
+    const { data: claimed, error } = await db
+      .from("riftbound_feed_broken_dms")
+      .upsert({ day }, { onConflict: "day", ignoreDuplicates: true })
+      .select("day");
+    if (error) throw new Error(`riftbound_feed_broken_dms insert: ${error.message}`);
+    if (claimed.length === 0) return;
+    try {
+      const owner = await ownerId();
+      if (owner) await client.users.send(owner, { content: brokenText(err), allowedMentions: { parse: [] } });
+    } catch (sendErr) {
+      // Untold, so the next check tries again.
+      await db.from("riftbound_feed_broken_dms").delete().eq("day", day);
+      throw sendErr;
+    }
+    return;
+  }
+  const diff = diffCatalogue(fetched.catalogue, await storedCatalogue());
+  if (diff.sets.length === 0) {
+    log("info", "riftbound_feed_unchanged", { build_id: fetched.buildId });
+    return;
+  }
+  // Pending, accepted or rejected: the same build and content is asked about once.
+  const { data: inserted, error } = await db
+    .from("riftbound_catalogue_proposals")
+    .upsert(
+      { build_id: fetched.buildId, checksum: fetched.checksum, ...proposalCounts(diff) },
+      { onConflict: "build_id,checksum", ignoreDuplicates: true },
+    )
+    .select("id");
+  if (error) throw new Error(`riftbound_catalogue_proposals insert: ${error.message}`);
+  if (inserted.length === 0) {
+    log("info", "riftbound_feed_already_proposed", { build_id: fetched.buildId, checksum: fetched.checksum });
+    return;
+  }
+  const id = inserted[0].id as number;
+  try {
+    const owner = await ownerId();
+    if (!owner) throw new Error("the application has no owner");
+    await client.users.send(owner, {
+      content: proposalText(fetched.buildId, diff),
+      allowedMentions: { parse: [] },
+      components: [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setCustomId(proposalButtonId("accept", id)).setLabel("Accept").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(proposalButtonId("reject", id)).setLabel("Reject").setStyle(ButtonStyle.Danger),
+        ),
+      ],
+    });
+    log("info", "riftbound_feed_proposed", { proposal: id, build_id: fetched.buildId, ...proposalCounts(diff) });
+  } catch (err) {
+    // Unasked, so the next check asks again.
+    await db.from("riftbound_catalogue_proposals").delete().eq("id", id);
+    throw err;
+  }
+}
+
+/** Accept or Reject on a proposal DM: the owner only, and once. */
+async function proposalButton(
+  interaction: ButtonInteraction,
+  decision: NonNullable<ReturnType<typeof parseProposalButtonId>>,
+): Promise<void> {
+  if (interaction.user.id !== (await ownerId())) {
+    await interaction.reply({ content: "Only the bot's owner decides about the card feed.", flags: MessageFlags.Ephemeral });
+    return;
+  }
+  await interaction.deferUpdate();
+  const done = (note: string) => interaction.editReply({ content: `${interaction.message.content}\n\n${note}`, components: [] });
+  const { data: proposal, error } = await db
+    .from("riftbound_catalogue_proposals")
+    .select("checksum, status")
+    .eq("id", decision.proposal)
+    .maybeSingle();
+  if (error) throw new Error(`riftbound_catalogue_proposals select: ${error.message}`);
+  if (!proposal || proposal.status !== "pending") {
+    await done(`Already ${proposal?.status ?? "gone"}.`);
+    return;
+  }
+  if (decision.kind === "accepted") {
+    const fetched = await readFeedCatalogue();
+    if (fetched.checksum !== proposal.checksum) {
+      await done("The feed has changed since this was sent, so nothing was written. The next check asks about the new content.");
+      return;
+    }
+    const diff = diffCatalogue(fetched.catalogue, await storedCatalogue());
+    const updated_at = new Date().toISOString();
+    // Cards first: printings reference them. Nothing is deleted.
+    const written = await db.from("riftbound_cards").upsert(diff.cards.map((r) => ({ ...r, updated_at })), { onConflict: "id" });
+    if (written.error) throw new Error(`riftbound_cards upsert: ${written.error.message}`);
+    const printed = await db
+      .from("riftbound_printings")
+      .upsert(diff.printings.map((r) => ({ ...r, updated_at })), { onConflict: "id" });
+    if (printed.error) throw new Error(`riftbound_printings upsert: ${printed.error.message}`);
+    log("info", "riftbound_feed_accepted", { proposal: decision.proposal, cards: diff.cards.length, printings: diff.printings.length });
+    void tracked("riftbound_catalogue", loadCatalogue());
+  }
+  const decided = await db
+    .from("riftbound_catalogue_proposals")
+    .update({ status: decision.kind, decided_at: new Date().toISOString() })
+    .eq("id", decision.proposal);
+  if (decided.error) throw new Error(`riftbound_catalogue_proposals update: ${decided.error.message}`);
+  await done(decision.kind === "accepted" ? "Accepted: the cards are written." : "Rejected: this build is not asked about again.");
 }
 
 client.once(Events.ClientReady, async (c) => {
@@ -2348,7 +2498,13 @@ client.once(Events.ClientReady, async (c) => {
   setInterval(() => void periodicFlush(), FLUSH_MS);
   void rotatePresence();
   setInterval(() => void rotatePresence(), PRESENCE_MS);
-  void tracked("riftbound_catalogue", loadCatalogue());
+  // Reread daily too, so a failed read on start does not leave /card empty until a restart.
+  const cardCatalogue = () => {
+    void tracked("riftbound_catalogue", loadCatalogue());
+    void tracked("riftbound_feed_check", checkCardFeed());
+  };
+  cardCatalogue();
+  setInterval(cardCatalogue, FEED_CHECK_MS);
   monthlyRecaps();
   setInterval(monthlyRecaps, REPORT_CHECK_MS);
   setInterval(() => void refreshRanks(), RANKS_MS);

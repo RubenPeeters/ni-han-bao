@@ -141,7 +141,6 @@ export interface RuleCard {
   supertypes: string[];
   domains: string[];
   tags: string[];
-  placeholder: boolean;
 }
 
 // Only rules with a source (#169), each cited by its number. Copy, rune, battlefield and
@@ -149,16 +148,19 @@ export interface RuleCard {
 const rule = (n: string) => `Riftbound Core Rules 2026-10-09, rule ${n}`;
 export const MIN_MAIN_DECK = 40;
 
-/** A Champion unit of the Legend's champion. */
+/** A Champion unit of the Legend's champion, named "Champion, Epithet": a shared tag such as "Yordle" is no match. */
 export const championOf = (legend: RuleCard, card: RuleCard) =>
-  card.supertypes.includes("Champion") && card.tags.some((t) => legend.tags.includes(t));
+  card.supertypes.includes("Champion") && legend.tags.includes(card.name.split(", ")[0]);
+
+// Riot's feed gives battlefields, tokens and a few units the domain "Colorless": no domain, so in any deck.
+const domainsOf = (card: RuleCard) => card.domains.filter((d) => d !== "Colorless");
 
 /** The rules a deck breaks, as warnings only: a deck is saved whatever they say. */
 export function deckWarnings(
   deck: { legend_id: string | null; champion_id: string | null },
   entries: Entry[],
   cards: Map<string, RuleCard>,
-): { warnings: string[]; placeholder: boolean } {
+): string[] {
   const legend = deck.legend_id ? cards.get(deck.legend_id) : undefined;
   const champion = deck.champion_id ? cards.get(deck.champion_id) : undefined;
   const used = entries.flatMap((e) => cards.get(e.card_id) ?? []);
@@ -174,12 +176,11 @@ export function deckWarnings(
       warnings.push(`${champion.name} is the Chosen Champion but not in the main deck (${rule("103.3.a")}).`);
   }
   if (legend) {
-    const outside = [...new Set(used.filter((c) => c.domains.some((d) => !legend.domains.includes(d))).map((c) => c.name))];
+    const outside = [...new Set(used.filter((c) => domainsOf(c).some((d) => !legend.domains.includes(d))).map((c) => c.name))];
     if (outside.length)
       warnings.push(`Outside the Legend's domains (${legend.domains.join(", ") || "none"}): ${outside.join(", ")} (${rule("103.2.b.1")}).`);
   }
-  const placeholder = [legend, champion, ...used].some((c) => c?.placeholder);
-  return { warnings, placeholder };
+  return warnings;
 }
 
 /** Every row of a query, `size` at a time: PostgREST caps a response at 1000 rows. `page` must order deterministically. */

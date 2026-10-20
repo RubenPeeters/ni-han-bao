@@ -6,10 +6,13 @@
 -- matches follow it too (#178), and decks not for lending hold their cards (#179); that only public decks are teased logged
 -- out (#175); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
--- so it is not part of `make check`. Run against a local Supabase or the dev project
--- (never production); everything is rolled back:
+-- so it is not part of `make check`; migrate.yml runs it on the dev project after the seed.
+-- Run against a local Supabase or the dev project (never production); everything is rolled back.
+-- The dev project holds the demo seed, so every check is scoped to the script's own rls- rows:
 --   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/check-rls.sql
 begin;
+-- The session user may be a CLI login role (migrate.yml), so `reset role` alone is not postgres.
+set role postgres;
 
 -- Two servers; the test user is a member of the first only. Ids no real row can have.
 do $$
@@ -78,9 +81,10 @@ begin
     select u, 'lol', u, 'euw1' from unnest(array['rls-rls-mine', 'rls-rls-other', 'rls-hidden']) u;
     insert into public.lol_ranks (user_id, queue, tier, division, lp)
     select u, 'RANKED_SOLO_5x5', 'GOLD', 'II', 47 from unnest(array['rls-rls-mine', 'rls-rls-other', 'rls-hidden']) u;
-    -- League games (#104): read through functions only, per server.
+    -- League games (#104): read through functions only, per server. An hour ago: now() does not
+    -- move inside a transaction, and lol_week() counts played_at < now().
     insert into public.lol_matches (user_id, puuid, match_id, queue_id, champion, played_at)
-    select u, u, 'EUW1_' || u, 420, 'Ahri', now() from unnest(array['rls-rls-mine', 'rls-rls-other', 'rls-hidden']) u;
+    select u, u, 'EUW1_' || u, 420, 'Ahri', now() - interval '1 hour' from unnest(array['rls-rls-mine', 'rls-rls-other', 'rls-hidden']) u;
     -- The Riftbound catalogue (#148): global, for anyone logged in.
     insert into public.riftbound_cards (id, name, type) values ('rls-card', 'x', 'Spell');
     insert into public.riftbound_printings (id, card_id, set_code, collector_code, collector_number)
@@ -331,11 +335,11 @@ begin
         raise exception 'set_card_lending() does not save your own setting';
     end if;
     -- Decks (#173): public ones and those of members of the visitor's servers, never private.
-    if (select array_agg(name order by name) from public.riftbound_decks) <> array['public', 'servers-shared']
-        or (select count(*) from public.riftbound_deck_cards) <> 2 then
+    if (select array_agg(name order by name) from public.riftbound_decks where user_id like 'rls-%') <> array['public', 'servers-shared']
+        or (select count(*) from public.riftbound_deck_cards where card_id = 'rls-card') <> 2 then
         raise exception 'a member reads decks that are private, or shared only with servers they are not in';
     end if;
-    if (select count(*) from public.riftbound_deck_versions) <> 2 then
+    if (select count(*) from public.riftbound_deck_versions where entries @> '[{"card_id":"rls-card"}]') <> 2 then
         raise exception 'a member reads versions of a deck they cannot see';
     end if;
     begin
@@ -380,7 +384,7 @@ begin
     perform public.delete_riftbound_deck(deck);
     if exists (select from public.riftbound_decks where id = deck) then raise exception 'delete_riftbound_deck() keeps your deck'; end if;
     -- Opened decks (#174): only someone else's public one is remembered.
-    perform public.open_riftbound_deck(id) from public.riftbound_decks;
+    perform public.open_riftbound_deck(id) from public.riftbound_decks where user_id like 'rls-%';
     if (select array_agg(d.name) from public.riftbound_deck_opens o join public.riftbound_decks d on d.id = o.deck_id) <> array['public'] then
         raise exception 'open_riftbound_deck() remembers a deck that is not someone else''s public one';
     end if;
@@ -459,7 +463,7 @@ end $$;
 
 -- Trade matches as the bot reads them (#178): the test user wants rls-card (set_riftbound_wish()
 -- above); only rls-rls-mine may be named to them, once, and they meet at the best place known.
-reset role;
+set role postgres;
 do $$
 begin
     if (select array_agg(trader_id || ':' || guild_id || ':' || place_kind) from public.riftbound_trade_candidates()
@@ -484,7 +488,7 @@ begin
 end $$;
 
 -- Your own profile still shows your stats in a server where you ran /hide-me (#100).
-reset role;
+set role postgres;
 update public.members set hidden = true where guild_id = 'rls-mine' and user_id = 'rls-user';
 set local role authenticated;
 do $$
@@ -501,7 +505,7 @@ end $$;
 
 -- The lending ledger (#172), as the bot writes it: append-only, an owner lends only copies in
 -- hand, a correction replaces a loan, answers replace each other, one nudge, one close.
-reset role;
+set role postgres;
 do $$
 declare cards constant jsonb := '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"en","quantity":1}]';
     first bigint := (select id from public.riftbound_loans where lender_id = 'rls-rls-mine');
@@ -554,8 +558,8 @@ begin
                    where c.loan_id = first and c.kind = 'confirmed' and d.kind = 'disputed' and d.note = 'I got none') then
         raise exception 'a new answer does not replace the dispute';
     end if;
-    if (select array_agg(loan_id) from public.nudge_riftbound_loans(current_date)) <> array[fixed]
-        or exists (select from public.nudge_riftbound_loans(current_date)) then
+    if (select array_agg(loan_id) from public.nudge_riftbound_loans(current_date) where lender_id like 'rls-%') <> array[fixed]
+        or exists (select from public.nudge_riftbound_loans(current_date) where lender_id like 'rls-%') then
         raise exception 'nudge_riftbound_loans() does not nudge a due loan exactly once';
     end if;
     if exists (select from public.close_riftbound_loans('rls-user', 'rls-rls-mine', 'written_off', null)) then
@@ -575,7 +579,7 @@ end $$;
 -- Decks and lending (#179): a deck not for lending holds its cards back from lending, a deck is
 -- lent whole as one loan that names it, and the site takes only the borrower's answers. Every
 -- loan above is closed, so rls-rls-mine has both copies in hand.
-reset role;
+set role postgres;
 do $$
 declare kept uuid := (select id from public.riftbound_decks where user_id = 'rls-rls-mine' and name = 'private');
 begin
@@ -682,7 +686,7 @@ end $$;
 
 -- /forget-me (#72): no row about the user is left anywhere, and none can be written again
 -- until remember_user().
-reset role;
+set role postgres;
 do $$
 declare t text; n bigint;
 begin

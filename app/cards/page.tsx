@@ -3,7 +3,7 @@ import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
 import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
-const DESCRIPTION = "Every Riftbound card the bot knows. Placeholders for now, until Riot's card data is available.";
+const DESCRIPTION = "Every Riftbound card the bot knows, from Riot's own card gallery.";
 
 export const metadata = { title: "Cards · ni han bao", description: DESCRIPTION };
 
