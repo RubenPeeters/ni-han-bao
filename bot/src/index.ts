@@ -36,8 +36,7 @@ import {
   eventChoices,
   SUBSCRIBER_PAGE,
   goingEventId,
-  goingId,
-  goingText,
+  goingMessage,
   eventLabel,
   matchStore,
   parseWhen,
@@ -1446,13 +1445,9 @@ async function eventCommand(interaction: ChatInputCommandInteraction<"cached">):
   }
   await interaction.editReply(reply);
   if (!announce) return;
-  const button = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId(goingId(announce.id)).setLabel("Going").setStyle(ButtonStyle.Primary),
-  );
   // Store names are typed by members: no @everyone or role pings from them.
   await interaction.followUp({
-    content: goingText(announce.stores, announce.starts_at, timezone, announce.url),
-    components: [button],
+    ...goingMessage(announce.id, announce.stores, announce.starts_at, timezone, announce.url),
     allowedMentions: { parse: [] },
   });
 }
