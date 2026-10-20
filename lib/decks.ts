@@ -79,6 +79,13 @@ export function parseDeckList(text: string): PastedLine[] {
   return lines;
 }
 
+/** The paste box once a line is dealt with (its card picked), so pasting again cannot add it twice. */
+export function withoutLine(text: string, line: string): string {
+  const lines = text.split(/\r?\n/);
+  const i = lines.findIndex((l) => l.trim() === line);
+  return i < 0 ? text : [...lines.slice(0, i), ...lines.slice(i + 1)].join("\n");
+}
+
 export interface DeckCards {
   legend_id: string | null;
   champion_id: string | null;
@@ -111,9 +118,9 @@ export interface RuleCard {
   placeholder: boolean;
 }
 
-// Only rules with a source (#169). Copy, rune, battlefield and sideboard limits wait until
-// Riot's current official rules confirm them, each with its rule number.
-const SOURCE = "Riftbound Core Rules, 2025-06-02";
+// Only rules with a source (#169), each cited by its number. Copy, rune, battlefield and
+// sideboard limits wait until they are checked against the rules the same way.
+const rule = (n: string) => `Riftbound Core Rules 2026-10-09, rule ${n}`;
 export const MIN_MAIN_DECK = 40;
 
 /** A Champion unit of the Legend's champion. */
@@ -131,19 +138,19 @@ export function deckWarnings(
   const used = entries.flatMap((e) => cards.get(e.card_id) ?? []);
   const main = entries.filter((e) => e.section === "main").reduce((n, e) => n + e.quantity, 0);
   const warnings: string[] = [];
-  if (main < MIN_MAIN_DECK) warnings.push(`The main deck has ${main} cards; it needs at least ${MIN_MAIN_DECK} (${SOURCE}).`);
+  if (main < MIN_MAIN_DECK) warnings.push(`The main deck has ${main} cards; it needs at least ${MIN_MAIN_DECK} (${rule("103.3")}).`);
   if (!legend) warnings.push("No Legend yet: it sets the deck's domains and its Chosen Champion.");
-  if (!champion) warnings.push(`No Chosen Champion: the main deck includes one, matching the Legend (${SOURCE}).`);
+  if (!champion) warnings.push(`No Chosen Champion: the main deck includes one, matching the Legend (${rule("103.3.a")}).`);
   else {
     if (legend && !championOf(legend, champion))
-      warnings.push(`${champion.name} is not a champion of the Legend, ${legend.name} (${SOURCE}).`);
+      warnings.push(`${champion.name} is not a champion of the Legend, ${legend.name} (${rule("103.3.a.2")}).`);
     if (!entries.some((e) => e.section === "main" && e.card_id === champion.id))
-      warnings.push(`${champion.name} is the Chosen Champion but not in the main deck (${SOURCE}).`);
+      warnings.push(`${champion.name} is the Chosen Champion but not in the main deck (${rule("103.3.a")}).`);
   }
   if (legend) {
     const outside = [...new Set(used.filter((c) => c.domains.some((d) => !legend.domains.includes(d))).map((c) => c.name))];
     if (outside.length)
-      warnings.push(`Outside the Legend's domains (${legend.domains.join(", ") || "none"}): ${outside.join(", ")} (${SOURCE}).`);
+      warnings.push(`Outside the Legend's domains (${legend.domains.join(", ") || "none"}): ${outside.join(", ")} (${rule("103.2.b.1")}).`);
   }
   const placeholder = [legend, champion, ...used].some((c) => c?.placeholder);
   return { warnings, placeholder };

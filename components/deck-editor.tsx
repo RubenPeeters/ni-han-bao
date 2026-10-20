@@ -21,6 +21,7 @@ import {
   type Entry,
   type PastedLine,
   type Section,
+  withoutLine,
 } from "@/lib/decks";
 import { createClient } from "@/lib/supabase/client";
 import { Minus, Plus } from "lucide-react";
@@ -244,6 +245,7 @@ export function DeckEditor({ deck, entries, catalogue, mine }: { deck: Deck; ent
                             onClick={() => {
                               apply(addCard(current, c, p.line.quantity, p.line.heading));
                               setProblems(problems.filter((x) => x !== p));
+                              setPasted((text) => withoutLine(text, p.line.text));
                             }}
                           >
                             {c.type === "Legend" ? legendLabel(c) : c.name}
