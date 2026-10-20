@@ -1,7 +1,7 @@
 -- Proves per-server data is readable only by members of that server (#45): anon reads zero
 -- rows from every table with a guild_id, and a logged-in user reads rows of their own
 -- servers only; that profiles follow their visibility (#100); that the lending ledger holds
--- (#172); then that /forget-me deletes
+-- (#172); that decks follow their visibility (#173); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`. Run against a local Supabase or the dev project
 -- (never production); everything is rolled back:
@@ -91,6 +91,13 @@ begin
     perform public.lend_riftbound_cards(l, b, null, null,
         '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"en","quantity":1}]')
     from (values ('rls-rls-mine', 'rls-user'), ('rls-rls-other', 'rls-public')) v (l, b);
+    -- Decks (#173): rls-rls-mine shares a server with the test user, rls-rls-other does not.
+    insert into public.riftbound_cards (id, name, type) values ('rls-card-2', 'y', 'Spell');
+    insert into public.riftbound_decks (user_id, name, visibility)
+    values ('rls-rls-mine', 'servers-shared', 'servers'), ('rls-rls-mine', 'private', 'private'),
+           ('rls-rls-other', 'servers-not-shared', 'servers'), ('rls-public', 'public', 'public');
+    insert into public.riftbound_deck_cards (deck_id, section, card_id, quantity)
+    select id, 'main', 'rls-card', 1 from public.riftbound_decks where user_id like 'rls-%';
     -- anon cannot read keys itself, so hand it one for the recap checks below.
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
@@ -125,6 +132,9 @@ begin
         or exists (select from public.riftbound_loan_entries) then
         raise exception 'anon reads a loan';
     end if;
+    if exists (select from public.riftbound_decks) or exists (select from public.riftbound_deck_cards) then
+        raise exception 'anon reads a deck, even a public one';
+    end if;
     if exists (select from public.lol_ranks) or exists (select from public.profile_ranks('rls-rls-mine')) then
         raise exception 'anon reads a rank';
     end if;
@@ -154,7 +164,7 @@ end $$;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-000000000045","role":"authenticated"}', true);
 do $$
-declare t text; mine bigint; other bigint;
+declare t text; mine bigint; other bigint; deck uuid;
 begin
     for t in select pg_temp.guild_tables() loop
         execute format('select count(*) filter (where guild_id = ''rls-mine''),'
@@ -296,6 +306,44 @@ begin
     if (select lends_cards from public.profiles where user_id = 'rls-user') is not true then
         raise exception 'set_card_lending() does not save your own setting';
     end if;
+    -- Decks (#173): public ones and those of members of the visitor's servers, never private.
+    if (select array_agg(name order by name) from public.riftbound_decks) <> array['public', 'servers-shared']
+        or (select count(*) from public.riftbound_deck_cards) <> 2 then
+        raise exception 'a member reads decks that are private, or shared only with servers they are not in';
+    end if;
+    deck := public.save_riftbound_deck(null, 'mine', null, null, null, null, null, null,
+        '[{"section":"main","card_id":"rls-card","printing_id":"rls-printing","quantity":2},
+          {"section":"main","card_id":"rls-card","printing_id":"rls-printing","quantity":1}]');
+    if (select visibility || ':' || language || ':' || allow_other_languages from public.riftbound_decks where id = deck)
+        <> 'private:en:true'
+        or (select quantity from public.riftbound_deck_cards where deck_id = deck) <> 3 then
+        raise exception 'save_riftbound_deck() does not default to private and English, or does not merge entries';
+    end if;
+    perform public.add_riftbound_deck_card(deck, 'rls-card');
+    if (select string_agg(coalesce(printing_id, '-') || ':' || quantity, ',' order by printing_id) from public.riftbound_deck_cards
+        where deck_id = deck) <> 'rls-printing:3,-:1' then
+        raise exception 'add_riftbound_deck_card() does not add an unpinned copy';
+    end if;
+    begin
+        perform public.save_riftbound_deck(deck, 'mine', null, null, null, 'private', 'en', true,
+            '[{"section":"main","card_id":"rls-card-2","printing_id":"rls-printing","quantity":1}]');
+        raise exception 'a deck entry is pinned to a printing of another card';
+    exception when foreign_key_violation then null;
+    end;
+    begin
+        perform public.add_riftbound_deck_card((select id from public.riftbound_decks where name = 'public'), 'rls-card');
+        raise exception 'a member adds cards to someone else''s deck';
+    exception when raise_exception then
+        if sqlerrm <> 'not your deck' then raise; end if;
+    end;
+    perform public.delete_riftbound_deck((select id from public.riftbound_decks where name = 'public'));
+    if not exists (select from public.riftbound_decks where name = 'public') then
+        raise exception 'a member deletes someone else''s deck';
+    end if;
+    perform public.delete_riftbound_deck(deck);
+    if exists (select from public.riftbound_decks where id = deck) then raise exception 'delete_riftbound_deck() keeps your deck'; end if;
+    -- One left for /forget-me to delete.
+    perform public.save_riftbound_deck(null, 'kept', null, null, null, null, null, null, null);
     if (select icon from public.guild_games('rls-mine', current_date)) is distinct from 'i' then
         raise exception 'guild_games() does not return the game icon';
     end if;

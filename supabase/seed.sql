@@ -56,6 +56,7 @@ begin
     delete from public.riftbound_loans where lender_id = any (users) or borrower_id = any (users);
     perform set_config('ni_han_bao.erase_loans', 'off', true);
     delete from public.riftbound_collection where user_id = any (users);
+    delete from public.riftbound_decks where user_id = any (users);
     delete from public.profiles where user_id = any (users);
     delete from public.guild_members where guild_id = g;
     delete from public.members where guild_id = g;
@@ -200,6 +201,33 @@ begin
             perform public.answer_riftbound_loan(users[r.borrower], loan, r.outcome, r.note);
         end if;
     end loop;
+
+    -- Riftbound decks (#173): Anna's, one per visibility. The public one is the demo deck page
+    -- (scripts/screenshots.mjs): 40 cards in Ahri's Legend's domains, her champion pinned to a
+    -- printing. The others break a rule or two, for the warnings.
+    insert into public.riftbound_decks (id, user_id, name, legend_id, champion_id, notes, visibility, language, allow_other_languages)
+    values ('00000000-0000-4000-8000-0000000d0001', users[1], 'Ahri control', 'placeholder-legend-ahri', 'placeholder-unit-ahri',
+            'Hold the battlefields early, win late.', 'public', 'en', true),
+           ('00000000-0000-4000-8000-0000000d0002', users[1], 'Annie for Nexus Night', 'placeholder-legend-annie',
+            'placeholder-unit-annie', '', 'servers', 'fr', false),
+           ('00000000-0000-4000-8000-0000000d0003', users[1], 'Work in progress', null, null, '', 'private', 'en', true);
+    insert into public.riftbound_deck_cards (deck_id, section, card_id, printing_id, quantity)
+        values ('00000000-0000-4000-8000-0000000d0001', 'main', 'placeholder-unit-ahri', 'PLH-U103', 1),
+               ('00000000-0000-4000-8000-0000000d0002', 'main', 'placeholder-unit-annie', null, 1);
+    insert into public.riftbound_deck_cards (deck_id, section, card_id, quantity)
+        select d.id, case when c.n > d.main then 'sideboard' else 'main' end, c.id, case when c.n > d.main then 1 else 3 end
+        from (values ('00000000-0000-4000-8000-0000000d0001'::uuid, 'placeholder-legend-ahri', 13, 2),
+                     ('00000000-0000-4000-8000-0000000d0002'::uuid, 'placeholder-legend-annie', 6, 0),
+                     ('00000000-0000-4000-8000-0000000d0003'::uuid, 'placeholder-legend-ahri', 3, 0)) d (id, legend, main, side)
+        join public.riftbound_cards l on l.id = d.legend
+        cross join lateral (
+            select c.id, row_number() over (order by c.id) n from public.riftbound_cards c
+            where c.type <> 'Legend' and c.domains <@ l.domains and c.tags <> l.tags
+            order by c.id limit d.main + d.side
+        ) c;
+    -- Outside Annie's domains, for that warning.
+    insert into public.riftbound_deck_cards (deck_id, section, card_id, quantity)
+        values ('00000000-0000-4000-8000-0000000d0002', 'main', 'placeholder-unit-ahri', 2);
 
     -- Riftbound local play: stores, regulars and upcoming events.
     insert into public.stores (guild_id, name, city, url, added_by) values

@@ -66,6 +66,11 @@ export default function AboutPage() {
             replaces the old one. Only you and the other member see a loan, on your profiles&apos;
             Loans tab. The bot sends the borrower one reminder on the due date, if they accept DMs.
           </li>
+          <li>
+            Riftbound decks: the decks you build on the Decks page, with their cards, Legend,
+            Chosen Champion, language and notes. A deck is private unless you share it with the
+            members of your servers, or with anyone logged in who has its link.
+          </li>
           <li>Joins and leaves.</li>
         </ul>
         <p>
@@ -110,7 +115,7 @@ export default function AboutPage() {
           To have your data deleted instead, type <Cmd>/forget-me</Cmd> in any server and
           confirm. It deletes everything the bot stored about you, in every server: your
           message, reaction and voice counts, your game time, your name and avatar, your server memberships, your
-          linked League account with its ranks and games, your Riftbound collection and loans (they go for the other member too), your profile and lending settings and your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
+          linked League account with its ranks and games, your Riftbound collection, decks and loans (they go for the other member too), your profile and lending settings and your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
           their counts, without anything that points to you. The bot then stops counting you,
           keeping only a scrambled (hashed) copy of your Discord id to recognise you by. Until
           you type <Cmd>/show-me</Cmd>, which starts counting you again, you also cannot open

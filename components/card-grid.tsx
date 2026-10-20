@@ -1,5 +1,6 @@
 "use client";
 
+import { addToDeck, type MyDeck } from "@/components/add-to-deck";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,6 +51,8 @@ export interface MyCollection {
   lendAll: boolean;
   /** The language last added in: where entry starts. */
   language: Language;
+  /** For Add to deck. */
+  decks: MyDeck[];
 }
 
 const MODES: { value: Mode; label: string }[] = [
@@ -83,6 +86,9 @@ export function CardGrid({ cards, mine }: { cards: LibraryCard[]; mine: MyCollec
   const [condition, setCondition] = useState<Condition>("NM");
   const [language, setLanguage] = useState<Language>(mine.language);
   const collection = useCollection(mine);
+  const [deckId, setDeckId] = useState("");
+  const [added, setAdded] = useState("");
+  const deck = mine.decks.find((d) => d.id === deckId);
   const q = normal(query);
   const code = codeKey(query);
   const shown = cards.filter(
@@ -181,8 +187,24 @@ export function CardGrid({ cards, mine }: { cards: LibraryCard[]; mine: MyCollec
               ? `${cards.length.toLocaleString("en-US")} cards`
               : `${shown.length.toLocaleString("en-US")} of ${cards.length.toLocaleString("en-US")} cards`}
             {collection.status && ` · ${collection.status}`}
+            {added && ` · ${added}`}
           </p>
           <div className="flex flex-wrap gap-2">
+            {mine.decks.length > 0 && (
+              <select
+                aria-label="Add to deck"
+                value={deckId}
+                onChange={(e) => setDeckId(e.target.value)}
+                className="h-9 min-w-0 max-w-48 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="">Add to deck…</option>
+                {mine.decks.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            )}
             {editing && playsetOf && (
               <Button
                 variant="secondary"
@@ -242,6 +264,17 @@ export function CardGrid({ cards, mine }: { cards: LibraryCard[]; mine: MyCollec
                     {owned > 0 && <span className="text-xs font-medium">{owned.toLocaleString("en-US")} owned</span>}
                   </span>
                 </Link>
+                {deck && (
+                  <Button
+                    variant="secondary"
+                    className="mt-auto h-11 w-full"
+                    aria-label={`Add ${c.name} to ${deck.name}`}
+                    onClick={async () => setAdded(await addToDeck(deck, c))}
+                  >
+                    <Plus aria-hidden />
+                    Add to deck
+                  </Button>
+                )}
                 {editing && p && (
                   <div className="mt-auto flex items-center justify-between gap-1">
                     <Button variant="secondary" size="icon" className="size-11" aria-label={`One fewer: ${c.name}`} disabled={count === 0} onClick={() => tap(c, -1)}>
