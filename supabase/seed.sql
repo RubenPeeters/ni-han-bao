@@ -235,6 +235,18 @@ begin
         select '00000000-0000-4000-8000-0000000d0004', 'main', card_id, quantity from public.riftbound_deck_cards
         where deck_id = '00000000-0000-4000-8000-0000000d0001' and section = 'main' and printing_id is null;
     insert into public.riftbound_deck_opens (user_id, deck_id) values (users[1], '00000000-0000-4000-8000-0000000d0004');
+    -- Version history (#176): the demo deck three days ago, without its sideboard, one copy of its
+    -- first card and its champion unpinned; then every deck as it is now. Version 2 of the demo
+    -- deck is the demo version page (scripts/screenshots.mjs).
+    insert into public.riftbound_deck_versions
+        (deck_id, version, saved_at, name, legend_id, champion_id, notes, language, allow_other_languages, entries)
+    select d.id, 1, now() - interval '3 days', d.name, d.legend_id, d.champion_id, '', d.language, d.allow_other_languages,
+        (select jsonb_agg(jsonb_build_object('section', c.section, 'card_id', c.card_id, 'printing_id', null,
+             'quantity', case when c.first then 1 else c.quantity end))
+         from (select c.*, c.card_id = min(c.card_id) over () first from public.riftbound_deck_cards c
+               where c.deck_id = d.id and c.section = 'main') c)
+    from public.riftbound_decks d where d.id = '00000000-0000-4000-8000-0000000d0001';
+    perform public.snapshot_riftbound_deck(id) from public.riftbound_decks where user_id = any (users);
 
     -- Riftbound local play: stores, regulars and upcoming events.
     insert into public.stores (guild_id, name, city, url, added_by) values

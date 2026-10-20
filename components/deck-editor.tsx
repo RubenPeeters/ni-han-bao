@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LANGUAGES, languageName } from "@/lib/collection";
+import { formatExact } from "@/lib/time";
 import {
   addCard,
   championOf,
@@ -29,7 +30,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Minus, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 export interface Deck {
   id: string;
@@ -40,6 +41,12 @@ export interface Deck {
   visibility: string;
   language: string;
   allow_other_languages: boolean;
+}
+
+/** A saved version, as History lists it. */
+export interface VersionListed {
+  version: number;
+  saved_at: string;
 }
 
 /** A pasted line that is not exactly one card: kept for fixing, never guessed. */
@@ -60,6 +67,8 @@ export function DeckEditor({
   catalogue,
   owned,
   mine,
+  versions,
+  children,
 }: {
   deck: Deck;
   entries: Entry[];
@@ -67,6 +76,10 @@ export function DeckEditor({
   /** The visitor's copies, for Missing cards (of their own collection, whoever owns the deck). */
   owned: OwnedCopy[];
   mine: boolean;
+  /** Newest first, for History; null if they could not be loaded, absent to show no History. */
+  versions?: VersionListed[] | null;
+  /** Under the heading: what a version page says about the version shown. */
+  children?: ReactNode;
 }) {
   const router = useRouter();
   const [settings, setSettings] = useState(deck);
@@ -178,6 +191,8 @@ export function DeckEditor({
             .join(" · ")}
         </p>
       </div>
+
+      {children}
 
       <StatCard
         title={placeholder ? "Rules check on placeholder data" : "Rules check"}
@@ -343,6 +358,28 @@ export function DeckEditor({
       {!mine && settings.notes && (
         <StatCard title="Notes" description="From the deck's owner">
           <p className="whitespace-pre-line break-words text-sm">{settings.notes}</p>
+        </StatCard>
+      )}
+
+      {versions !== undefined && (
+        <StatCard title="History" description="Every save is a version: view one, compare it or restore it">
+          {versions === null ? (
+            <EmptyState>Could not load the history. Try again in a minute.</EmptyState>
+          ) : (
+            <ul className="flex flex-col divide-y">
+              {versions.map((v, i) => (
+                <li key={v.version}>
+                  <Link
+                    href={`/decks/${deck.id}/versions/${v.version}`}
+                    className="flex min-h-11 items-center justify-between gap-3 rounded-md py-2 text-sm hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span className="font-medium">Version {v.version}</span>
+                    <span className="truncate text-xs text-muted-foreground">{[i === 0 && "Current", formatExact(new Date(v.saved_at))].filter(Boolean).join(" · ")}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </StatCard>
       )}
 
@@ -520,5 +557,37 @@ function EntryRow({
         </div>
       )}
     </li>
+  );
+}
+
+/** Restore on a version page: the version saved again as the deck's newest, under the deck's current visibility. */
+export function RestoreVersion({ deck, entries, version }: { deck: Deck; entries: Entry[]; version: number }) {
+  const router = useRouter();
+  const [status, setStatus] = useState("");
+  const restore = async () => {
+    setStatus("Restoring…");
+    const { error } = await createClient().rpc("save_riftbound_deck", {
+      p_deck: deck.id,
+      p_name: deck.name,
+      p_legend: deck.legend_id,
+      p_champion: deck.champion_id,
+      p_notes: deck.notes,
+      p_visibility: deck.visibility,
+      p_language: deck.language,
+      p_allow_other_languages: deck.allow_other_languages,
+      p_entries: entries,
+    });
+    if (error) return setStatus(`Not restored (${error.message}). Try again.`);
+    router.push(`/decks/${deck.id}`);
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Button className="h-11" onClick={restore} disabled={status === "Restoring…"}>
+        Restore version {version}
+      </Button>
+      <p aria-live="polite" className="text-xs text-muted-foreground">
+        {status || "Saves it as a new version; nothing is lost."}
+      </p>
+    </div>
   );
 }
