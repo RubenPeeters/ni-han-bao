@@ -65,8 +65,11 @@ async function myDecks(supabase: Awaited<ReturnType<typeof createClient>>, me: s
   return supabase.from("riftbound_decks").select("id, name").eq("user_id", me).order("name").returns<MyDeck[]>();
 }
 
-/** The global Riftbound catalogue: not per server, so no guild filter; RLS lets anyone logged in read it. */
-export async function CardLibrary() {
+/**
+ * The global Riftbound catalogue: not per server, so no guild filter; RLS lets anyone logged in read it.
+ * `owned`: only the cards the visitor owns, for /collection.
+ */
+export async function CardLibrary({ owned: ownedOnly = false }: { owned?: boolean }) {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims) return <LogInPrompt text={LOG_IN} />;
@@ -86,7 +89,9 @@ export async function CardLibrary() {
   const cards = (data as Card[]).map((c) => ({ ...c, printings: c.printings.toSorted(byNumber) }));
   // Collector order, as in a binder; a card without printings goes last.
   const first = (c: Card) => c.printings[0]?.collector_number ?? Infinity;
+  const have = new Set(owned.data.flatMap((r) => (r.quantity > 0 ? [r.printing_id] : [])));
   const library: LibraryCard[] = cards
+    .filter((c) => !ownedOnly || c.printings.some((p) => have.has(p.id)))
     .toSorted((a, b) => first(a) - first(b) || a.name.localeCompare(b.name))
     .map((c) => ({
       id: c.id,
@@ -100,6 +105,14 @@ export async function CardLibrary() {
       printings: c.printings.map(({ id, set_code, collector_code }) => ({ id, set_code, collector_code })),
       image_url: c.printings.find((p) => p.image_url)?.image_url ?? null,
     }));
+  if (ownedOnly && library.length === 0) {
+    return (
+      <EmptyState>
+        No cards yet. Add them on the <Link href="/cards" className="underline underline-offset-4">Cards</Link> page with Edit
+        my collection, or with /collection add in Discord.
+      </EmptyState>
+    );
+  }
   return (
     <CardGrid
       cards={library}

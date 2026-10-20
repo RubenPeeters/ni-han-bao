@@ -31,7 +31,7 @@ const day = (iso: string) =>
  * A profile's Loans tab: the visitor's own loans with the profile's owner, so all of them on
  * your own profile. profile_loans() leaves out everyone who is not a party to a loan.
  */
-export async function ProfileLoans({ user }: { user: string }) {
+export async function ProfileLoans({ user, own }: { user: string; own?: boolean }) {
   const supabase = await createClient();
   const [profile, loans] = await Promise.all([
     supabase.rpc("profile", { u: user }).maybeSingle<Profile>(),
@@ -50,11 +50,14 @@ export async function ProfileLoans({ user }: { user: string }) {
   ].filter((s) => s.loans.length > 0);
   return (
     <>
-      <ProfileHeader
-        user={user}
-        profile={profile.data}
-        subtitle={mine ? "Riftbound cards you lent and borrowed." : "Riftbound cards lent between you and them."}
-      />
+      {!own && (
+        <ProfileHeader
+          user={user}
+          profile={profile.data}
+          subtitle={mine ? "Riftbound cards you lent and borrowed." : "Riftbound cards lent between you and them."}
+          manage="/loans"
+        />
+      )}
       {sections.length === 0 ? (
         <EmptyState>
           {mine

@@ -22,6 +22,7 @@ export async function setLending(formData: FormData) {
   });
   if (error) throw new Error(`set_card_lending failed: ${error.message}`);
   revalidatePath("/u/[userId]/collection", "page");
+  revalidatePath("/collection");
   revalidatePath("/settings");
 }
 
@@ -33,6 +34,7 @@ export async function setWishlistMode(formData: FormData) {
   if (error) throw new Error(`set_wishlist_mode failed: ${error.message}`);
   revalidatePath("/decks");
   revalidatePath("/u/[userId]/wishlist", "page");
+  revalidatePath("/wishlist");
   revalidatePath("/settings");
 }
 
@@ -46,4 +48,5 @@ export async function answerLoan(formData: FormData) {
   });
   if (error) throw new Error(`answer_my_riftbound_loan failed: ${error.message}`);
   revalidatePath("/u/[userId]/loans", "page");
+  revalidatePath("/loans");
 }

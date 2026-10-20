@@ -6,7 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { discordId, useUser } from "@/components/auth-button";
+import { useUser } from "@/components/auth-button";
 import { currentRiftboundTab, riftboundTabs } from "@/lib/riftbound-pages";
 import { SERVER_GROUPS, switchPath } from "@/lib/server-pages";
 import { cn } from "@/lib/utils";
@@ -46,10 +46,10 @@ export function GuildIcon({ guild, className }: { guild: Guild; className: strin
 
 // The brand links home, so the site-wide sections left are the servers, Riftbound and the docs.
 // Server pages have their own row of tabs, so only the picker itself marks Servers.
-export function MainNav({ pathname, me }: { pathname: string | null; me: string | null }) {
+export function MainNav({ pathname }: { pathname: string | null }) {
   const main = [
     { href: "/s", label: "Servers", current: pathname === "/s" },
-    { href: "/cards", label: "Riftbound", current: !!currentRiftboundTab(pathname, me) },
+    { href: "/cards", label: "Riftbound", current: !!currentRiftboundTab(pathname) },
     { href: "/docs", label: "Docs", current: pathname === "/docs" || !!pathname?.startsWith("/docs/") },
   ];
   return (
@@ -67,26 +67,22 @@ export function MainNav({ pathname, me }: { pathname: string | null; me: string 
   );
 }
 
-const useMe = () => {
-  const user = useUser();
-  return user ? discordId(user) : null;
-};
-
 export function SiteNav() {
-  return <MainNav pathname={usePathname()} me={useMe()} />;
+  return <MainNav pathname={usePathname()} />;
 }
 
 /** The second row on Riftbound pages: the catalogue, and the member's own collection pages. */
 export function RiftboundNav() {
   const pathname = usePathname();
-  const me = useMe();
-  const current = currentRiftboundTab(pathname, me);
+  // Logged in is enough: the own pages read the Discord id on the server.
+  const loggedIn = !!useUser();
+  const current = currentRiftboundTab(pathname);
   if (!current) return null;
   return (
     // Pulled up against the header, as its second row, like the server row.
     <nav aria-label="Riftbound" className="-mt-6">
       <ul className="flex flex-wrap sm:gap-1">
-        {riftboundTabs(me).map(({ href, label }) => (
+        {riftboundTabs(loggedIn).map(({ href, label }) => (
           <li key={href}>
             <Link href={href} aria-current={href === current ? "page" : undefined} className={tab(href === current)}>
               {label}

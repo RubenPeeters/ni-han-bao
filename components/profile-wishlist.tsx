@@ -18,7 +18,7 @@ const PRINTING = "id, card_id, set_code, collector_code, collector_number, rarit
  * A profile's Wishlist tab: what its owner still wants, worked out from their decks, their own
  * entries and their collection. profile() and profile_wishlist() check can_see_profile().
  */
-export async function ProfileWishlist({ user }: { user: string }) {
+export async function ProfileWishlist({ user, own }: { user: string; own?: boolean }) {
   const supabase = await createClient();
   const [profile, rows, cards, printings] = await Promise.all([
     supabase.rpc("profile", { u: user }).maybeSingle<Profile>(),
@@ -40,11 +40,14 @@ export async function ProfileWishlist({ user }: { user: string }) {
   const total = wanted.reduce((n, r) => n + r.wanted, 0);
   return (
     <>
-      <ProfileHeader
-        user={user}
-        profile={profile.data}
-        subtitle={mine ? "The Riftbound cards you still want." : "The Riftbound cards they still want."}
-      />
+      {!own && (
+        <ProfileHeader
+          user={user}
+          profile={profile.data}
+          subtitle={mine ? "The Riftbound cards you still want." : "The Riftbound cards they still want."}
+          manage="/wishlist"
+        />
+      )}
       {mine && <SettingsLink href="/settings#riftbound">How your new decks count on your wishlist is a setting.</SettingsLink>}
       <StatCard title="Wanted" description={`${total.toLocaleString("en-US")} ${total === 1 ? "card" : "cards"} still to get`}>
         {wanted.length === 0 ? (
