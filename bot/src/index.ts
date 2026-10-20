@@ -2385,9 +2385,6 @@ async function storedCatalogue(): Promise<{ cards: FeedCard[]; printings: FeedPr
   return { cards: await read("riftbound_cards", CARD_COLUMNS), printings: await read("riftbound_printings", PRINTING_COLUMNS) };
 }
 
-// shortcut: in memory, so a restart may DM about a broken feed again the same day; persist it if restarts get frequent.
-let feedBrokenDmAt = 0;
-
 /** Riot's card feed against the catalogue (#204): a difference not proposed before goes to the owner. */
 async function checkCardFeed(): Promise<void> {
   let fetched: Awaited<ReturnType<typeof readFeedCatalogue>>;
@@ -2395,10 +2392,22 @@ async function checkCardFeed(): Promise<void> {
     fetched = await readFeedCatalogue();
   } catch (err) {
     log("error", "riftbound_feed_broken", { error: err });
-    if (Date.now() - feedBrokenDmAt < FEED_CHECK_MS) return;
-    feedBrokenDmAt = Date.now();
-    const owner = await ownerId();
-    if (owner) await client.users.send(owner, { content: brokenText(err), allowedMentions: { parse: [] } });
+    // In the database, so a restart does not DM again the same day.
+    const day = new Date().toISOString().slice(0, 10);
+    const { data: claimed, error } = await db
+      .from("riftbound_feed_broken_dms")
+      .upsert({ day }, { onConflict: "day", ignoreDuplicates: true })
+      .select("day");
+    if (error) throw new Error(`riftbound_feed_broken_dms insert: ${error.message}`);
+    if (claimed.length === 0) return;
+    try {
+      const owner = await ownerId();
+      if (owner) await client.users.send(owner, { content: brokenText(err), allowedMentions: { parse: [] } });
+    } catch (sendErr) {
+      // Untold, so the next check tries again.
+      await db.from("riftbound_feed_broken_dms").delete().eq("day", day);
+      throw sendErr;
+    }
     return;
   }
   const diff = diffCatalogue(fetched.catalogue, await storedCatalogue());
@@ -2406,12 +2415,12 @@ async function checkCardFeed(): Promise<void> {
     log("info", "riftbound_feed_unchanged", { build_id: fetched.buildId });
     return;
   }
-  // Pending, accepted or rejected: the same content is asked about once.
+  // Pending, accepted or rejected: the same build and content is asked about once.
   const { data: inserted, error } = await db
     .from("riftbound_catalogue_proposals")
     .upsert(
       { build_id: fetched.buildId, checksum: fetched.checksum, ...proposalCounts(diff) },
-      { onConflict: "checksum", ignoreDuplicates: true },
+      { onConflict: "build_id,checksum", ignoreDuplicates: true },
     )
     .select("id");
   if (error) throw new Error(`riftbound_catalogue_proposals insert: ${error.message}`);
@@ -2484,7 +2493,7 @@ async function proposalButton(
     .update({ status: decision.kind, decided_at: new Date().toISOString() })
     .eq("id", decision.proposal);
   if (decided.error) throw new Error(`riftbound_catalogue_proposals update: ${decided.error.message}`);
-  await done(decision.kind === "accepted" ? "Accepted: the cards are written." : "Rejected: this content is not asked about again.");
+  await done(decision.kind === "accepted" ? "Accepted: the cards are written." : "Rejected: this build is not asked about again.");
 }
 
 client.once(Events.ClientReady, async (c) => {
