@@ -57,6 +57,7 @@ begin
     perform set_config('ni_han_bao.erase_loans', 'off', true);
     delete from public.riftbound_collection where user_id = any (users);
     delete from public.riftbound_decks where user_id = any (users);
+    delete from public.riftbound_wishlist where user_id = any (users);
     delete from public.profiles where user_id = any (users);
     delete from public.guild_members where guild_id = g;
     delete from public.members where guild_id = g;
@@ -247,6 +248,16 @@ begin
                where c.deck_id = d.id and c.section = 'main') c)
     from public.riftbound_decks d where d.id = '00000000-0000-4000-8000-0000000d0001';
     perform public.snapshot_riftbound_deck(id) from public.riftbound_decks where user_id = any (users);
+
+    -- Wishlist (#177): Anna answered the question with Shared. Her demo deck stays built, the
+    -- Annie deck lends it cards, and she wants two cards by hand, one of them a printing.
+    update public.profiles set wishlist_mode = 'shared' where user_id = users[1];
+    update public.riftbound_decks set wishlist_mode = case id
+        when '00000000-0000-4000-8000-0000000d0001' then 'dedicated'
+        when '00000000-0000-4000-8000-0000000d0002' then 'shared' else 'none' end
+    where user_id = users[1];
+    insert into public.riftbound_wishlist (user_id, card_id, printing_id, quantity)
+    values (users[1], 'placeholder-legend-annie', null, 2), (users[1], 'placeholder-unit-ahri', 'PLH-U103', 3);
 
     -- Riftbound local play: stores, regulars and upcoming events.
     insert into public.stores (guild_id, name, city, url, added_by) values

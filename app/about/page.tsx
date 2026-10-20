@@ -71,6 +71,12 @@ export default function AboutPage() {
             Chosen Champion, language and notes. A deck is private unless you share it with the
             members of your servers, or with anyone logged in who has its link.
           </li>
+          <li>
+            Riftbound wishlist: the cards you add to it by hand with how many you want, and per deck
+            whether its cards count towards it. What you still want is worked out from those, your
+            decks and your collection when the page is shown, on your profile&apos;s Wishlist tab,
+            for whoever may see your profile.
+          </li>
           <li>Joins and leaves.</li>
         </ul>
         <p>
@@ -115,7 +121,7 @@ export default function AboutPage() {
           To have your data deleted instead, type <Cmd>/forget-me</Cmd> in any server and
           confirm. It deletes everything the bot stored about you, in every server: your
           message, reaction and voice counts, your game time, your name and avatar, your server memberships, your
-          linked League account with its ranks and games, your Riftbound collection, decks and loans (they go for the other member too), your profile and lending settings and your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
+          linked League account with its ranks and games, your Riftbound collection, decks, wishlist and loans (they go for the other member too), your profile and lending settings and your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
           their counts, without anything that points to you. The bot then stops counting you,
           keeping only a scrambled (hashed) copy of your Discord id to recognise you by. Until
           you type <Cmd>/show-me</Cmd>, which starts counting you again, you also cannot open
