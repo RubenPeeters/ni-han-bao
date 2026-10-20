@@ -191,9 +191,14 @@ export async function DeckDetail({ id }: { id: string }) {
     if (error) console.error("open_riftbound_deck failed:", error.message);
   }
   const missing = missingCards(rest, entries.data as Entry[], owned.data).rows.filter((r) => r.owned < r.quantity);
-  const missingIds = [...new Set(missing.map((r) => r.card_id))];
   const [lenders, members] = await Promise.all([
-    missingIds.length ? supabase.rpc("riftbound_card_lenders", { p_cards: missingIds }) : { data: [], error: null },
+    missing.length
+      ? supabase.rpc("riftbound_card_lenders", {
+          p_cards: [...new Set(missing.filter((r) => !r.printing_id).map((r) => r.card_id))],
+          p_printings: [...new Set(missing.flatMap((r) => r.printing_id ?? []))],
+          p_language: rest.allow_other_languages ? null : rest.language,
+        })
+      : { data: [], error: null },
     // Whom the owner can lend to: their servers' members (RLS), not those hidden with /hide-me.
     mine
       ? allPages((from, to) =>
@@ -205,8 +210,14 @@ export async function DeckDetail({ id }: { id: string }) {
   if (lenders.error) console.error("riftbound_card_lenders failed:", lenders.error.message);
   if (members.error) console.error("members failed:", members.error.message);
   const names = new Map((cards.data as Card[]).map((c) => [c.id, c.name]));
-  const short = new Map<string, number>();
-  for (const r of missing) short.set(r.card_id, (short.get(r.card_id) ?? 0) + r.quantity - r.owned);
+  const codes = new Map((printings.data as Printing[]).map((p) => [p.id, p.collector_code]));
+  // Per card, and per pinned printing: a lender's other printings do not fill a pin.
+  const short = new Map<string, { card_id: string; printing_id: string | null; name: string; missing: number }>();
+  for (const r of missing) {
+    const key = `${r.card_id} ${r.printing_id ?? ""}`;
+    const name = (names.get(r.card_id) ?? r.card_id) + (r.printing_id ? ` (${codes.get(r.printing_id) ?? r.printing_id})` : "");
+    short.set(key, { card_id: r.card_id, printing_id: r.printing_id, name, missing: (short.get(key)?.missing ?? 0) + r.quantity - r.owned });
+  }
   const borrowers = [...new Map((members.data ?? []).map((m) => [m.user_id, m])).values()].toSorted((a, b) =>
     a.display_name.localeCompare(b.display_name),
   );
@@ -221,7 +232,7 @@ export async function DeckDetail({ id }: { id: string }) {
       lending={
         <>
           <WhoHasMissing
-            missing={[...short].map(([card_id, n]) => ({ card_id, name: names.get(card_id) ?? card_id, missing: n }))}
+            missing={[...short.values()]}
             lenders={lenders.error ? null : (lenders.data as CardLender[])}
           />
           {mine && (
@@ -241,6 +252,8 @@ export async function DeckDetail({ id }: { id: string }) {
 /** A row of riftbound_card_lenders(): a member of one of the visitor's servers with copies of a card to lend. */
 interface CardLender {
   card_id: string;
+  /** The pinned printing these copies are of; null for any printing. */
+  printing_id: string | null;
   guild_id: string;
   user_id: string;
   display_name: string;
@@ -251,9 +264,16 @@ interface CardLender {
 
 /**
  * Who has my missing cards?: for each card the visitor is short of, who in their servers has
- * copies to lend. riftbound_card_lenders() leaves out copies not available, and whoever may not show.
+ * copies to lend, of the pinned printing and in the deck's language if it takes no other.
+ * riftbound_card_lenders() leaves out copies not available, and whoever may not show.
  */
-function WhoHasMissing({ missing, lenders }: { missing: { card_id: string; name: string; missing: number }[]; lenders: CardLender[] | null }) {
+function WhoHasMissing({
+  missing,
+  lenders,
+}: {
+  missing: { card_id: string; printing_id: string | null; name: string; missing: number }[];
+  lenders: CardLender[] | null;
+}) {
   if (missing.length === 0) return null;
   return (
     <StatCard title="Who has my missing cards?" description="Members of your servers with copies to lend">
@@ -263,9 +283,9 @@ function WhoHasMissing({ missing, lenders }: { missing: { card_id: string; name:
         <ul className="flex flex-col divide-y">
           {missing.map((m) => {
             // One row per member, though they may share several servers with the visitor.
-            const who = [...new Map(lenders.filter((l) => l.card_id === m.card_id).map((l) => [l.user_id, l])).values()];
+            const who = [...new Map(lenders.filter((l) => l.card_id === m.card_id && l.printing_id === m.printing_id).map((l) => [l.user_id, l])).values()];
             return (
-              <li key={m.card_id} className="flex flex-col gap-2 py-3 text-sm first:pt-0 last:pb-0">
+              <li key={`${m.card_id} ${m.printing_id ?? ""}`} className="flex flex-col gap-2 py-3 text-sm first:pt-0 last:pb-0">
                 <span className="flex min-w-0 items-baseline justify-between gap-3">
                   <Link href={`/cards/${m.card_id}`} className="truncate font-medium hover:underline">
                     {m.name}

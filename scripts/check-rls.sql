@@ -595,6 +595,11 @@ begin
         <> array['rls-card:rls-rls-mine:1'] then
         raise exception 'riftbound_card_lenders() offers copies a deck not for lending holds, or lenders who may not show';
     end if;
+    if (select array_agg(coalesce(printing_id, '-') || ':' || copies order by printing_id nulls first)
+        from public.riftbound_card_lenders(array['rls-card'], array['rls-printing'])) <> array['-:1', 'rls-printing:1']
+        or exists (select from public.riftbound_card_lenders(array['rls-card'], array['rls-printing'], 'fr')) then
+        raise exception 'riftbound_card_lenders() does not match a pinned printing, or offers copies in another language';
+    end if;
     deck := public.save_riftbound_deck(null, 'lend me', null, null, null, null, null, null,
         '[{"section":"main","card_id":"rls-card","printing_id":null,"quantity":1}]');
     if (select string_agg(language || ':' || quantity || ':' || lendable || ':' || held, ',')
@@ -611,6 +616,41 @@ begin
     if (select deck_name from public.profile_loans('rls-rls-mine') where id = loan) is distinct from 'lend me' then
         raise exception 'a deck loan does not name its deck';
     end if;
+    -- The browser picks the copies, so the database checks they are the deck: card for card, in hand.
+    begin
+        perform public.lend_my_riftbound_deck(null, 'rls-rls-mine', null, cards);
+        raise exception 'a loan without a deck is recorded on the site';
+    exception when raise_exception then
+        if sqlerrm <> 'not_lendable_deck' then raise; end if;
+    end;
+    begin
+        perform public.lend_my_riftbound_deck(deck, 'rls-rls-mine', null, '[]');
+        raise exception 'a deck is lent with no cards';
+    exception when raise_exception then
+        if sqlerrm <> 'those copies are not the deck as saved' then raise; end if;
+    end;
+    begin
+        perform public.lend_my_riftbound_deck(deck, 'rls-rls-mine', null,
+            '[{"printing_id":"rls-nope","finish":"normal","condition":"NM","language":"zh-Hans","quantity":1}]');
+        raise exception 'a deck is lent as cards that are not in it';
+    exception when raise_exception then
+        if sqlerrm <> 'those copies are not the deck as saved' then raise; end if;
+    end;
+    begin
+        perform public.lend_my_riftbound_deck(deck, 'rls-rls-mine', null,
+            '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"zh-Hans","quantity":2}]');
+        raise exception 'a deck is lent with more copies than it has';
+    exception when raise_exception then
+        if sqlerrm <> 'those copies are not the deck as saved' then raise; end if;
+    end;
+    begin
+        perform public.lend_my_riftbound_deck(public.save_riftbound_deck(null, 'too many', null, null, null, null, null, null,
+            '[{"section":"main","card_id":"rls-card","printing_id":null,"quantity":3}]'), 'rls-rls-mine', null,
+            '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"zh-Hans","quantity":3}]');
+        raise exception 'a deck is lent with copies out on a loan already';
+    exception when raise_exception then
+        if sqlerrm not like 'only the owner lends a card%' then raise; end if;
+    end;
     if public.answer_my_riftbound_loan(loan, 'confirmed', null) <> 'not_borrower'
         or public.answer_my_riftbound_loan(loan, 'returned', null) <> 'not_borrower'
         or (select state from public.profile_loans('rls-rls-mine') where id = loan) <> 'open' then
