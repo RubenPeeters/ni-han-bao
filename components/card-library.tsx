@@ -1,3 +1,4 @@
+import { AddToDeck, type MyDeck } from "@/components/add-to-deck";
 import { CardGrid, CardImage, type LibraryCard } from "@/components/card-grid";
 import { LogInPrompt } from "@/components/server-picker";
 import { EmptyState, ErrorState, MemberRankRow, RankList, StatCard } from "@/components/stat-ui";
@@ -59,6 +60,11 @@ async function ownedRows(supabase: Awaited<ReturnType<typeof createClient>>) {
   }
 }
 
+/** The visitor's own decks, for Add to deck (RLS also returns others' visible ones). */
+async function myDecks(supabase: Awaited<ReturnType<typeof createClient>>, me: string) {
+  return supabase.from("riftbound_decks").select("id, name").eq("user_id", me).order("name").returns<MyDeck[]>();
+}
+
 /** The global Riftbound catalogue: not per server, so no guild filter; RLS lets anyone logged in read it. */
 export async function CardLibrary() {
   const supabase = await createClient();
@@ -72,7 +78,10 @@ export async function CardLibrary() {
   if (error || me.error || owned.error) return <ErrorState title="Could not load the cards">Try again in a minute.</ErrorState>;
   // Logged in, but not with Discord: no collection to edit.
   if (!me.data) return <LogInPrompt text={LOG_IN} />;
-  const lending = await supabase.from("profiles").select("lends_cards, lend_all, card_language").eq("user_id", me.data).maybeSingle();
+  const [lending, decks] = await Promise.all([
+    supabase.from("profiles").select("lends_cards, lend_all, card_language").eq("user_id", me.data).maybeSingle(),
+    myDecks(supabase, me.data),
+  ]);
   if (lending.error) return <ErrorState title="Could not load the cards">Try again in a minute.</ErrorState>;
   const cards = (data as Card[]).map((c) => ({ ...c, printings: c.printings.toSorted(byNumber) }));
   // Collector order, as in a binder; a card without printings goes last.
@@ -101,6 +110,8 @@ export async function CardLibrary() {
         lends: lending.data?.lends_cards ?? false,
         lendAll: lending.data?.lend_all ?? false,
         language: (lending.data?.card_language ?? "en") as Language,
+        // Add to deck is extra: without the decks the grid still edits the collection.
+        decks: decks.data ?? [],
       }}
     />
   );
@@ -111,10 +122,13 @@ export async function CardDetail({ id }: { id: string }) {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims) return <LogInPrompt text={LOG_IN} />;
-  const [{ data, error }, lenders] = await Promise.all([
+  const [{ data, error }, lenders, me] = await Promise.all([
     supabase.from("riftbound_cards").select("*, printings:riftbound_printings(*)").eq("id", id).maybeSingle<Card>(),
     supabase.rpc("card_lenders", { p_card: id }),
+    supabase.rpc("current_discord_id"),
   ]);
+  // Like Who has it?, a failed lookup drops Add to deck, not the card.
+  const decks = me.data ? await myDecks(supabase, me.data as string) : null;
   if (error) return <ErrorState title="Could not load this card">Try again in a minute.</ErrorState>;
   if (!data) notFound();
   const printings = data.printings.toSorted(byNumber);
@@ -158,6 +172,7 @@ export async function CardDetail({ id }: { id: string }) {
               </div>
             ))}
           </dl>
+          {decks && !decks.error && <AddToDeck card={{ id: data.id, name: data.name }} decks={decks.data} />}
         </div>
       </div>
       <StatCard

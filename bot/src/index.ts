@@ -92,14 +92,19 @@ import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type
 import { rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
 import { addToCollection, COLLECTION_COMMAND, setLending } from "./collection.js";
+import { missingCards, type DeckEntry, type OwnedCopy } from "./deck-match.js";
+import { DECK_COMMAND, deckEmbed, privatePrompt, SHARE_CANCEL_ID, SHARE_PUBLIC_ID, type SharedDeck } from "./decks.js";
 import {
   answerId,
   answerReply,
+  deckChoices,
+  deckWanted,
   disputeFormId,
   LEND_COMMAND,
   lendAnnouncement,
   lendChoices,
   lendReceipt,
+  lendWhat,
   loanCardList,
   NOT_BORROWER,
   nudgeText,
@@ -111,12 +116,15 @@ import {
   RETURN_COMMAND,
   returnReply,
   type CopyRow,
+  type Wanted,
 } from "./lending.js";
 import { CARD_COMMAND, cardChoices, cardEmbed, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility } from "./visibility.js";
 import { COMMANDS } from "./commands.js";
+import { newMatches, tradeDm, type Candidate } from "./trades.js";
 import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
+import { wishlist, type WishRow } from "./wishlist.js";
 import { dayStart, fromWallClock, localDay, weekStart } from "./zone.js";
 
 const HEARTBEAT_MS = 60_000;
@@ -129,6 +137,7 @@ const REPORT_CHECK_MS = 60_000;
 const RANKS_MS = 3 * 60 * 60_000;
 const MATCHES_MS = 6 * 60 * 60_000;
 const NUDGE_MS = 60 * 60_000;
+const TRADES_MS = 60 * 60_000;
 
 const config = loadConfig();
 const log = createLogger();
@@ -777,20 +786,37 @@ async function lendCommand(interaction: ChatInputCommandInteraction<"cached">): 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const lender = interaction.user.id;
   const borrower = interaction.options.getUser("member", true);
-  const wanted = parseCards(catalogue, interaction.options.getString("cards", true));
+  const what = lendWhat(interaction.options.getString("cards"), interaction.options.getString("deck"));
   const due = parseDue(interaction.options.getString("due"), today());
   const fixes = interaction.options.getInteger("fixes");
   if (borrower.id === lender || borrower.bot) {
     await interaction.editReply("Lend to another member, not to yourself or a bot.");
     return;
   }
-  if (typeof wanted === "string" || typeof due === "string") {
-    await interaction.editReply(typeof wanted === "string" ? wanted : (due as string));
+  if (typeof what === "string" || typeof due === "string") {
+    await interaction.editReply(typeof what === "string" ? what : (due as string));
     return;
   }
+  let wanted: Wanted[] | string;
+  let deck: { id: string; name: string } | null = null;
   let loan: number;
   let unmarked: number;
   try {
+    if ("deck" in what) {
+      const found = await lenderDeck(lender, what.deck);
+      if (typeof found === "string") {
+        await interaction.editReply(found);
+        return;
+      }
+      deck = found;
+      wanted = deckWanted(catalogue, found);
+    } else {
+      wanted = parseCards(catalogue, what.cards);
+    }
+    if (typeof wanted === "string") {
+      await interaction.editReply(wanted);
+      return;
+    }
     const options = await db.rpc("riftbound_lend_options", {
       p_lender: lender,
       p_cards: wanted.map((w) => w.card.id),
@@ -808,9 +834,14 @@ async function lendCommand(interaction: ChatInputCommandInteraction<"cached">): 
       p_due: due.due,
       p_fixes: fixes,
       p_cards: picked.cards,
+      p_deck: deck?.id ?? null,
     });
     if (error?.message === "not_your_loan") {
       await interaction.editReply(`Loan #${fixes} is not one of yours to correct, or was corrected already.`);
+      return;
+    }
+    if (error?.message === "not_lendable_deck") {
+      await interaction.editReply(`${deck?.name} is marked not for lending. Change that on the deck's page first.`);
       return;
     }
     if (error) throw new Error(`lend_riftbound_cards: ${error.message}`);
@@ -825,16 +856,34 @@ async function lendCommand(interaction: ChatInputCommandInteraction<"cached">): 
     await interaction.editReply(FAILED);
     return;
   }
-  await interaction.editReply(lendReceipt(loan, wanted, unmarked, fixes));
+  await interaction.editReply(lendReceipt(loan, wanted, unmarked, fixes, deck?.name ?? null));
   const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(answerId("confirm", loan, borrower.id)).setLabel("Confirm").setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId(answerId("dispute", loan, borrower.id)).setLabel("Dispute").setStyle(ButtonStyle.Secondary),
   );
   await interaction.followUp({
-    content: lendAnnouncement(lender, borrower.id, loan, wanted, due.due),
+    content: lendAnnouncement(lender, borrower.id, loan, wanted, due.due, deck?.name ?? null),
     components: [buttons],
     allowedMentions: { users: [borrower.id] },
   });
+}
+
+/** /lend deck: the lender's own deck with its cards, by the id autocomplete gives or a typed name. */
+async function lenderDeck(
+  lender: string,
+  typed: string,
+): Promise<{ id: string; name: string; legend_id: string | null; entries: { card_id: string; quantity: number }[]; not_for_lending: boolean } | string> {
+  const { data, error } = await db
+    .from("riftbound_decks")
+    .select("id, name, legend_id, not_for_lending, entries:riftbound_deck_cards(card_id, quantity)")
+    .eq("user_id", lender);
+  if (error) throw new Error(`riftbound_decks select: ${error.message}`);
+  const named = data.filter((d) => d.id === typed || d.name.toLowerCase() === typed.toLowerCase());
+  if (named.length !== 1) {
+    return named.length ? `You have ${named.length} decks called ${typed}: pick one from the list.` : `You have no deck called ${typed}. Pick one from the list.`;
+  }
+  if (named[0].not_for_lending) return `${named[0].name} is marked not for lending. Change that on the deck's page first.`;
+  return named[0];
 }
 
 /** Confirm saves at once; Dispute first asks for the borrower's side in a form. */
@@ -910,6 +959,76 @@ async function returnCommand(interaction: ChatInputCommandInteraction<"cached">)
   if (reply.announce) await interaction.followUp({ content: reply.content, allowedMentions: { users: [other] } });
 }
 
+const SHARE_PROMPT_MS = 60_000;
+
+/** A member's copies, for missingCards(), a page at a time: PostgREST caps a response at 1000 rows. */
+async function ownedCopies(userId: string): Promise<OwnedCopy[]> {
+  const copies: OwnedCopy[] = [];
+  for (let from = 0, size = 1000; ; from += size) {
+    const { data, error } = await db
+      .from("riftbound_collection")
+      .select("printing_id, language, quantity, printing:riftbound_printings(card_id)")
+      .eq("user_id", userId)
+      .order("printing_id")
+      .order("finish")
+      .order("condition")
+      .order("language")
+      .range(from, from + size - 1);
+    if (error) throw new Error(`riftbound_collection select: ${error.message}`);
+    const rows = data as unknown as (Omit<OwnedCopy, "card_id"> & { printing: { card_id: string } })[];
+    copies.push(...rows.map(({ printing, ...c }) => ({ ...c, card_id: printing.card_id })));
+    if (rows.length < size) return copies;
+  }
+}
+
+/** /deck share: one of the caller's decks for everyone in the channel; a private one is made visible first. */
+async function deckCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  try {
+    const typed = interaction.options.getString("deck", true).trim();
+    const { data, error } = await db
+      .from("riftbound_decks")
+      .select("id, name, legend_id, champion_id, visibility, language, allow_other_languages, entries:riftbound_deck_cards(section, card_id, printing_id, quantity)")
+      .eq("user_id", interaction.user.id);
+    if (error) throw new Error(`riftbound_decks select: ${error.message}`);
+    // A picked suggestion is the deck's id; a typed name must be exactly one of theirs.
+    const named = (data as (SharedDeck & { entries: DeckEntry[] })[]).filter((d) => d.id === typed || d.name.toLowerCase() === typed.toLowerCase());
+    if (named.length !== 1) {
+      await interaction.editReply(
+        named.length ? `You have ${named.length} decks called ${typed}: pick one from the list.` : `You have no deck called ${typed.slice(0, 100)}. Pick one from the list.`,
+      );
+      return;
+    }
+    const { entries, ...deck } = named[0];
+    if (deck.visibility === "private") {
+      const prompt = await interaction.editReply(privatePrompt(deck.name));
+      // Timed out: the same as Cancel.
+      const click = await prompt.awaitMessageComponent({ filter: (i) => i.user.id === interaction.user.id, time: SHARE_PROMPT_MS }).catch(() => null);
+      if (click) await click.deferUpdate();
+      if (!click || click.customId === SHARE_CANCEL_ID) {
+        await interaction.editReply({ content: "Not shared: the deck stays private.", components: [] });
+        return;
+      }
+      deck.visibility = click.customId === SHARE_PUBLIC_ID ? "public" : "servers";
+      const { error } = await db
+        .from("riftbound_decks")
+        .update({ visibility: deck.visibility, updated_at: new Date().toISOString() })
+        .eq("id", deck.id)
+        .eq("user_id", interaction.user.id);
+      if (error) throw new Error(`riftbound_decks update: ${error.message}`);
+    }
+    const { missing } = missingCards(deck, entries, await ownedCopies(interaction.user.id));
+    await interaction.editReply({ content: `Shared, ${deck.visibility === "public" ? "public" : "for your servers' members"}.`, components: [] });
+    await interaction.followUp({
+      embeds: [deckEmbed(deck, entries, catalogue, interaction.member.displayName, missing, config.siteUrl)],
+      allowedMentions: { parse: [] },
+    });
+  } catch (err) {
+    log("error", "command_failed", { command: DECK_COMMAND.name, error: err });
+    await interaction.editReply({ content: FAILED, components: [] });
+  }
+}
+
 /** One DM per loan on its due date (UTC), if the borrower accepts DMs from the bot. */
 async function nudgeDueLoans(): Promise<void> {
   try {
@@ -928,13 +1047,71 @@ async function nudgeDueLoans(): Promise<void> {
   }
 }
 
+/** One DM per member for the trade matches found since their last, if they accept DMs from the bot. */
+async function notifyTradeMatches(): Promise<void> {
+  try {
+    const candidates = await readAll(async (from, to) => {
+      const { data, error } = await db.rpc("riftbound_trade_candidates").range(from, to);
+      if (error) throw new Error(`riftbound_trade_candidates: ${error.message}`);
+      return data as Candidate[];
+    });
+    const rows = new Map<string, WishRow[]>();
+    for (const user of new Set(candidates.map((c) => c.user_id))) {
+      const wishes = await readAll(async (from, to) => {
+        const { data, error } = await db.rpc("riftbound_wish_rows", { u: user }).range(from, to);
+        if (error) throw new Error(`riftbound_wish_rows: ${error.message}`);
+        return data as WishRow[];
+      });
+      rows.set(user, wishes);
+    }
+    const cardName = (id: string) => catalogue.cards.find((c) => c.id === id)?.name ?? id;
+    const timeZone = (g: string) => settingsFor(g).timezone;
+    for (const [user, matches] of newMatches(candidates, (u) => wishlist(rows.get(u) ?? []))) {
+      // Recorded before the DM, and only what this run recorded is sent (a forgotten user's
+      // rows are dropped): a closed DM or a failure is not retried, so each match is one DM.
+      // Only the matches that fit in the DM: the rest stay new for the next run.
+      const { shown } = tradeDm(matches, cardName, timeZone, config.siteUrl);
+      const { data, error } = await db
+        .from("riftbound_trade_matches")
+        .upsert(
+          shown.map((m) => ({ user_id: user, trader_id: m.trader_id, card_id: m.card_id })),
+          { onConflict: "user_id,trader_id,card_id", ignoreDuplicates: true },
+        )
+        .select("trader_id, card_id");
+      if (error) throw new Error(`riftbound_trade_matches upsert: ${error.message}`);
+      const fresh = shown.filter((m) => data.some((d) => d.trader_id === m.trader_id && d.card_id === m.card_id));
+      if (fresh.length === 0) continue;
+      await client.users
+        .send(user, { content: tradeDm(fresh, cardName, timeZone, config.siteUrl).content, allowedMentions: { parse: [] } })
+        .catch((err: unknown) => log("info", "trade_dm_not_sent", { user, error: err }));
+    }
+  } catch (err) {
+    log("error", "trade_matches_failed", { error: err });
+  }
+}
+
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (interaction.isAutocomplete() && interaction.commandName === LEND_COMMAND.name) {
+  if (interaction.isAutocomplete() && interaction.commandName === DECK_COMMAND.name) {
     await tracked(
       "command",
-      interaction
-        .respond(lendChoices(catalogue, interaction.options.getFocused()))
-        .catch((err: unknown) => log("error", "autocomplete_failed", { command: interaction.commandName, error: err })),
+      (async () => {
+        const { data, error } = await db.from("riftbound_decks").select("id, name").eq("user_id", interaction.user.id);
+        if (error) throw new Error(`riftbound_decks select: ${error.message}`);
+        return interaction.respond(deckChoices(data, interaction.options.getFocused()));
+      })().catch((err: unknown) => log("error", "autocomplete_failed", { command: interaction.commandName, error: err })),
+    );
+    return;
+  }
+  if (interaction.isAutocomplete() && interaction.commandName === LEND_COMMAND.name) {
+    const focused = interaction.options.getFocused(true);
+    await tracked(
+      "command",
+      (async () => {
+        if (focused.name !== "deck") return interaction.respond(lendChoices(catalogue, focused.value));
+        const { data, error } = await db.from("riftbound_decks").select("id, name").eq("user_id", interaction.user.id);
+        if (error) throw new Error(`riftbound_decks select: ${error.message}`);
+        return interaction.respond(deckChoices(data, focused.value));
+      })().catch((err: unknown) => log("error", "autocomplete_failed", { command: interaction.commandName, error: err })),
     );
     return;
   }
@@ -1028,6 +1205,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
   if (interaction.commandName === COLLECTION_COMMAND.name) {
     await tracked("command", collectionCommand(interaction));
+    return;
+  }
+  if (interaction.commandName === DECK_COMMAND.name) {
+    await tracked("command", deckCommand(interaction));
     return;
   }
   if (interaction.commandName === LEND_COMMAND.name) {
@@ -2173,6 +2354,7 @@ client.once(Events.ClientReady, async (c) => {
   setInterval(() => void refreshRanks(), RANKS_MS);
   setInterval(() => void refreshAllMatches(), MATCHES_MS);
   setInterval(() => void nudgeDueLoans(), NUDGE_MS);
+  setInterval(() => void notifyTradeMatches(), TRADES_MS);
   // An overdue report waits for the games played while the bot was down.
   void refreshAllMatches().finally(() => {
     weeklyReports();

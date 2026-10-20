@@ -445,6 +445,26 @@
     ]
   },
   {
+    "name": "deck",
+    "description": "Your Riftbound decks",
+    "admin": false,
+    "usages": [
+      {
+        "name": "deck share",
+        "description": "Post one of your decks in this channel",
+        "options": [
+          {
+            "name": "deck",
+            "description": "One of your decks",
+            "type": "string",
+            "required": true,
+            "choices": []
+          }
+        ]
+      }
+    ]
+  },
+  {
     "name": "lend",
     "description": "Record Riftbound cards you lend to a member",
     "admin": false,
@@ -464,7 +484,14 @@
             "name": "cards",
             "description": "The cards, separated by ; with a count if more than one: 2 Jinx; Ahri",
             "type": "string",
-            "required": true,
+            "required": false,
+            "choices": []
+          },
+          {
+            "name": "deck",
+            "description": "Or one of your decks, lent whole as one loan",
+            "type": "string",
+            "required": false,
             "choices": []
           },
           {

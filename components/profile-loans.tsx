@@ -1,6 +1,8 @@
+import { answerLoan } from "@/app/u/[userId]/actions";
 import { ProfileHeader, type Profile } from "@/components/profile-stats";
 import { EmptyState, ErrorState, StatCard } from "@/components/stat-ui";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { languageName } from "@/lib/collection";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
@@ -18,6 +20,8 @@ interface Loan {
   answer: "confirmed" | "disputed" | null;
   note: string | null;
   cards: { name: string; code: string; finish: string; condition: string; language: string; quantity: number }[];
+  /** The deck it lent whole, by its name then. */
+  deck_name: string | null;
 }
 
 const day = (iso: string) =>
@@ -54,7 +58,7 @@ export async function ProfileLoans({ user }: { user: string }) {
       {sections.length === 0 ? (
         <EmptyState>
           {mine
-            ? "No loans yet. Lend cards with /lend in Discord; the borrower confirms with a button."
+            ? "No loans yet. Lend cards with /lend in Discord, or a deck on its page; the borrower confirms."
             : "No loans between you and them."}
         </EmptyState>
       ) : (
@@ -69,7 +73,7 @@ export async function ProfileLoans({ user }: { user: string }) {
         ))
       )}
       <p className="text-xs text-muted-foreground">
-        Only you and the other member of a loan see it. Record loans with /lend and returns with /return in Discord.
+        Only you and the other member of a loan see it. Record loans with /lend (or a deck on its page) and returns with /return in Discord.
       </p>
     </>
   );
@@ -93,6 +97,7 @@ function LoanRow({ loan, today }: { loan: Loan; today: string }) {
           <span className="truncate font-medium">{loan.lent ? `With ${name}` : `From ${name}`}</span>
           <span className="text-xs text-muted-foreground">
             Loan #{loan.id}
+            {loan.deck_name && ` · deck ${loan.deck_name}`}
             {loan.due_on && open && ` · due ${day(loan.due_on)}`}
             {loan.state === "written_off" && " · written off"}
             {loan.state === "returned" && " · returned"}
@@ -117,6 +122,7 @@ function LoanRow({ loan, today }: { loan: Loan; today: string }) {
           </li>
         ))}
       </ul>
+      {open && !loan.lent && loan.answer !== "confirmed" && <AnswerForms loan={loan.id} />}
       {loan.answer === "disputed" && (
         <dl className="ml-11 flex flex-col gap-2 rounded-md bg-muted p-3">
           <div>
@@ -130,5 +136,40 @@ function LoanRow({ loan, today }: { loan: Loan; today: string }) {
         </dl>
       )}
     </li>
+  );
+}
+
+/** The borrower's Confirm and Dispute, as the buttons under /lend in Discord. */
+function AnswerForms({ loan }: { loan: number }) {
+  return (
+    <div className="flex flex-col gap-2 pl-11 sm:flex-row sm:items-start">
+      <form action={answerLoan}>
+        <input type="hidden" name="loan" value={loan} />
+        <input type="hidden" name="kind" value="confirmed" />
+        <Button type="submit" size="sm" className="h-11">
+          Confirm: I have them
+        </Button>
+      </form>
+      <details className="min-w-0 flex-1">
+        <summary className="flex h-11 cursor-pointer items-center rounded-md text-sm text-muted-foreground hover:text-foreground">Dispute</summary>
+        <form action={answerLoan} className="flex flex-col gap-2 pt-2">
+          <input type="hidden" name="loan" value={loan} />
+          <input type="hidden" name="kind" value="disputed" />
+          <label className="flex flex-col gap-2 text-sm font-medium">
+            What is different? The lender sees this.
+            <textarea
+              name="note"
+              required
+              maxLength={300}
+              rows={2}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-base font-normal shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </label>
+          <Button type="submit" variant="secondary" size="sm" className="h-11 self-start">
+            Send dispute
+          </Button>
+        </form>
+      </details>
+    </div>
   );
 }

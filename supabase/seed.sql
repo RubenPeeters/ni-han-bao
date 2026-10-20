@@ -56,6 +56,9 @@ begin
     delete from public.riftbound_loans where lender_id = any (users) or borrower_id = any (users);
     perform set_config('ni_han_bao.erase_loans', 'off', true);
     delete from public.riftbound_collection where user_id = any (users);
+    delete from public.riftbound_decks where user_id = any (users);
+    delete from public.riftbound_wishlist where user_id = any (users);
+    delete from public.riftbound_trade_matches where user_id = any (users) or trader_id = any (users);
     delete from public.profiles where user_id = any (users);
     delete from public.guild_members where guild_id = g;
     delete from public.members where guild_id = g;
@@ -200,6 +203,79 @@ begin
             perform public.answer_riftbound_loan(users[r.borrower], loan, r.outcome, r.note);
         end if;
     end loop;
+
+    -- Riftbound decks (#173): Anna's, one per visibility. The public one is the demo deck page
+    -- (scripts/screenshots.mjs): 40 cards in Ahri's Legend's domains, her champion pinned to a
+    -- printing. The others break a rule or two, for the warnings.
+    insert into public.riftbound_decks (id, user_id, name, legend_id, champion_id, notes, visibility, language, allow_other_languages)
+    values ('00000000-0000-4000-8000-0000000d0001', users[1], 'Ahri control', 'placeholder-legend-ahri', 'placeholder-unit-ahri',
+            'Hold the battlefields early, win late.', 'public', 'en', true),
+           ('00000000-0000-4000-8000-0000000d0002', users[1], 'Annie for Nexus Night', 'placeholder-legend-annie',
+            'placeholder-unit-annie', '', 'servers', 'fr', false),
+           ('00000000-0000-4000-8000-0000000d0003', users[1], 'Work in progress', null, null, '', 'private', 'en', true);
+    insert into public.riftbound_deck_cards (deck_id, section, card_id, printing_id, quantity)
+        values ('00000000-0000-4000-8000-0000000d0001', 'main', 'placeholder-unit-ahri', 'PLH-U103', 1),
+               ('00000000-0000-4000-8000-0000000d0002', 'main', 'placeholder-unit-annie', null, 1);
+    insert into public.riftbound_deck_cards (deck_id, section, card_id, quantity)
+        select d.id, case when c.n > d.main then 'sideboard' else 'main' end, c.id, case when c.n > d.main then 1 else 3 end
+        from (values ('00000000-0000-4000-8000-0000000d0001'::uuid, 'placeholder-legend-ahri', 13, 2),
+                     ('00000000-0000-4000-8000-0000000d0002'::uuid, 'placeholder-legend-annie', 6, 0),
+                     ('00000000-0000-4000-8000-0000000d0003'::uuid, 'placeholder-legend-ahri', 3, 0)) d (id, legend, main, side)
+        join public.riftbound_cards l on l.id = d.legend
+        cross join lateral (
+            select c.id, row_number() over (order by c.id) n from public.riftbound_cards c
+            where c.type <> 'Legend' and c.domains <@ l.domains and c.tags <> l.tags
+            order by c.id limit d.main + d.side
+        ) c;
+    -- Outside Annie's domains, for that warning.
+    insert into public.riftbound_deck_cards (deck_id, section, card_id, quantity)
+        values ('00000000-0000-4000-8000-0000000d0002', 'main', 'placeholder-unit-ahri', 2);
+    -- Bram's public deck, which Anna opened (#174): in her Which decks can I build?
+    insert into public.riftbound_decks (id, user_id, name, legend_id, champion_id, visibility)
+    values ('00000000-0000-4000-8000-0000000d0004', users[2], 'Bram''s Ahri tempo', 'placeholder-legend-ahri', 'placeholder-unit-ahri', 'public');
+    insert into public.riftbound_deck_cards (deck_id, section, card_id, quantity)
+        select '00000000-0000-4000-8000-0000000d0004', 'main', card_id, quantity from public.riftbound_deck_cards
+        where deck_id = '00000000-0000-4000-8000-0000000d0001' and section = 'main' and printing_id is null;
+    insert into public.riftbound_deck_opens (user_id, deck_id) values (users[1], '00000000-0000-4000-8000-0000000d0004');
+    -- Version history (#176): the demo deck three days ago, without its sideboard, one copy of its
+    -- first card and its champion unpinned; then every deck as it is now. Version 2 of the demo
+    -- deck is the demo version page (scripts/screenshots.mjs).
+    insert into public.riftbound_deck_versions
+        (deck_id, version, saved_at, name, legend_id, champion_id, notes, language, allow_other_languages, entries)
+    select d.id, 1, now() - interval '3 days', d.name, d.legend_id, d.champion_id, '', d.language, d.allow_other_languages,
+        (select jsonb_agg(jsonb_build_object('section', c.section, 'card_id', c.card_id, 'printing_id', null,
+             'quantity', case when c.first then 1 else c.quantity end))
+         from (select c.*, c.card_id = min(c.card_id) over () first from public.riftbound_deck_cards c
+               where c.deck_id = d.id and c.section = 'main') c)
+    from public.riftbound_decks d where d.id = '00000000-0000-4000-8000-0000000d0001';
+    perform public.snapshot_riftbound_deck(id) from public.riftbound_decks where user_id = any (users);
+
+    -- Decks and lending (#179): Anna's Annie deck stays built (not for lending), and Bram lent
+    -- her his deck as one loan she has not confirmed yet, for the Loans tab's Confirm. Two
+    -- copies again, from his collection, other ones than his first loan's.
+    update public.riftbound_decks set not_for_lending = true where id = '00000000-0000-4000-8000-0000000d0002';
+    perform public.lend_riftbound_cards(users[2], users[1], today + 7, null, (
+        select jsonb_agg(jsonb_build_object('printing_id', c.printing_id, 'finish', c.finish,
+            'condition', c.condition, 'language', c.language, 'quantity', 1))
+        from (select * from public.riftbound_collection c where c.user_id = users[2]
+              order by c.printing_id, c.language offset 2 limit 2) c),
+        '00000000-0000-4000-8000-0000000d0004');
+
+    -- Wishlist (#177): Anna answered the question with Shared. Her demo deck stays built, the
+    -- Annie deck lends it cards, and she wants two cards by hand, one of them a printing.
+    update public.profiles set wishlist_mode = 'shared' where user_id = users[1];
+    update public.riftbound_decks set wishlist_mode = case id
+        when '00000000-0000-4000-8000-0000000d0001' then 'dedicated'
+        when '00000000-0000-4000-8000-0000000d0002' then 'shared' else 'none' end
+    where user_id = users[1];
+    insert into public.riftbound_wishlist (user_id, card_id, printing_id, quantity)
+    values (users[1], 'placeholder-legend-annie', null, 2), (users[1], 'placeholder-unit-ahri', 'PLH-U103', 3);
+    -- Trades (#178): Bram and Chloé have copies of cards on Anna's wishlist for trade, for her
+    -- Trades page. Daan does too, but his profile is private, so he does not show.
+    insert into public.riftbound_collection as c (user_id, printing_id, finish, condition, language, quantity, for_trade)
+    values (users[2], 'PLH-U103', 'normal', 'NM', 'en', 2, 2), (users[3], 'PLH-L001', 'normal', 'NM', 'en', 1, 1),
+           (users[3], 'PLH-U103', 'foil', 'LP', 'en', 1, 1), (users[4], 'PLH-L001', 'normal', 'NM', 'en', 1, 1)
+    on conflict (user_id, printing_id, finish, condition, language) do update set for_trade = c.quantity;
 
     -- Riftbound local play: stores, regulars and upcoming events.
     insert into public.stores (guild_id, name, city, url, added_by) values

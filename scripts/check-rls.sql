@@ -1,7 +1,10 @@
 -- Proves per-server data is readable only by members of that server (#45): anon reads zero
 -- rows from every table with a guild_id, and a logged-in user reads rows of their own
 -- servers only; that profiles follow their visibility (#100); that the lending ledger holds
--- (#172); then that /forget-me deletes
+-- (#172); that decks follow their visibility (#173) and only public ones are remembered as
+-- opened (#174), their versions with them (#176), and wishlists their profile (#177); that trade
+-- matches follow it too (#178), and decks not for lending hold their cards (#179); that only public decks are teased logged
+-- out (#175); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`. Run against a local Supabase or the dev project
 -- (never production); everything is rolled back:
@@ -91,7 +94,24 @@ begin
     perform public.lend_riftbound_cards(l, b, null, null,
         '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"en","quantity":1}]')
     from (values ('rls-rls-mine', 'rls-user'), ('rls-rls-other', 'rls-public')) v (l, b);
+    -- Decks (#173): rls-rls-mine shares a server with the test user, rls-rls-other does not.
+    insert into public.riftbound_cards (id, name, type) values ('rls-card-2', 'y', 'Spell');
+    insert into public.riftbound_decks (user_id, name, visibility)
+    values ('rls-rls-mine', 'servers-shared', 'servers'), ('rls-rls-mine', 'private', 'private'),
+           ('rls-rls-other', 'servers-not-shared', 'servers'), ('rls-public', 'public', 'public');
+    insert into public.riftbound_deck_cards (deck_id, section, card_id, quantity)
+    select id, 'main', 'rls-card', 1 from public.riftbound_decks where user_id like 'rls-%';
+    perform public.snapshot_riftbound_deck(id) from public.riftbound_decks where user_id like 'rls-%';
+    -- Wishlists (#177): rls-rls-mine's two shared decks need one rls-card each.
+    update public.riftbound_decks set wishlist_mode = 'shared' where user_id = 'rls-rls-mine';
+    insert into public.riftbound_wishlist (user_id, card_id, quantity)
+    values ('rls-rls-mine', 'rls-card-2', 2), ('rls-rls-other', 'rls-card-2', 1), ('rls-hidden', 'rls-card-2', 1);
+    -- Trades (#178): everyone but the test user has a copy of rls-card for trade.
+    update public.riftbound_collection set for_trade = 1 where user_id <> 'rls-user';
     -- anon cannot read keys itself, so hand it one for the recap checks below.
+    -- Nor deck ids, for the deck teaser checks (#175) below.
+    perform set_config('rls.public_deck', (select id::text from public.riftbound_decks where name = 'public'), true);
+    perform set_config('rls.servers_deck', (select id::text from public.riftbound_decks where name = 'servers-shared'), true);
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
 
@@ -125,6 +145,20 @@ begin
         or exists (select from public.riftbound_loan_entries) then
         raise exception 'anon reads a loan';
     end if;
+    if exists (select from public.riftbound_decks) or exists (select from public.riftbound_deck_cards) then
+        raise exception 'anon reads a deck, even a public one';
+    end if;
+    if exists (select from public.riftbound_deck_opens) then raise exception 'anon reads an opened deck'; end if;
+    -- Logged-out deck pages (#175): a teaser of a public deck, of no other.
+    if not exists (select from public.public_deck_teaser(current_setting('rls.public_deck')::uuid))
+        or exists (select from public.public_deck_teaser(current_setting('rls.servers_deck')::uuid)) then
+        raise exception 'public_deck_teaser() misses a public deck or teases another';
+    end if;
+    if exists (select from public.riftbound_deck_versions) then raise exception 'anon reads a deck version'; end if;
+    if exists (select from public.riftbound_wishlist) or exists (select from public.profile_wishlist('rls-rls-mine')) then
+        raise exception 'anon reads a wishlist';
+    end if;
+    if exists (select from public.riftbound_trade_matches) then raise exception 'anon reads trade matches'; end if;
     if exists (select from public.lol_ranks) or exists (select from public.profile_ranks('rls-rls-mine')) then
         raise exception 'anon reads a rank';
     end if;
@@ -154,7 +188,7 @@ end $$;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-000000000045","role":"authenticated"}', true);
 do $$
-declare t text; mine bigint; other bigint;
+declare t text; mine bigint; other bigint; deck uuid;
 begin
     for t in select pg_temp.guild_tables() loop
         execute format('select count(*) filter (where guild_id = ''rls-mine''),'
@@ -296,6 +330,103 @@ begin
     if (select lends_cards from public.profiles where user_id = 'rls-user') is not true then
         raise exception 'set_card_lending() does not save your own setting';
     end if;
+    -- Decks (#173): public ones and those of members of the visitor's servers, never private.
+    if (select array_agg(name order by name) from public.riftbound_decks) <> array['public', 'servers-shared']
+        or (select count(*) from public.riftbound_deck_cards) <> 2 then
+        raise exception 'a member reads decks that are private, or shared only with servers they are not in';
+    end if;
+    if (select count(*) from public.riftbound_deck_versions) <> 2 then
+        raise exception 'a member reads versions of a deck they cannot see';
+    end if;
+    begin
+        perform public.snapshot_riftbound_deck((select id from public.riftbound_decks where name = 'public'));
+        raise exception 'a member writes a version of someone else''s deck';
+    exception when insufficient_privilege then null;
+    end;
+    deck := public.save_riftbound_deck(null, 'mine', null, null, null, null, null, null,
+        '[{"section":"main","card_id":"rls-card","printing_id":"rls-printing","quantity":2},
+          {"section":"main","card_id":"rls-card","printing_id":"rls-printing","quantity":1}]');
+    if (select visibility || ':' || language || ':' || allow_other_languages from public.riftbound_decks where id = deck)
+        <> 'private:en:true'
+        or (select quantity from public.riftbound_deck_cards where deck_id = deck) <> 3 then
+        raise exception 'save_riftbound_deck() does not default to private and English, or does not merge entries';
+    end if;
+    perform public.add_riftbound_deck_card(deck, 'rls-card');
+    if (select string_agg(coalesce(printing_id, '-') || ':' || quantity, ',' order by printing_id) from public.riftbound_deck_cards
+        where deck_id = deck) <> 'rls-printing:3,-:1' then
+        raise exception 'add_riftbound_deck_card() does not add an unpinned copy';
+    end if;
+    -- Versions (#176): the save and the add are one each, the last the deck as it is.
+    if (select array_agg(version order by version) from public.riftbound_deck_versions where deck_id = deck) <> array[1, 2]
+        or (select jsonb_array_length(entries) from public.riftbound_deck_versions where deck_id = deck and version = 2) <> 2 then
+        raise exception 'a save or an add does not keep a version of the deck';
+    end if;
+    begin
+        perform public.save_riftbound_deck(deck, 'mine', null, null, null, 'private', 'en', true,
+            '[{"section":"main","card_id":"rls-card-2","printing_id":"rls-printing","quantity":1}]');
+        raise exception 'a deck entry is pinned to a printing of another card';
+    exception when foreign_key_violation then null;
+    end;
+    begin
+        perform public.add_riftbound_deck_card((select id from public.riftbound_decks where name = 'public'), 'rls-card');
+        raise exception 'a member adds cards to someone else''s deck';
+    exception when raise_exception then
+        if sqlerrm <> 'not your deck' then raise; end if;
+    end;
+    perform public.delete_riftbound_deck((select id from public.riftbound_decks where name = 'public'));
+    if not exists (select from public.riftbound_decks where name = 'public') then
+        raise exception 'a member deletes someone else''s deck';
+    end if;
+    perform public.delete_riftbound_deck(deck);
+    if exists (select from public.riftbound_decks where id = deck) then raise exception 'delete_riftbound_deck() keeps your deck'; end if;
+    -- Opened decks (#174): only someone else's public one is remembered.
+    perform public.open_riftbound_deck(id) from public.riftbound_decks;
+    if (select array_agg(d.name) from public.riftbound_deck_opens o join public.riftbound_decks d on d.id = o.deck_id) <> array['public'] then
+        raise exception 'open_riftbound_deck() remembers a deck that is not someone else''s public one';
+    end if;
+    -- Wishlists (#177): your own entries directly, others' as their profile, a shared deck numbered per card only.
+    if exists (select from public.riftbound_wishlist) then raise exception 'a member reads someone else''s wishlist entries'; end if;
+    if (select string_agg(card_id || ':' || coalesce(w.deck::text, '-') || ':' || decks || ':' || coalesce(manual::text, '-')
+            || ':' || jsonb_array_length(copies), ',' order by card_id, w.deck)
+            from public.profile_wishlist('rls-rls-mine') w) <> 'rls-card:1:1:-:1,rls-card:2:1:-:1,rls-card-2:-:0:2:0'
+        or exists (select from public.profile_wishlist('rls-rls-other')) or exists (select from public.profile_wishlist('rls-hidden')) then
+        raise exception 'profile_wishlist() does not follow the profile, or does not keep shared decks apart';
+    end if;
+    perform public.set_riftbound_wish('rls-card', 'rls-printing', 3);
+    perform public.set_riftbound_wish('rls-card', 'rls-printing', 5);
+    perform public.set_riftbound_wish('rls-card-2', null, 1);
+    perform public.set_riftbound_wish('rls-card-2', null, 0);
+    if (select string_agg(card_id || ':' || quantity, ',') from public.riftbound_wishlist) <> 'rls-card:5' then
+        raise exception 'set_riftbound_wish() does not save an absolute count, or keeps one at 0';
+    end if;
+    begin
+        perform public.set_riftbound_wish('rls-card-2', 'rls-printing', 1);
+        raise exception 'a wishlist entry is pinned to a printing of another card';
+    exception when foreign_key_violation then null;
+    end;
+    perform public.set_wishlist_mode('dedicated');
+    deck := public.save_riftbound_deck(null, 'preset', null, null, null, null, null, null, null);
+    if (select wishlist_mode from public.riftbound_decks where id = deck) <> 'dedicated' then
+        raise exception 'a new deck does not take the wishlist mode asked once';
+    end if;
+    perform public.save_riftbound_deck(deck, 'preset', null, null, null, 'private', 'en', true, null);
+    if (select wishlist_mode from public.riftbound_decks where id = deck) <> 'dedicated' then
+        raise exception 'a save without a wishlist mode changes the deck''s';
+    end if;
+    -- Trades (#178): only visible members of the visitor's server, never the bot's bookkeeping.
+    if (select array_agg(user_id || ':' || copies || ':' || place_kind) from public.guild_trade_offers('rls-mine', array['rls-card']))
+            <> array['rls-rls-mine:1:city']
+        or exists (select from public.guild_trade_offers('rls-other', array['rls-card'])) then
+        raise exception 'guild_trade_offers() lists a hidden or private member, or another server''s';
+    end if;
+    if exists (select from public.riftbound_trade_matches) then raise exception 'a member reads trade matches'; end if;
+    begin
+        perform public.riftbound_wish_rows('rls-rls-other');
+        raise exception 'a member reads a wishlist past its profile''s visibility';
+    exception when insufficient_privilege then null;
+    end;
+    -- One left for /forget-me to delete, with the wishlist entry above.
+    perform public.save_riftbound_deck(null, 'kept', null, null, null, null, null, null, null);
     if (select icon from public.guild_games('rls-mine', current_date)) is distinct from 'i' then
         raise exception 'guild_games() does not return the game icon';
     end if;
@@ -324,6 +455,32 @@ begin
     if (select count(*) from public.my_guilds()) <> 1 then raise exception 'my_guilds() is not just mine'; end if;
     if public.monthly_recap('rls-mine', '2025-12-01') is null then raise exception 'a member cannot read their recap'; end if;
     if public.monthly_recap('rls-other', '2025-12-01') is not null then raise exception 'a member reads another server''s recap'; end if;
+end $$;
+
+-- Trade matches as the bot reads them (#178): the test user wants rls-card (set_riftbound_wish()
+-- above); only rls-rls-mine may be named to them, once, and they meet at the best place known.
+reset role;
+do $$
+begin
+    if (select array_agg(trader_id || ':' || guild_id || ':' || place_kind) from public.riftbound_trade_candidates()
+            where user_id = 'rls-user') <> array['rls-rls-mine:rls-mine:city'] then
+        raise exception 'riftbound_trade_candidates() names a hidden or private member, or one in no shared server';
+    end if;
+    insert into public.store_regulars (guild_id, store_id, user_id)
+    select 'rls-mine', id, 'rls-rls-mine' from public.stores where guild_id = 'rls-mine';
+    if (select kind from public.riftbound_meeting_place('rls-mine', 'rls-user', 'rls-rls-mine')) <> 'regulars' then
+        raise exception 'riftbound_meeting_place() does not prefer a store both are regulars of';
+    end if;
+    insert into public.event_attendees (guild_id, event_id, user_id)
+    select 'rls-mine', id, 'rls-rls-mine' from public.events where guild_id = 'rls-mine';
+    if (select kind from public.riftbound_meeting_place('rls-mine', 'rls-user', 'rls-rls-mine')) <> 'event' then
+        raise exception 'riftbound_meeting_place() does not prefer an event both are going to';
+    end if;
+    insert into public.riftbound_trade_matches (user_id, trader_id, card_id)
+    values ('rls-user', 'rls-rls-mine', 'rls-card'), ('rls-rls-mine', 'rls-user', 'rls-card');
+    if exists (select from public.riftbound_trade_candidates() where user_id = 'rls-user') then
+        raise exception 'riftbound_trade_candidates() offers a match the bot DMed about already';
+    end if;
 end $$;
 
 -- Your own profile still shows your stats in a server where you ran /hide-me (#100).
@@ -415,6 +572,114 @@ begin
     if public.riftbound_loan_state(fixed) <> 'written_off' then raise exception 'a write-off does not close the loan'; end if;
 end $$;
 
+-- Decks and lending (#179): a deck not for lending holds its cards back from lending, a deck is
+-- lent whole as one loan that names it, and the site takes only the borrower's answers. Every
+-- loan above is closed, so rls-rls-mine has both copies in hand.
+reset role;
+do $$
+declare kept uuid := (select id from public.riftbound_decks where user_id = 'rls-rls-mine' and name = 'private');
+begin
+    if (select copies from public.riftbound_free_to_lend('rls-rls-mine') where card_id = 'rls-card') <> 2 then
+        raise exception 'riftbound_free_to_lend() does not offer the copies in hand';
+    end if;
+    update public.riftbound_decks set not_for_lending = true where id = kept;
+    if (select copies from public.riftbound_free_to_lend('rls-rls-mine') where card_id = 'rls-card') <> 1
+        or (select held from public.riftbound_lend_options('rls-rls-mine', array['rls-card'], null)) <> 1 then
+        raise exception 'a deck not for lending does not hold its cards back';
+    end if;
+    begin
+        perform public.lend_riftbound_cards('rls-rls-mine', 'rls-user', null, null, '[]', kept);
+        raise exception 'a deck not for lending is lent';
+    exception when raise_exception then
+        if sqlerrm <> 'not_lendable_deck' then raise; end if;
+    end;
+end $$;
+
+set local role authenticated;
+do $$
+declare deck uuid; loan bigint;
+    cards constant jsonb := '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"zh-Hans","quantity":1}]';
+begin
+    if (select array_agg(card_id || ':' || user_id || ':' || copies) from public.riftbound_card_lenders(array['rls-card', 'rls-card-2']))
+        <> array['rls-card:rls-rls-mine:1'] then
+        raise exception 'riftbound_card_lenders() offers copies a deck not for lending holds, or lenders who may not show';
+    end if;
+    if (select array_agg(coalesce(printing_id, '-') || ':' || copies order by printing_id nulls first)
+        from public.riftbound_card_lenders(array['rls-card'], array['rls-printing'])) <> array['-:1', 'rls-printing:1']
+        or exists (select from public.riftbound_card_lenders(array['rls-card'], array['rls-printing'], 'fr')) then
+        raise exception 'riftbound_card_lenders() does not match a pinned printing, or offers copies in another language';
+    end if;
+    deck := public.save_riftbound_deck(null, 'lend me', null, null, null, null, null, null,
+        '[{"section":"main","card_id":"rls-card","printing_id":null,"quantity":1}]');
+    if (select string_agg(language || ':' || quantity || ':' || lendable || ':' || held, ',')
+        from public.my_riftbound_lend_options(array['rls-card'])) <> 'zh-Hans:3:0:0' then
+        raise exception 'my_riftbound_lend_options() is not the caller''s own copies';
+    end if;
+    begin
+        perform public.lend_my_riftbound_deck(deck, 'rls-rls-other', null, cards);
+        raise exception 'a deck is lent to someone in none of the lender''s servers';
+    exception when raise_exception then
+        if sqlerrm not like 'lend to a member%' then raise; end if;
+    end;
+    loan := public.lend_my_riftbound_deck(deck, 'rls-rls-mine', current_date, cards);
+    if (select deck_name from public.profile_loans('rls-rls-mine') where id = loan) is distinct from 'lend me' then
+        raise exception 'a deck loan does not name its deck';
+    end if;
+    -- The browser picks the copies, so the database checks they are the deck: card for card, in hand.
+    begin
+        perform public.lend_my_riftbound_deck(null, 'rls-rls-mine', null, cards);
+        raise exception 'a loan without a deck is recorded on the site';
+    exception when raise_exception then
+        if sqlerrm <> 'not_lendable_deck' then raise; end if;
+    end;
+    begin
+        perform public.lend_my_riftbound_deck(deck, 'rls-rls-mine', null, '[]');
+        raise exception 'a deck is lent with no cards';
+    exception when raise_exception then
+        if sqlerrm <> 'those copies are not the deck as saved' then raise; end if;
+    end;
+    begin
+        perform public.lend_my_riftbound_deck(deck, 'rls-rls-mine', null,
+            '[{"printing_id":"rls-nope","finish":"normal","condition":"NM","language":"zh-Hans","quantity":1}]');
+        raise exception 'a deck is lent as cards that are not in it';
+    exception when raise_exception then
+        if sqlerrm <> 'those copies are not the deck as saved' then raise; end if;
+    end;
+    begin
+        perform public.lend_my_riftbound_deck(deck, 'rls-rls-mine', null,
+            '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"zh-Hans","quantity":2}]');
+        raise exception 'a deck is lent with more copies than it has';
+    exception when raise_exception then
+        if sqlerrm <> 'those copies are not the deck as saved' then raise; end if;
+    end;
+    begin
+        perform public.lend_my_riftbound_deck(public.save_riftbound_deck(null, 'too many', null, null, null, null, null, null,
+            '[{"section":"main","card_id":"rls-card","printing_id":null,"quantity":3}]'), 'rls-rls-mine', null,
+            '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"zh-Hans","quantity":3}]');
+        raise exception 'a deck is lent with copies out on a loan already';
+    exception when raise_exception then
+        if sqlerrm not like 'only the owner lends a card%' then raise; end if;
+    end;
+    if public.answer_my_riftbound_loan(loan, 'confirmed', null) <> 'not_borrower'
+        or public.answer_my_riftbound_loan(loan, 'returned', null) <> 'not_borrower'
+        or (select state from public.profile_loans('rls-rls-mine') where id = loan) <> 'open' then
+        raise exception 'answer_my_riftbound_loan() takes an answer that is not the borrower''s';
+    end if;
+    perform public.set_riftbound_deck_lending(deck, true);
+    begin
+        perform public.lend_my_riftbound_deck(deck, 'rls-rls-mine', null, cards);
+        raise exception 'a deck not for lending is lent on the site';
+    exception when raise_exception then
+        if sqlerrm <> 'not_lendable_deck' then raise; end if;
+    end;
+    begin
+        perform public.set_riftbound_deck_lending((select id from public.riftbound_decks where name = 'servers-shared'), true);
+        raise exception 'a member marks someone else''s deck not for lending';
+    exception when raise_exception then
+        if sqlerrm <> 'not your deck' then raise; end if;
+    end;
+end $$;
+
 -- /forget-me (#72): no row about the user is left anywhere, and none can be written again
 -- until remember_user().
 reset role;
@@ -433,6 +698,12 @@ begin
     end loop;
     if exists (select from public.stores where added_by = 'rls-user') then
         raise exception 'forget_user() leaves the user on the stores they added';
+    end if;
+    if exists (select from public.riftbound_trade_matches where trader_id = 'rls-user') then
+        raise exception 'forget_user() leaves the matches where the user is the trader';
+    end if;
+    if exists (select from public.riftbound_deck_versions where name = 'kept') then
+        raise exception 'forget_user() leaves the versions of the user''s decks';
     end if;
     -- Their loans go; the correction that replaced one stays, without the link (#172).
     if exists (select from public.riftbound_loans where 'rls-user' in (lender_id, borrower_id))

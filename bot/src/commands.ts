@@ -1,5 +1,6 @@
 import { ApplicationCommandOptionType } from "discord.js";
 import { COLLECTION_COMMAND } from "./collection.js";
+import { DECK_COMMAND } from "./decks.js";
 import { EVENT_COMMAND } from "./events.js";
 import { FORGET_COMMAND } from "./forget.js";
 import { LEND_COMMAND, RETURN_COMMAND } from "./lending.js";
@@ -25,6 +26,7 @@ export const COMMANDS = [
   EVENT_COMMAND,
   CARD_COMMAND,
   COLLECTION_COMMAND,
+  DECK_COMMAND,
   LEND_COMMAND,
   RETURN_COMMAND,
 ];

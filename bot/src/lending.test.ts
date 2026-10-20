@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   answerId,
   answerReply,
+  deckChoices,
+  deckWanted,
+  lendAnnouncement,
   lendChoices,
   lendReceipt,
+  lendWhat,
   loanCardList,
   parseAnswerId,
   parseCards,
@@ -75,6 +79,7 @@ describe("pickCopies", () => {
     quantity: 2,
     lendable: 0,
     lent: 0,
+    held: 0,
     ...over,
   });
 
@@ -93,9 +98,60 @@ describe("pickCopies", () => {
     expect(pickCopies([row({ lendable: 2 })], [{ card: unit, count: 2 }])).toMatchObject({ unmarked: 0 });
   });
 
+  it("counts copies a deck not for lending holds as not available to lend, whatever the per-card counts say", () => {
+    const rows = [row({ finish: "foil", quantity: 2, lendable: 2, held: 3 }), row({ quantity: 2, lendable: 2, held: 3 })];
+    // 4 in hand, 3 held: 1 is still available to lend.
+    expect(pickCopies(rows, [{ card: unit, count: 1 }])).toMatchObject({ unmarked: 0 });
+    expect(pickCopies(rows, [{ card: unit, count: 3 }])).toMatchObject({ unmarked: 2 });
+    expect(pickCopies([row({ lendable: 2, held: 9 })], [{ card: unit, count: 1 }])).toMatchObject({ unmarked: 1 });
+  });
+
   it("refuses copies the lender does not have in hand", () => {
     expect(pickCopies([row({ quantity: 2, lent: 1 })], [{ card: unit, count: 2 }])).toContain("only 1");
     expect(pickCopies([], [{ card: legend, count: 1 }])).toContain("no ");
+  });
+});
+
+describe("lending a deck", () => {
+  it("takes cards or a deck, exactly one", () => {
+    expect(lendWhat("2 Jinx", null)).toEqual({ cards: "2 Jinx" });
+    expect(lendWhat(null, " d1 ")).toEqual({ deck: "d1" });
+    expect(lendWhat("Jinx", "d1")).toContain("not both");
+    expect(lendWhat(" ", null)).toContain("Name the cards");
+  });
+
+  it("wants the Legend and every entry, added up per card", () => {
+    const wanted = deckWanted(catalogue, {
+      legend_id: legend.id,
+      entries: [
+        { card_id: unit.id, quantity: 2 },
+        { card_id: unit.id, quantity: 1 },
+      ],
+    }) as Wanted[];
+    expect(wanted.map((w) => [w.card.id, w.count])).toEqual([
+      [legend.id, 1],
+      [unit.id, 3],
+    ]);
+    expect(deckWanted(catalogue, { legend_id: null, entries: [] })).toContain("no cards");
+    expect(deckWanted(catalogue, { legend_id: "gone", entries: [] })).toContain("no longer in the catalogue");
+  });
+
+  it("suggests the lender's decks by name, with their ids", () => {
+    const decks = [
+      { id: "b", name: "Jinx aggro" },
+      { id: "a", name: "Ahri control" },
+    ];
+    expect(deckChoices(decks, "")).toEqual([
+      { name: "Ahri control", value: "a" },
+      { name: "Jinx aggro", value: "b" },
+    ]);
+    expect(deckChoices(decks, "JINX")).toEqual([{ name: "Jinx aggro", value: "b" }]);
+  });
+
+  it("names the deck instead of its card list", () => {
+    const wanted = [{ card: unit, count: 3 }, { card: legend, count: 1 }];
+    expect(lendReceipt(7, wanted, 0, null, "Ahri control")).toBe("Recorded loan #7: the deck Ahri control (4 cards).");
+    expect(lendAnnouncement("a", "b", 7, wanted, null, "Ahri control")).toContain("lent <@b> the deck Ahri control (4 cards)");
   });
 });
 
