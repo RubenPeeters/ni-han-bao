@@ -54,7 +54,7 @@ Discord ──gateway──► bot/ (discord.js, container on the Hetzner box)
 
 - `make check`: lint + build the site, typecheck + test the bot. Must pass before pushing.
 - `make screenshots`: build the site and write full-page PNGs of every page (375px and
-  1280px, dark) to `.forge/screenshots/`. Pages are discovered from `app/**/page.tsx`;
+  1280px, dark and light) to `.forge/screenshots/`. Pages are discovered from `app/**/page.tsx`;
   `[param]` segments are filled from `DEMO` in `scripts/screenshots.mjs` (a new param needs
   an entry there). With `SCREENSHOT_EMAIL`/`SCREENSHOT_PASSWORD` set (forge sets them) it signs
   in as the demo server's member, so member pages show demo data. Look at them after any

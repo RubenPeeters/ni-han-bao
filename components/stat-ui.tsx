@@ -51,7 +51,7 @@ export function RankList({ children }: { children: ReactNode }) {
 export function RankRow({ rank, value, children }: { rank: number; value: string; children: ReactNode }) {
   return (
     <li className="flex items-center gap-3 py-2 text-sm first:pt-0 last:pb-0">
-      <span className="w-6 shrink-0 text-right tabular-nums text-muted-foreground">{rank}</span>
+      <span className="w-6 shrink-0 text-right tabular-nums text-gold">{rank}</span>
       {children}
       <span className="min-w-12 shrink-0 text-right font-medium tabular-nums">{value}</span>
     </li>
@@ -98,7 +98,7 @@ export function MemberRankRow({
       )}
       <span className="flex min-w-0 flex-1 flex-col">
         {href ? (
-          <Link href={href} className="truncate underline-offset-4 hover:text-primary hover:underline">
+          <Link href={href} className="truncate underline-offset-4 hover:text-gold hover:underline">
             {name}
           </Link>
         ) : (

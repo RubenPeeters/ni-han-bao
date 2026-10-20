@@ -36,11 +36,11 @@ function Markdown({ text, channels }: { text: string; channels: Record<string, s
       t.kind === "bold" ? (
         <strong key={i}>{draw(t.children)}</strong>
       ) : t.kind === "channel" ? (
-        <span key={i} className="rounded bg-primary/10 px-0.5 text-primary">
+        <span key={i} className="rounded bg-gold/10 px-0.5 text-gold">
           #{t.name}
         </span>
       ) : t.kind === "link" ? (
-        <span key={i} className="text-primary">
+        <span key={i} className="text-gold">
           {t.url}
         </span>
       ) : t.kind === "emoji" ? (
@@ -57,7 +57,7 @@ function EmbedView({ embed, channels }: { embed: Embed; channels: Record<string,
   const image = embed.image?.url;
   return (
     <div className="flex max-w-lg flex-col gap-2 rounded-md border-l-4 border-l-muted-foreground bg-secondary p-3" style={{ borderLeftColor: color }}>
-      {embed.title && <p className={cn("font-semibold", embed.url && "text-primary")}>{embed.title}</p>}
+      {embed.title && <p className={cn("font-semibold", embed.url && "text-gold")}>{embed.title}</p>}
       {embed.description && <Markdown text={embed.description} channels={channels} />}
       {embed.fields && (
         <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -94,7 +94,7 @@ export function DiscordMessage({ command, ephemeral, channels, message }: Reply)
       {command && (
         <p className="flex items-center gap-1 pl-5 text-xs text-muted-foreground">
           <CornerDownRight aria-hidden className="size-3" />
-          You used <span className="font-medium text-primary">{command}</span>
+          You used <span className="font-medium text-gold">{command}</span>
         </p>
       )}
       <div className="flex gap-3">

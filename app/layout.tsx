@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
+import { Cormorant_Garamond, Crimson_Pro } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -30,8 +30,16 @@ const analytics =
     ? `window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments)};window.va("beforeSend",function(e){return Object.assign({},e,{url:e.url.replace(/\\/member\\/[^/?#]+/,"/member/[userId]").replace(/\\/u\\/[^/?#]+/,"/u/[userId]")})});`
     : null;
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const heading = Cormorant_Garamond({
+  variable: "--font-heading",
+  weight: ["600", "700"],
+  display: "swap",
+  subsets: ["latin"],
+});
+
+const body = Crimson_Pro({
+  variable: "--font-body",
+  weight: ["400", "600"],
   display: "swap",
   subsets: ["latin"],
 });
@@ -43,7 +51,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.className} antialiased`}>
+      <body className={`${heading.variable} ${body.variable} antialiased`}>
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"
@@ -55,7 +63,7 @@ export default function RootLayout({
             <header className="flex flex-wrap items-center gap-2 border-b pb-4">
               <Link
                 href="/"
-                className="whitespace-nowrap rounded-md text-lg font-semibold transition-colors hover:text-primary active:text-primary/80"
+                className="whitespace-nowrap rounded-md text-lg font-semibold font-heading transition-colors hover:text-gold active:text-gold/80"
               >
                 ni han bao
               </Link>

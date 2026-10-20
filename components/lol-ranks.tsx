@@ -76,7 +76,7 @@ export async function GuildRanks({ guild }: { guild: string }) {
                     <span className="flex min-w-0 flex-1 flex-col">
                       <Link
                         href={`/s/${guild}/member/${r.user_id}`}
-                        className="truncate underline-offset-4 hover:text-primary hover:underline"
+                        className="truncate underline-offset-4 hover:text-gold hover:underline"
                       >
                         {r.display_name}
                       </Link>

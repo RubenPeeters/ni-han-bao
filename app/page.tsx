@@ -165,11 +165,11 @@ function Landing() {
         </Faq>
         <p className="text-sm text-muted-foreground">
           More in the{" "}
-          <Link href="/docs" className="font-medium underline underline-offset-4 hover:text-primary">
+          <Link href="/docs" className="font-medium underline underline-offset-4 hover:text-gold">
             docs
           </Link>{" "}
           and in{" "}
-          <Link href="/about" className="font-medium underline underline-offset-4 hover:text-primary">
+          <Link href="/about" className="font-medium underline underline-offset-4 hover:text-gold">
             About &amp; privacy
           </Link>
           .
