@@ -14,9 +14,11 @@ export const DOCS = [
   {
     title: "Tutorial",
     pages: [
-      { href: "/docs/tutorial/server-stats", label: "Your server's stats" },
-      { href: "/docs/tutorial/league", label: "League of Legends" },
-      { href: "/docs/tutorial/riftbound", label: "Riftbound" },
+      { href: "/docs/tutorial/new-server", label: "A new server" },
+      { href: "/docs/tutorial/server-stats", label: "A month of activity" },
+      { href: "/docs/tutorial/league", label: "League" },
+      { href: "/docs/tutorial/riftbound", label: "Riftbound night" },
+      { href: "/docs/tutorial/privacy", label: "Privacy and leaving" },
     ],
   },
   { title: "Reference", pages: [{ href: "/docs/commands", label: "Commands" }] },
