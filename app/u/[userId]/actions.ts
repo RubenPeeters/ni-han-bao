@@ -22,3 +22,13 @@ export async function setLending(formData: FormData) {
   if (error) throw new Error(`set_card_lending failed: ${error.message}`);
   revalidatePath("/u/[userId]/collection", "page");
 }
+
+/** The once-asked question of how decks count on the wishlist; preset on new decks. */
+export async function setWishlistMode(formData: FormData) {
+  const supabase = await createClient();
+  // The column's check constraint rejects anything but the three modes.
+  const { error } = await supabase.rpc("set_wishlist_mode", { p_mode: String(formData.get("mode")) });
+  if (error) throw new Error(`set_wishlist_mode failed: ${error.message}`);
+  revalidatePath("/decks");
+  revalidatePath("/u/[userId]/wishlist", "page");
+}

@@ -27,6 +27,7 @@ import {
   withoutLine,
 } from "@/lib/decks";
 import { createClient } from "@/lib/supabase/client";
+import { WISHLIST_MODES } from "@/lib/wishlist";
 import { Minus, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -41,6 +42,7 @@ export interface Deck {
   visibility: string;
   language: string;
   allow_other_languages: boolean;
+  wishlist_mode: string;
 }
 
 /** A saved version, as History lists it. */
@@ -162,6 +164,7 @@ export function DeckEditor({
       p_language: settings.language,
       p_allow_other_languages: settings.allow_other_languages,
       p_entries: list,
+      p_wishlist_mode: settings.wishlist_mode,
     });
     if (error) return setStatus(`Not saved (${error.message}). Try again.`);
     setDirty(false);
@@ -384,7 +387,7 @@ export function DeckEditor({
       )}
 
       {mine && (
-        <StatCard title="Deck" description="Name, Legend, who sees it and its language">
+        <StatCard title="Deck" description="Name, Legend, who sees it, its language and wishlist">
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-2 text-sm font-medium">
               Name
@@ -452,6 +455,19 @@ export function DeckEditor({
               />
               <Label htmlFor="deck-other-languages">Copies in other languages count</Label>
             </div>
+            <label className="flex flex-col gap-2 text-sm font-medium">
+              Wishlist
+              <select value={settings.wishlist_mode} onChange={(e) => change({ wishlist_mode: e.target.value })} className={field}>
+                {WISHLIST_MODES.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs font-normal text-muted-foreground">
+                {WISHLIST_MODES.find((m) => m.value === settings.wishlist_mode)?.hint}
+              </span>
+            </label>
             <label className="flex flex-col gap-2 text-sm font-medium sm:col-span-2">
               Notes
               <textarea

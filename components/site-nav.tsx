@@ -82,6 +82,7 @@ export function ProfileNav({ user }: { user: string }) {
     { href: `/u/${user}`, label: "Activity" },
     { href: `/u/${user}/collection`, label: "Collection" },
     { href: `/u/${user}/loans`, label: "Loans" },
+    { href: `/u/${user}/wishlist`, label: "Wishlist" },
   ];
   return (
     <nav aria-label="Profile">

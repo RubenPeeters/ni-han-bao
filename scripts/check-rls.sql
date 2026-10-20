@@ -2,7 +2,7 @@
 -- rows from every table with a guild_id, and a logged-in user reads rows of their own
 -- servers only; that profiles follow their visibility (#100); that the lending ledger holds
 -- (#172); that decks follow their visibility (#173) and only public ones are remembered as
--- opened (#174), their versions with them (#176); then that /forget-me deletes
+-- opened (#174), their versions with them (#176), and wishlists their profile (#177); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`. Run against a local Supabase or the dev project
 -- (never production); everything is rolled back:
@@ -100,6 +100,10 @@ begin
     insert into public.riftbound_deck_cards (deck_id, section, card_id, quantity)
     select id, 'main', 'rls-card', 1 from public.riftbound_decks where user_id like 'rls-%';
     perform public.snapshot_riftbound_deck(id) from public.riftbound_decks where user_id like 'rls-%';
+    -- Wishlists (#177): rls-rls-mine's two shared decks need one rls-card each.
+    update public.riftbound_decks set wishlist_mode = 'shared' where user_id = 'rls-rls-mine';
+    insert into public.riftbound_wishlist (user_id, card_id, quantity)
+    values ('rls-rls-mine', 'rls-card-2', 2), ('rls-rls-other', 'rls-card-2', 1), ('rls-hidden', 'rls-card-2', 1);
     -- anon cannot read keys itself, so hand it one for the recap checks below.
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
@@ -139,6 +143,9 @@ begin
     end if;
     if exists (select from public.riftbound_deck_opens) then raise exception 'anon reads an opened deck'; end if;
     if exists (select from public.riftbound_deck_versions) then raise exception 'anon reads a deck version'; end if;
+    if exists (select from public.riftbound_wishlist) or exists (select from public.profile_wishlist('rls-rls-mine')) then
+        raise exception 'anon reads a wishlist';
+    end if;
     if exists (select from public.lol_ranks) or exists (select from public.profile_ranks('rls-rls-mine')) then
         raise exception 'anon reads a rank';
     end if;
@@ -364,7 +371,36 @@ begin
     if (select array_agg(d.name) from public.riftbound_deck_opens o join public.riftbound_decks d on d.id = o.deck_id) <> array['public'] then
         raise exception 'open_riftbound_deck() remembers a deck that is not someone else''s public one';
     end if;
-    -- One left for /forget-me to delete.
+    -- Wishlists (#177): your own entries directly, others' as their profile, a shared deck numbered per card only.
+    if exists (select from public.riftbound_wishlist) then raise exception 'a member reads someone else''s wishlist entries'; end if;
+    if (select string_agg(card_id || ':' || coalesce(deck::text, '-') || ':' || decks || ':' || coalesce(manual::text, '-')
+            || ':' || jsonb_array_length(copies), ',' order by card_id, deck)
+            from public.profile_wishlist('rls-rls-mine')) <> 'rls-card:1:1:-:1,rls-card:2:1:-:1,rls-card-2:-:0:2:0'
+        or exists (select from public.profile_wishlist('rls-rls-other')) or exists (select from public.profile_wishlist('rls-hidden')) then
+        raise exception 'profile_wishlist() does not follow the profile, or does not keep shared decks apart';
+    end if;
+    perform public.set_riftbound_wish('rls-card', 'rls-printing', 3);
+    perform public.set_riftbound_wish('rls-card', 'rls-printing', 5);
+    perform public.set_riftbound_wish('rls-card-2', null, 1);
+    perform public.set_riftbound_wish('rls-card-2', null, 0);
+    if (select string_agg(card_id || ':' || quantity, ',') from public.riftbound_wishlist) <> 'rls-card:5' then
+        raise exception 'set_riftbound_wish() does not save an absolute count, or keeps one at 0';
+    end if;
+    begin
+        perform public.set_riftbound_wish('rls-card-2', 'rls-printing', 1);
+        raise exception 'a wishlist entry is pinned to a printing of another card';
+    exception when foreign_key_violation then null;
+    end;
+    perform public.set_wishlist_mode('dedicated');
+    deck := public.save_riftbound_deck(null, 'preset', null, null, null, null, null, null, null);
+    if (select wishlist_mode from public.riftbound_decks where id = deck) <> 'dedicated' then
+        raise exception 'a new deck does not take the wishlist mode asked once';
+    end if;
+    perform public.save_riftbound_deck(deck, 'preset', null, null, null, 'private', 'en', true, null);
+    if (select wishlist_mode from public.riftbound_decks where id = deck) <> 'dedicated' then
+        raise exception 'a save without a wishlist mode changes the deck''s';
+    end if;
+    -- One left for /forget-me to delete, with the wishlist entry above.
     perform public.save_riftbound_deck(null, 'kept', null, null, null, null, null, null, null);
     if (select icon from public.guild_games('rls-mine', current_date)) is distinct from 'i' then
         raise exception 'guild_games() does not return the game icon';

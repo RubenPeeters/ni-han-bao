@@ -1,5 +1,6 @@
 import { createDeck } from "@/app/decks/actions";
 import { DeckEditor, RestoreVersion, type Deck, type VersionListed } from "@/components/deck-editor";
+import { WishlistModeQuestion } from "@/components/profile-wishlist";
 import { LogInPrompt } from "@/components/server-picker";
 import { EmptyState, ErrorState, RankList, RankRow, StatCard } from "@/components/stat-ui";
 import { Button } from "@/components/ui/button";
@@ -60,7 +61,7 @@ export async function DeckList() {
   const me = await supabase.rpc("current_discord_id");
   if (me.error) return <ErrorState title="Could not load your decks">Try again in a minute.</ErrorState>;
   if (!me.data) return <LogInPrompt text={LOG_IN} />;
-  const [mine, opened, owned] = await Promise.all([
+  const [mine, opened, owned, asked] = await Promise.all([
     allPages((from, to) =>
       supabase
         .from("riftbound_decks")
@@ -72,8 +73,9 @@ export async function DeckList() {
     // Through the opens, so no id list goes in the URL; RLS drops a deck no longer public.
     allPages((from, to) => supabase.from("riftbound_deck_opens").select(`deck:riftbound_decks(${DECK})`).order("deck_id").range(from, to)),
     ownedCopies(supabase),
+    supabase.from("profiles").select("wishlist_mode").eq("user_id", me.data).maybeSingle(),
   ]);
-  if (mine.error || opened.error || owned.error) return <ErrorState title="Could not load your decks">Try again in a minute.</ErrorState>;
+  if (mine.error || opened.error || owned.error || asked.error) return <ErrorState title="Could not load your decks">Try again in a minute.</ErrorState>;
   const byId = new Map<string, ListedDeck>();
   for (const d of [...(mine.data as unknown as ListedDeck[]), ...(opened.data as unknown as { deck: ListedDeck | null }[]).map((o) => o.deck)]) {
     if (d) byId.set(d.id, d);
@@ -85,6 +87,7 @@ export async function DeckList() {
   const buildable = all.toSorted((a, b) => a.missing - b.missing || a.name.localeCompare(b.name));
   return (
     <>
+      {!asked.data?.wishlist_mode && <WishlistModeQuestion />}
       <form action={createDeck} className="card flex flex-col gap-2 sm:flex-row sm:items-end">
         <label className="flex min-w-0 flex-1 flex-col gap-2 text-sm font-medium">
           New deck
@@ -157,7 +160,7 @@ export async function DeckDetail({ id }: { id: string }) {
   const [deck, entries, cards, printings, me, owned, versions] = await Promise.all([
     supabase
       .from("riftbound_decks")
-      .select("id, user_id, name, legend_id, champion_id, notes, visibility, language, allow_other_languages")
+      .select("id, user_id, name, legend_id, champion_id, notes, visibility, language, allow_other_languages, wishlist_mode")
       .eq("id", id)
       .maybeSingle(),
     supabase.from("riftbound_deck_cards").select("section, card_id, printing_id, quantity").eq("deck_id", id),
@@ -198,7 +201,7 @@ const versionList = (supabase: Awaited<ReturnType<typeof createClient>>, id: str
   );
 
 const VERSION = "version, saved_at, name, legend_id, champion_id, notes, language, allow_other_languages, entries";
-type SavedVersion = Omit<Deck, "id" | "visibility"> & VersionListed & { entries: Entry[] };
+type SavedVersion = Omit<Deck, "id" | "visibility" | "wishlist_mode"> & VersionListed & { entries: Entry[] };
 
 const pinText = (pins: Pin[], codes: Map<string, string>) =>
   pins.map((p) => `${p.quantity} ${codes.get(p.printing_id) ?? p.printing_id}`).join(", ") || "none";
@@ -215,7 +218,7 @@ export async function DeckVersionDetail({ id, version, from }: { id: string; ver
   const n = Number(version);
   if (!UUID.test(id) || !Number.isInteger(n) || n < 1) notFound();
   const [deck, versions, cards, printings, me, owned] = await Promise.all([
-    supabase.from("riftbound_decks").select("user_id, visibility").eq("id", id).maybeSingle(),
+    supabase.from("riftbound_decks").select("user_id, visibility, wishlist_mode").eq("id", id).maybeSingle(),
     versionList(supabase, id),
     supabase.from("riftbound_cards").select("*").order("name").limit(MAX_CARDS),
     supabase.from("riftbound_printings").select("*").order("collector_number").order("collector_code").limit(MAX_CARDS),
@@ -238,7 +241,7 @@ export async function DeckVersionDetail({ id, version, from }: { id: string; ver
   const shown = rows.find((v) => v.version === n)!;
   const compared = rows.find((v) => v.version === before);
   const { saved_at, entries, ...settings } = shown;
-  const asDeck: Deck = { ...settings, id, visibility: deck.data.visibility };
+  const asDeck: Deck = { ...settings, id, visibility: deck.data.visibility, wishlist_mode: deck.data.wishlist_mode };
   const names = new Map((cards.data as Card[]).map((c) => [c.id, c.name]));
   const codes = new Map((printings.data as Printing[]).map((p) => [p.id, p.collector_code]));
   const changes = compared ? deckChanges(compared, shown) : [];
