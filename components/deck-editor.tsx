@@ -13,12 +13,14 @@ import {
   championOf,
   changeEntry,
   deckWarnings,
+  missingCards,
   parseDeckList,
   replaceEntry,
   SECTIONS,
   VISIBILITIES,
   type DeckCards,
   type Entry,
+  type OwnedCopy,
   type PastedLine,
   type Section,
   withoutLine,
@@ -52,7 +54,20 @@ const SEARCH_RESULTS = 8;
 const legendLabel = (c: Card) => `${c.tags.join(", ")}, ${c.name}`;
 
 /** The deck page: everything changes here first and is saved with Save, as one whole deck. */
-export function DeckEditor({ deck, entries, catalogue, mine }: { deck: Deck; entries: Entry[]; catalogue: Catalogue; mine: boolean }) {
+export function DeckEditor({
+  deck,
+  entries,
+  catalogue,
+  owned,
+  mine,
+}: {
+  deck: Deck;
+  entries: Entry[];
+  catalogue: Catalogue;
+  /** The visitor's copies, for Missing cards (of their own collection, whoever owns the deck). */
+  owned: OwnedCopy[];
+  mine: boolean;
+}) {
   const router = useRouter();
   const [settings, setSettings] = useState(deck);
   const [list, setList] = useState(entries);
@@ -67,6 +82,8 @@ export function DeckEditor({ deck, entries, catalogue, mine }: { deck: Deck; ent
   const legend = settings.legend_id ? cards.get(settings.legend_id) : undefined;
   const champions = catalogue.cards.filter((c) => c.supertypes.includes("Champion") && (!legend || championOf(legend, c)));
   const { warnings, placeholder } = deckWarnings(settings, list, cards);
+  const missing = missingCards(settings, list, owned);
+  const codes = useMemo(() => new Map(catalogue.printings.map((p) => [p.id, p.collector_code])), [catalogue]);
 
   // Leaving with unsaved changes asks first.
   useEffect(() => {
@@ -172,6 +189,37 @@ export function DeckEditor({ deck, entries, catalogue, mine }: { deck: Deck; ent
           <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
             {warnings.map((w) => (
               <li key={w}>{w}</li>
+            ))}
+          </ul>
+        )}
+      </StatCard>
+
+      <StatCard
+        title="Missing cards"
+        description={`${missing.missing ? `${missing.missing} missing` : "Nothing missing"} against your collection${settings.allow_other_languages ? "" : `, ${languageName(settings.language)} copies only`}`}
+      >
+        {missing.rows.length === 0 ? (
+          <EmptyState>No cards yet.</EmptyState>
+        ) : (
+          <ul className="flex flex-col divide-y">
+            {missing.rows.map((r) => (
+              <li key={`${r.section}|${r.card_id}|${r.printing_id}`} className="flex items-center gap-3 py-2 text-sm first:pt-0 last:pb-0">
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate font-medium">{cards.get(r.card_id)?.name ?? r.card_id}</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {[
+                      r.section === "legend" ? "Legend" : SECTIONS.find((x) => x.value === r.section)?.label,
+                      r.printing_id && codes.get(r.printing_id),
+                      `you own ${r.owned} of ${r.quantity}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                </span>
+                <span className={`shrink-0 tabular-nums ${r.owned < r.quantity ? "font-medium" : "text-muted-foreground"}`}>
+                  {r.owned < r.quantity ? `${r.quantity - r.owned} missing` : "Complete"}
+                </span>
+              </li>
             ))}
           </ul>
         )}
