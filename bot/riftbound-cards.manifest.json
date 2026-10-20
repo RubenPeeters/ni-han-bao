@@ -1,0 +1,349 @@
+{
+  "source": "https://playriftbound.com/_next/data/ITtiC1BggwiAprwzqpkOt/en-us/card-gallery.json",
+  "build_id": "ITtiC1BggwiAprwzqpkOt",
+  "fetched_at": "2026-10-20T14:31:10.790Z",
+  "cards": 1103,
+  "printings": 1408,
+  "printings_per_set": {
+    "OGN": 352,
+    "OGS": 24,
+    "SFD": 288,
+    "UNL": 288,
+    "VEN": 237,
+    "RAD": 219
+  },
+  "sha256": "a62108c12cb7fdf35a64a941b91fbf1022e66b93b8bd74fb5de25363d7509fe2",
+  "untyped": [
+    "antagonistic-apparatus",
+    "buff",
+    "entrenched-boar",
+    "fanfare",
+    "hunker-down",
+    "hush",
+    "industrious-mechsmith",
+    "one-two-punch",
+    "pitiless-stalker",
+    "protectors-shield",
+    "raucous-anthem",
+    "rousing-display",
+    "scorched-earth",
+    "whirling-twirligig",
+    "xp-tracker"
+  ],
+  "text_differences": [
+    {
+      "card_id": "akali-deadly-weapon",
+      "printings": [
+        [
+          "ven-021-166"
+        ],
+        [
+          "ven-021a-166"
+        ]
+      ]
+    },
+    {
+      "card_id": "aphelios-exalted",
+      "printings": [
+        [
+          "rad-179-167"
+        ],
+        [
+          "sfd-049-221",
+          "sfd-224-221",
+          "sfd-224-star-221"
+        ]
+      ]
+    },
+    {
+      "card_id": "body-rune",
+      "printings": [
+        [
+          "ogn-126-298",
+          "ogn-126a-298",
+          "rad-r04",
+          "ven-r04"
+        ],
+        [
+          "rad-r04a"
+        ]
+      ]
+    },
+    {
+      "card_id": "calm-rune",
+      "printings": [
+        [
+          "ogn-042-298",
+          "ogn-042a-298",
+          "rad-r02",
+          "ven-r02"
+        ],
+        [
+          "rad-r02a"
+        ]
+      ]
+    },
+    {
+      "card_id": "chaos-rune",
+      "printings": [
+        [
+          "ogn-166-298",
+          "ogn-166a-298",
+          "rad-r05",
+          "ven-r05"
+        ],
+        [
+          "rad-r05a"
+        ]
+      ]
+    },
+    {
+      "card_id": "chem-baroness",
+      "printings": [
+        [
+          "sfd-201-221"
+        ],
+        [
+          "sfd-249-221"
+        ]
+      ]
+    },
+    {
+      "card_id": "emperor-of-the-sands",
+      "printings": [
+        [
+          "sfd-197-221"
+        ],
+        [
+          "sfd-247-221"
+        ]
+      ]
+    },
+    {
+      "card_id": "fury-rune",
+      "printings": [
+        [
+          "ogn-007-298",
+          "ogn-007a-298",
+          "rad-r01",
+          "ven-r01"
+        ],
+        [
+          "rad-r01a"
+        ]
+      ]
+    },
+    {
+      "card_id": "gold",
+      "printings": [
+        [
+          "sfd-t03"
+        ],
+        [
+          "unl-t05"
+        ]
+      ]
+    },
+    {
+      "card_id": "iron-revenant",
+      "printings": [
+        [
+          "rad-143-167"
+        ],
+        [
+          "rad-170-167"
+        ]
+      ]
+    },
+    {
+      "card_id": "jayce-hammer-in-hand",
+      "printings": [
+        [
+          "ven-088-166"
+        ],
+        [
+          "ven-088a-166"
+        ]
+      ]
+    },
+    {
+      "card_id": "kaisa-rebel",
+      "printings": [
+        [
+          "rad-063-167"
+        ],
+        [
+          "rad-sp4-005"
+        ]
+      ]
+    },
+    {
+      "card_id": "kayle-justified",
+      "printings": [
+        [
+          "ven-134-166"
+        ],
+        [
+          "ven-185-166"
+        ]
+      ]
+    },
+    {
+      "card_id": "lonely-poro",
+      "printings": [
+        [
+          "sfd-036-221"
+        ],
+        [
+          "unl-221-219"
+        ]
+      ]
+    },
+    {
+      "card_id": "lux-crownguard",
+      "printings": [
+        [
+          "ogs-014-024"
+        ],
+        [
+          "ven-sp6-006"
+        ]
+      ]
+    },
+    {
+      "card_id": "mind-rune",
+      "printings": [
+        [
+          "ogn-089-298",
+          "ogn-089a-298",
+          "rad-r03",
+          "ven-r03"
+        ],
+        [
+          "rad-r03a"
+        ]
+      ]
+    },
+    {
+      "card_id": "order-rune",
+      "printings": [
+        [
+          "ogn-214-298",
+          "ogn-214a-298",
+          "rad-r06",
+          "ven-r06"
+        ],
+        [
+          "rad-r06a"
+        ]
+      ]
+    },
+    {
+      "card_id": "renekton-brute",
+      "printings": [
+        [
+          "ven-092-166",
+          "ven-092a-166"
+        ],
+        [
+          "ven-177-166"
+        ]
+      ]
+    },
+    {
+      "card_id": "riven-broken-blade",
+      "printings": [
+        [
+          "rad-043-167"
+        ],
+        [
+          "rad-043a-167"
+        ]
+      ]
+    },
+    {
+      "card_id": "riven-deserter",
+      "printings": [
+        [
+          "rad-114-167"
+        ],
+        [
+          "rad-114a-167"
+        ]
+      ]
+    },
+    {
+      "card_id": "sett-brawler",
+      "printings": [
+        [
+          "ogn-164-298",
+          "ogn-164a-298",
+          "sfd-232-221",
+          "sfd-232-star-221"
+        ],
+        [
+          "ven-sp4-006"
+        ]
+      ]
+    },
+    {
+      "card_id": "sona-harmonious",
+      "printings": [
+        [
+          "ogn-073-298"
+        ],
+        [
+          "ven-sp2-006"
+        ]
+      ]
+    },
+    {
+      "card_id": "unforgiven",
+      "printings": [
+        [
+          "ogn-259-298"
+        ],
+        [
+          "ogn-305-298",
+          "ogn-305-star-298"
+        ]
+      ]
+    },
+    {
+      "card_id": "viktor-innovator",
+      "printings": [
+        [
+          "ogn-117-298",
+          "ogn-117a-298"
+        ],
+        [
+          "ven-176-166"
+        ]
+      ]
+    },
+    {
+      "card_id": "void-burrower",
+      "printings": [
+        [
+          "sfd-187-221"
+        ],
+        [
+          "sfd-243-221"
+        ]
+      ]
+    },
+    {
+      "card_id": "yone-blademaster",
+      "printings": [
+        [
+          "rad-181-167"
+        ],
+        [
+          "sfd-116-221",
+          "sfd-233-221",
+          "sfd-233-star-221"
+        ]
+      ]
+    }
+  ]
+}
