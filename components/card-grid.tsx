@@ -33,7 +33,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export interface LibraryCard {
   id: string;
   name: string;
-  type: string;
+  type: string | null;
   domains: string[];
   energy: number | null;
   tags: string[];
@@ -101,7 +101,15 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
       (!set || c.sets.includes(set)),
   );
   const filters = [
-    { label: "Type", all: "All types", value: type, set: setType, options: sorted(cards.map((c) => c.type)), facet: "type" },
+    {
+      label: "Type",
+      all: "All types",
+      value: type,
+      set: setType,
+      // Riot's tokens have no type: no option of their own, which would also blank "All types".
+      options: sorted(cards.flatMap((c) => (c.type ? [c.type] : []))),
+      facet: "type",
+    },
     { label: "Domain", all: "All domains", value: domain, set: setDomain, options: sorted(cards.flatMap((c) => c.domains)), facet: "domain" },
     {
       label: "Cost",
