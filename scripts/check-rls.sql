@@ -1,7 +1,8 @@
 -- Proves per-server data is readable only by members of that server (#45): anon reads zero
 -- rows from every table with a guild_id, and a logged-in user reads rows of their own
 -- servers only; that profiles follow their visibility (#100); that the lending ledger holds
--- (#172); that decks follow their visibility (#173); then that /forget-me deletes
+-- (#172); that decks follow their visibility (#173) and only public ones are remembered as
+-- opened (#174); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`. Run against a local Supabase or the dev project
 -- (never production); everything is rolled back:
@@ -135,6 +136,7 @@ begin
     if exists (select from public.riftbound_decks) or exists (select from public.riftbound_deck_cards) then
         raise exception 'anon reads a deck, even a public one';
     end if;
+    if exists (select from public.riftbound_deck_opens) then raise exception 'anon reads an opened deck'; end if;
     if exists (select from public.lol_ranks) or exists (select from public.profile_ranks('rls-rls-mine')) then
         raise exception 'anon reads a rank';
     end if;
@@ -342,6 +344,11 @@ begin
     end if;
     perform public.delete_riftbound_deck(deck);
     if exists (select from public.riftbound_decks where id = deck) then raise exception 'delete_riftbound_deck() keeps your deck'; end if;
+    -- Opened decks (#174): only someone else's public one is remembered.
+    perform public.open_riftbound_deck(id) from public.riftbound_decks;
+    if (select array_agg(d.name) from public.riftbound_deck_opens o join public.riftbound_decks d on d.id = o.deck_id) <> array['public'] then
+        raise exception 'open_riftbound_deck() remembers a deck that is not someone else''s public one';
+    end if;
     -- One left for /forget-me to delete.
     perform public.save_riftbound_deck(null, 'kept', null, null, null, null, null, null, null);
     if (select icon from public.guild_games('rls-mine', current_date)) is distinct from 'i' then

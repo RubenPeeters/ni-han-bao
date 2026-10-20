@@ -1,11 +1,11 @@
 import { createDeck } from "@/app/decks/actions";
 import { DeckEditor, type Deck } from "@/components/deck-editor";
 import { LogInPrompt } from "@/components/server-picker";
-import { EmptyState, ErrorState, StatCard } from "@/components/stat-ui";
+import { EmptyState, ErrorState, RankList, RankRow, StatCard } from "@/components/stat-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Card, Printing } from "@/bot/src/card-match";
-import { VISIBILITIES, type Entry } from "@/lib/decks";
+import { missingCards, VISIBILITIES, type Entry, type OwnedCopy } from "@/lib/decks";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -15,27 +15,66 @@ const LOG_IN = "Log in to build Riftbound decks.";
 const MAX_CARDS = 1000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The visitor's own decks (RLS also returns others' visible ones, so filtered by owner). */
+/** The visitor's copies (RLS returns their own rows only), paged past PostgREST's 1000-row cap. */
+async function ownedCopies(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const rows: OwnedCopy[] = [];
+  for (let from = 0; ; from += MAX_CARDS) {
+    const { data, error } = await supabase
+      .from("riftbound_collection")
+      .select("printing_id, language, quantity, printing:riftbound_printings(card_id)")
+      .order("printing_id")
+      .order("finish")
+      .order("condition")
+      .order("language")
+      .range(from, from + MAX_CARDS - 1);
+    if (error) return { data: null, error };
+    const page = data as unknown as (Omit<OwnedCopy, "card_id"> & { printing: { card_id: string } })[];
+    rows.push(...page.map(({ printing, ...c }) => ({ ...c, card_id: printing.card_id })));
+    if (data.length < MAX_CARDS) return { data: rows, error: null };
+  }
+}
+
+/**
+ * The visitor's own decks, and every deck they could build against their collection: their
+ * own, those shared with their servers (RLS keeps the servers they are in) and public ones
+ * they opened.
+ */
 export async function DeckList() {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims) return <LogInPrompt text={LOG_IN} />;
-  const me = await supabase.rpc("current_discord_id");
-  if (me.error) return <ErrorState title="Could not load your decks">Try again in a minute.</ErrorState>;
+  const [me, opened, owned] = await Promise.all([
+    supabase.rpc("current_discord_id"),
+    supabase.from("riftbound_deck_opens").select("deck_id"),
+    ownedCopies(supabase),
+  ]);
+  if (me.error || opened.error || owned.error) return <ErrorState title="Could not load your decks">Try again in a minute.</ErrorState>;
   if (!me.data) return <LogInPrompt text={LOG_IN} />;
+  const visible = [`user_id.eq.${me.data}`, "visibility.eq.servers"];
+  if (opened.data.length) visible.push(`id.in.(${opened.data.map((o) => o.deck_id).join(",")})`);
   const { data, error } = await supabase
     .from("riftbound_decks")
-    .select("id, name, visibility, legend:riftbound_cards!legend_id(name, tags), cards:riftbound_deck_cards(section, quantity)")
-    .eq("user_id", me.data)
+    .select(
+      "id, user_id, name, visibility, legend_id, language, allow_other_languages, legend:riftbound_cards!legend_id(name, tags), cards:riftbound_deck_cards(section, card_id, printing_id, quantity)",
+    )
+    .or(visible.join(","))
     .order("updated_at", { ascending: false });
   if (error) return <ErrorState title="Could not load your decks">Try again in a minute.</ErrorState>;
-  const decks = data as unknown as {
-    id: string;
-    name: string;
-    visibility: string;
-    legend: { name: string; tags: string[] } | null;
-    cards: { section: string; quantity: number }[];
-  }[];
+  const all = (
+    data as unknown as {
+      id: string;
+      user_id: string;
+      name: string;
+      visibility: string;
+      legend_id: string | null;
+      language: string;
+      allow_other_languages: boolean;
+      legend: { name: string; tags: string[] } | null;
+      cards: Entry[];
+    }[]
+  ).map((d) => ({ ...d, missing: missingCards(d, d.cards, owned.data).missing }));
+  const decks = all.filter((d) => d.user_id === me.data);
+  const buildable = all.toSorted((a, b) => a.missing - b.missing || a.name.localeCompare(b.name));
   return (
     <>
       <form action={createDeck} className="card flex flex-col gap-2 sm:flex-row sm:items-end">
@@ -75,6 +114,27 @@ export async function DeckList() {
           </ul>
         )}
       </StatCard>
+      <StatCard title="Which decks can I build?" description="Yours, your servers' and public ones you opened, by the fewest cards you are missing">
+        {buildable.length === 0 ? (
+          <EmptyState>No decks yet. Yours, your servers&apos; and public ones you open appear here.</EmptyState>
+        ) : (
+          <RankList>
+            {buildable.map((d, i) => (
+              <RankRow key={d.id} rank={i + 1} value={d.missing ? `${d.missing} missing` : "Complete"}>
+                <Link
+                  href={`/decks/${d.id}`}
+                  className="flex min-w-0 flex-1 flex-col rounded-md hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span className="truncate font-medium">{d.name}</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {[d.legend ? `${d.legend.tags.join(", ")}, ${d.legend.name}` : "No Legend yet", d.user_id === me.data ? "Yours" : "Shared"].join(" · ")}
+                  </span>
+                </Link>
+              </RankRow>
+            ))}
+          </RankList>
+        )}
+      </StatCard>
     </>
   );
 }
@@ -86,7 +146,7 @@ export async function DeckDetail({ id }: { id: string }) {
   if (!claims) return <LogInPrompt text="Log in to see this deck." />;
   // Not a uuid is no deck, rather than a database error.
   if (!UUID.test(id)) notFound();
-  const [deck, entries, cards, printings, me] = await Promise.all([
+  const [deck, entries, cards, printings, me, owned] = await Promise.all([
     supabase
       .from("riftbound_decks")
       .select("id, user_id, name, legend_id, champion_id, notes, visibility, language, allow_other_languages")
@@ -96,17 +156,24 @@ export async function DeckDetail({ id }: { id: string }) {
     supabase.from("riftbound_cards").select("*").order("name").limit(MAX_CARDS),
     supabase.from("riftbound_printings").select("*").order("collector_number").order("collector_code").limit(MAX_CARDS),
     supabase.rpc("current_discord_id"),
+    ownedCopies(supabase),
   ]);
-  if (deck.error || entries.error || cards.error || printings.error || me.error) {
+  if (deck.error || entries.error || cards.error || printings.error || me.error || owned.error) {
     return <ErrorState title="Could not load this deck">Try again in a minute.</ErrorState>;
   }
   if (!deck.data) notFound();
   const { user_id, ...rest } = deck.data;
+  // Into the visitor's Which decks can I build?; the function ignores their own and non-public decks.
+  if (user_id !== me.data && rest.visibility === "public") {
+    const { error } = await supabase.rpc("open_riftbound_deck", { p_deck: id });
+    if (error) console.error("open_riftbound_deck failed:", error.message);
+  }
   return (
     <DeckEditor
       deck={rest as Deck}
       entries={entries.data as Entry[]}
       catalogue={{ cards: cards.data as Card[], printings: printings.data as Printing[] }}
+      owned={owned.data}
       mine={user_id === me.data}
     />
   );

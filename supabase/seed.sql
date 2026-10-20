@@ -228,6 +228,13 @@ begin
     -- Outside Annie's domains, for that warning.
     insert into public.riftbound_deck_cards (deck_id, section, card_id, quantity)
         values ('00000000-0000-4000-8000-0000000d0002', 'main', 'placeholder-unit-ahri', 2);
+    -- Bram's public deck, which Anna opened (#174): in her Which decks can I build?
+    insert into public.riftbound_decks (id, user_id, name, legend_id, champion_id, visibility)
+    values ('00000000-0000-4000-8000-0000000d0004', users[2], 'Bram''s Ahri tempo', 'placeholder-legend-ahri', 'placeholder-unit-ahri', 'public');
+    insert into public.riftbound_deck_cards (deck_id, section, card_id, quantity)
+        select '00000000-0000-4000-8000-0000000d0004', 'main', card_id, quantity from public.riftbound_deck_cards
+        where deck_id = '00000000-0000-4000-8000-0000000d0001' and section = 'main' and printing_id is null;
+    insert into public.riftbound_deck_opens (user_id, deck_id) values (users[1], '00000000-0000-4000-8000-0000000d0004');
 
     -- Riftbound local play: stores, regulars and upcoming events.
     insert into public.stores (guild_id, name, city, url, added_by) values
