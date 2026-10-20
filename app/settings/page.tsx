@@ -65,12 +65,11 @@ async function Settings() {
     supabase.rpc("my_server_visibility"),
     supabase.rpc("my_game_accounts"),
   ]);
-  if (me.error || profile.error || servers.error || accounts.error) {
-    return <ErrorState title="Could not load your settings">Try again in a minute.</ErrorState>;
-  }
+  // A failed read only takes down the sections that need it.
+  const profileFailed = !!(me.error || profile.error);
   const mine = profile.data;
-  const lol = (accounts.data as { game: string; region: string }[]).find((a) => a.game === "lol");
-  const guilds = servers.data as { guild_id: string; name: string; hidden: boolean }[];
+  const lol = (accounts.data as { game: string; region: string }[] | null)?.find((a) => a.game === "lol");
+  const guilds = servers.data as { guild_id: string; name: string; hidden: boolean }[] | null;
   return (
     <>
       <nav aria-label="Settings sections">
@@ -88,7 +87,7 @@ async function Settings() {
         </ul>
       </nav>
 
-      <Section id="profile" description="Who can see your profile: your activity, collection, loans and wishlist.">
+      <Section id="profile" failed={profileFailed} description="Who can see your profile: your activity, collection, loans and wishlist.">
         <SettingsForm action={setVisibility}>
           <fieldset className="flex flex-col gap-1">
             <legend className="mb-2 text-sm font-medium">Who can see my profile</legend>
@@ -100,7 +99,7 @@ async function Settings() {
         </SettingsForm>
       </Section>
 
-      <Section id="riftbound" description="Lending, and how your decks count on your wishlist.">
+      <Section id="riftbound" failed={profileFailed} description="Lending, and how your decks count on your wishlist.">
         <SettingsForm action={setLending}>
           <label className="flex min-h-11 items-start gap-3 py-1 text-sm">
             <input type="checkbox" name="lends" defaultChecked={mine?.lends_cards ?? false} className="mt-0.5 size-4 shrink-0 accent-primary" />
@@ -133,7 +132,7 @@ async function Settings() {
         <ThemeSettings />
       </Section>
 
-      <Section id="linked-accounts" description="Accounts the bot knows are yours.">
+      <Section id="linked-accounts" failed={!!accounts.error} description="Accounts the bot knows are yours.">
         <dl className="flex flex-wrap items-center justify-between gap-2 text-sm">
           <dt className="font-medium">League of Legends</dt>
           <dd>
@@ -153,12 +152,12 @@ async function Settings() {
         </Help>
       </Section>
 
-      <Section id="servers" description="Whether you appear in each server's lists and charts. Only the bot changes it.">
-        {guilds.length === 0 ? (
+      <Section id="servers" failed={!guilds} description="Whether you appear in each server's lists and charts. Only the bot changes it.">
+        {guilds?.length === 0 ? (
           <p className="text-sm text-muted-foreground">The bot is not in any of your servers yet.</p>
         ) : (
           <ul className="flex flex-col divide-y">
-            {guilds.map((g) => (
+            {guilds?.map((g) => (
               <li key={g.guild_id} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 py-3 text-sm first:pt-0 last:pb-0">
                 <span className="min-w-0 flex-1 truncate font-medium">{g.name}</span>
                 <Badge variant={g.hidden ? "secondary" : "outline"}>{g.hidden ? "Hidden" : "Shown"}</Badge>
@@ -190,7 +189,7 @@ async function Settings() {
   );
 }
 
-function Section({ id, description, className, children }: { id: (typeof SECTIONS)[number]["id"]; description: string; className?: string; children: ReactNode }) {
+function Section({ id, description, failed, className, children }: { id: (typeof SECTIONS)[number]["id"]; description: string; failed?: boolean; className?: string; children: ReactNode }) {
   const title = SECTIONS.find((s) => s.id === id)!.title;
   return (
     <section id={id} aria-labelledby={`${id}-title`} className={cn("card flex min-w-0 scroll-mt-6 flex-col gap-4", className)}>
@@ -200,7 +199,7 @@ function Section({ id, description, className, children }: { id: (typeof SECTION
         </h2>
         <p className="text-xs text-muted-foreground">{description}</p>
       </div>
-      {children}
+      {failed ? <ErrorState title="Could not load this">Try again in a minute.</ErrorState> : children}
     </section>
   );
 }
