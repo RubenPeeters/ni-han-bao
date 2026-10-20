@@ -54,7 +54,7 @@ export async function EventStats({ guild }: { guild: string }) {
                         href={event.url}
                         target="_blank"
                         rel="noopener noreferrer nofollow"
-                        className="min-w-0 truncate font-medium underline-offset-4 hover:text-primary hover:underline"
+                        className="min-w-0 truncate font-medium underline-offset-4 hover:text-gold hover:underline"
                       >
                         {title}
                       </a>

@@ -80,7 +80,7 @@ export async function TradeStats({ guild }: { guild: string }) {
         matches.map((m) => (
           <div key={m.card} className="flex min-w-0 flex-col gap-2">
             <h3 className="flex items-baseline justify-between gap-3 text-sm font-medium">
-              <Link href={`/cards/${m.card}`} className="min-w-0 truncate underline-offset-4 hover:text-primary hover:underline">
+              <Link href={`/cards/${m.card}`} className="min-w-0 truncate underline-offset-4 hover:text-gold hover:underline">
                 {names.get(m.card) ?? m.card}
               </Link>
               <span className="shrink-0 tabular-nums text-muted-foreground">You want {m.want}</span>

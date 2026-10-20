@@ -1,6 +1,6 @@
 import type { Totals } from "@/components/bot-status";
 import { utcWeekStart } from "@/components/leaderboard";
-import { BACKGROUND, BORDER, CARD, FOREGROUND, MUTED, PRIMARY } from "@/lib/og";
+import { BACKGROUND, BORDER, CARD, FOREGROUND, GOLD, MUTED } from "@/lib/og";
 import { hasEnvVars } from "@/lib/utils";
 import { createClient } from "@supabase/supabase-js";
 import { cacheLife } from "next/cache";
@@ -56,7 +56,7 @@ export default async function Image() {
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ fontSize: 96, color: PRIMARY }}>ni han bao</div>
+          <div style={{ fontSize: 96, color: GOLD }}>ni han bao</div>
           <div style={{ fontSize: 36, color: MUTED }}>
             Quietly counting every message, so you can argue about who talks too much.
           </div>

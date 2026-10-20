@@ -13,7 +13,7 @@ check: install
 	pnpm --filter ni-han-bao-bot typecheck
 	pnpm --filter ni-han-bao-bot test
 
-# Full-page PNGs of every page at 375px and 1280px, dark theme, into .forge/screenshots/.
+# Full-page PNGs of every page at 375px and 1280px, dark and light (-light), into .forge/screenshots/.
 # Used by forge for visual review; also handy locally (needs a Chromium: CHROME_PATH).
 screenshots: install
 	pnpm build

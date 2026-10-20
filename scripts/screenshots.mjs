@@ -167,7 +167,7 @@ async function main() {
       if (dupes.length) throw new Error(`two pages would share a screenshot name: ${dupes.join(", ")}`);
       for (const { route, name, cookies } of shots) {
         for (const width of DOCS ? [1280] : WIDTHS) {
-          for (const theme of A11Y ? ["dark", "light"] : ["dark"]) {
+          for (const theme of DOCS ? ["dark"] : ["dark", "light"]) {
             const ctx = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: theme });
             await ctx.addCookies(cookies);
             // next-themes defaults to dark whatever the OS says; its stored choice is what switches.
@@ -188,7 +188,7 @@ async function main() {
               await page.screenshot({ path: file });
               console.log(file);
             } else {
-              const file = `${OUT}/${name}-${width}.png`;
+              const file = `${OUT}/${name}-${width}${theme === "dark" ? "" : "-light"}.png`;
               await page.screenshot({ path: file, fullPage: true });
               console.log(file);
             }

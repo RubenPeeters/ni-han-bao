@@ -2,59 +2,62 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Brand colours: primary (violet) and chart-2 (teal); chart-1 repeats primary for charts.
-   success and destructive are status accents only (online/offline, up/down). */
+/* Theme "Archive" (#196): stone black primary, gold (--gold) the one accent; chart-1 repeats
+   primary, chart-2 is gold. success and destructive are status accents only (online/offline,
+   up/down). --input is darker than --border so form fields keep a 3:1 outline. */
 @layer base {
   :root {
-    --background: 225 25% 93%;
+    --background: 60 9% 98%;
     --background-glow: 0 0% 100%;
-    --foreground: 230 25% 10%;
+    --foreground: 24 10% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 230 25% 10%;
+    --card-foreground: 24 10% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 230 25% 10%;
-    --primary: 250 70% 50%;
+    --popover-foreground: 24 10% 10%;
+    --primary: 24 10% 10%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 225 25% 90%;
-    --secondary-foreground: 230 25% 10%;
-    --muted: 225 25% 90%;
-    --muted-foreground: 225 12% 38%;
-    --accent: 225 25% 90%;
-    --accent-foreground: 230 25% 10%;
-    --destructive: 0 72% 45%;
+    --secondary: 60 5% 96%;
+    --secondary-foreground: 24 10% 10%;
+    --muted: 60 5% 96%;
+    --muted-foreground: 33 5% 32%;
+    --accent: 60 5% 96%;
+    --accent-foreground: 24 10% 10%;
+    --gold: 35 92% 33%;
+    --destructive: 0 74% 42%;
     --destructive-foreground: 0 0% 100%;
-    --success: 145 65% 32%;
-    --border: 225 20% 84%;
-    --input: 225 20% 84%;
-    --ring: 250 70% 50%;
-    --chart-1: 250 70% 55%;
-    --chart-2: 175 75% 35%;
-    --radius: 0.75rem;
+    --success: 142 72% 29%;
+    --border: 20 6% 90%;
+    --input: 25 5% 45%;
+    --ring: 24 10% 10%;
+    --chart-1: 24 10% 10%;
+    --chart-2: 35 92% 33%;
+    --radius: 0.25rem;
   }
   .dark {
-    --background: 230 30% 4%;
-    --background-glow: 235 30% 13%;
-    --foreground: 220 20% 96%;
-    --card: 230 25% 9%;
-    --card-foreground: 220 20% 96%;
-    --popover: 230 25% 9%;
-    --popover-foreground: 220 20% 96%;
-    --primary: 250 90% 74%;
-    --primary-foreground: 230 30% 8%;
-    --secondary: 230 20% 16%;
-    --secondary-foreground: 220 20% 96%;
-    --muted: 230 20% 16%;
-    --muted-foreground: 225 15% 66%;
-    --accent: 230 20% 16%;
-    --accent-foreground: 220 20% 96%;
-    --destructive: 0 80% 65%;
-    --destructive-foreground: 230 30% 8%;
-    --success: 145 65% 50%;
-    --border: 230 20% 18%;
-    --input: 230 20% 18%;
-    --ring: 250 90% 74%;
-    --chart-1: 250 90% 70%;
-    --chart-2: 175 70% 50%;
+    --background: 24 10% 10%;
+    --background-glow: 12 6% 15%;
+    --foreground: 60 9% 98%;
+    --card: 12 6% 15%;
+    --card-foreground: 60 9% 98%;
+    --popover: 12 6% 15%;
+    --popover-foreground: 60 9% 98%;
+    --primary: 60 9% 98%;
+    --primary-foreground: 24 10% 10%;
+    --secondary: 23 9% 17%;
+    --secondary-foreground: 60 9% 98%;
+    --muted: 23 9% 17%;
+    --muted-foreground: 24 5% 64%;
+    --accent: 23 9% 17%;
+    --accent-foreground: 60 9% 98%;
+    --gold: 41 96% 42%;
+    --destructive: 0 91% 71%;
+    --destructive-foreground: 24 10% 10%;
+    --success: 142 69% 58%;
+    --border: 30 6% 25%;
+    --input: 25 5% 45%;
+    --ring: 60 9% 98%;
+    --chart-1: 60 9% 98%;
+    --chart-2: 41 96% 42%;
   }
 }
 
@@ -63,13 +66,19 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background font-sans text-foreground;
     background-image: radial-gradient(
       ellipse at center,
       hsl(var(--background-glow)),
       hsl(var(--background)) 75%
     );
     background-attachment: fixed;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-heading;
   }
   :focus-visible {
     outline: 2px solid hsl(var(--ring));
@@ -89,7 +98,7 @@
 
 @layer components {
   .card {
-    @apply rounded-xl border bg-card/70 p-5 text-card-foreground transition-colors hover:border-primary/40;
+    @apply rounded-xl border bg-card/70 p-5 text-card-foreground transition-colors hover:border-gold/50;
   }
 }
 
