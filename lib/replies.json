@@ -102,9 +102,9 @@
     "message": {
       "embeds": [
         {
-          "title": "Hollow Echo",
-          "url": "https://ni-han-bao.example/cards/placeholder-legend-ahri",
-          "description": "Placeholder legend for Ahri. It has no real rules yet.",
+          "title": "Nine-Tailed Fox",
+          "url": "https://ni-han-bao.example/cards/nine-tailed-fox",
+          "description": "When an enemy unit attacks a battlefield you control, give it -1 :rb_might: this turn, to a minimum of 1 :rb_might:.",
           "fields": [
             {
               "name": "Type",
@@ -128,10 +128,10 @@
             }
           ],
           "image": {
-            "url": "https://ddragon.leagueoflegends.com/cdn/img/champion/loading/Ahri_0.jpg"
+            "url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/56457c7986d3f140b7123a988149cc30a83493a7-744x1039.png?accountingTag=RB&w=400&fm=webp&q=75"
           },
           "footer": {
-            "text": "Placeholder card · PLH-L103"
+            "text": "OGN-255/298 · OGN-303/298 · OGN-303*/298"
           }
         }
       ]

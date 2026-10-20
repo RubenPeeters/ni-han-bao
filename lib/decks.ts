@@ -141,7 +141,6 @@ export interface RuleCard {
   supertypes: string[];
   domains: string[];
   tags: string[];
-  placeholder: boolean;
 }
 
 // Only rules with a source (#169), each cited by its number. Copy, rune, battlefield and
@@ -161,7 +160,7 @@ export function deckWarnings(
   deck: { legend_id: string | null; champion_id: string | null },
   entries: Entry[],
   cards: Map<string, RuleCard>,
-): { warnings: string[]; placeholder: boolean } {
+): string[] {
   const legend = deck.legend_id ? cards.get(deck.legend_id) : undefined;
   const champion = deck.champion_id ? cards.get(deck.champion_id) : undefined;
   const used = entries.flatMap((e) => cards.get(e.card_id) ?? []);
@@ -181,8 +180,7 @@ export function deckWarnings(
     if (outside.length)
       warnings.push(`Outside the Legend's domains (${legend.domains.join(", ") || "none"}): ${outside.join(", ")} (${rule("103.2.b.1")}).`);
   }
-  const placeholder = [legend, champion, ...used].some((c) => c?.placeholder);
-  return { warnings, placeholder };
+  return warnings;
 }
 
 /** Every row of a query, `size` at a time: PostgREST caps a response at 1000 rows. `page` must order deterministically. */

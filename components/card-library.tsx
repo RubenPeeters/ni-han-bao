@@ -1,9 +1,10 @@
 import { AddToDeck, type MyDeck } from "@/components/add-to-deck";
+import { plainText } from "@/bot/src/card-match";
 import { CardGrid, CardImage, type LibraryCard } from "@/components/card-grid";
 import { LogInPrompt } from "@/components/server-picker";
 import { EmptyState, ErrorState, MemberRankRow, RankList, StatCard } from "@/components/stat-ui";
 import { languageName, type Language, type OwnedRow } from "@/lib/collection";
-import { Badge } from "@/components/ui/badge";
+import { allPages } from "@/lib/decks";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -29,12 +30,11 @@ interface Card {
   might: number | null;
   tags: string[];
   rules_text: string | null;
-  placeholder: boolean;
   printings: Printing[];
 }
 
-// shortcut: PostgREST caps a response at 1000 rows, so a bigger catalogue is cut off; page it when the real API (#96) lands.
-const MAX_CARDS = 1000;
+// PostgREST's cap on the rows of one response.
+const PAGE = 1000;
 const byNumber = (a: Printing, b: Printing) =>
   a.collector_number - b.collector_number || a.collector_code.localeCompare(b.collector_code);
 const LOG_IN = "Log in to look through the Riftbound cards.";
@@ -45,7 +45,7 @@ const LOG_IN = "Log in to look through the Riftbound cards.";
  */
 async function ownedRows(supabase: Awaited<ReturnType<typeof createClient>>) {
   const rows: OwnedRow[] = [];
-  for (let from = 0; ; from += MAX_CARDS) {
+  for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from("riftbound_collection")
       .select("printing_id, finish, condition, language, quantity, for_trade, lendable")
@@ -53,10 +53,10 @@ async function ownedRows(supabase: Awaited<ReturnType<typeof createClient>>) {
       .order("finish")
       .order("condition")
       .order("language")
-      .range(from, from + MAX_CARDS - 1);
+      .range(from, from + PAGE - 1);
     if (error) return { data: null, error };
     rows.push(...(data as OwnedRow[]));
-    if (data.length < MAX_CARDS) return { data: rows, error: null };
+    if (data.length < PAGE) return { data: rows, error: null };
   }
 }
 
@@ -71,7 +71,7 @@ export async function CardLibrary() {
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims) return <LogInPrompt text={LOG_IN} />;
   const [{ data, error }, me, owned] = await Promise.all([
-    supabase.from("riftbound_cards").select("*, printings:riftbound_printings(*)").order("id").limit(MAX_CARDS),
+    allPages((from, to) => supabase.from("riftbound_cards").select("*, printings:riftbound_printings(*)").order("id").range(from, to)),
     supabase.rpc("current_discord_id"),
     ownedRows(supabase),
   ]);
@@ -95,7 +95,6 @@ export async function CardLibrary() {
       domains: c.domains,
       energy: c.energy,
       tags: c.tags,
-      placeholder: c.placeholder,
       sets: [...new Set(c.printings.map((p) => p.set_code))],
       codes: c.printings.map((p) => p.collector_code),
       printings: c.printings.map(({ id, set_code, collector_code }) => ({ id, set_code, collector_code })),
@@ -156,14 +155,8 @@ export async function CardDetail({ id }: { id: string }) {
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="flex flex-col gap-2">
             <h1 className="break-words text-4xl font-semibold">{data.name}</h1>
-            {/* Made up until Riot approves the API key: nobody may mistake it for a real card. */}
-            {data.placeholder && (
-              <Badge variant="secondary" className="w-fit">
-                Placeholder card
-              </Badge>
-            )}
           </div>
-          {data.rules_text && <p className="text-muted-foreground">{data.rules_text}</p>}
+          {data.rules_text && <p className="whitespace-pre-line text-muted-foreground">{plainText(data.rules_text)}</p>}
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
             {stats.map(([label, value]) => (
               <div key={label} className="contents">

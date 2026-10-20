@@ -28,7 +28,6 @@ import {
   type User,
 } from "discord.js";
 import { createClient } from "@supabase/supabase-js";
-import { readFileSync } from "node:fs";
 import { FORGET_CANCEL_ID, FORGET_COMMAND, FORGET_CONFIRM_ID, FORGET_PROMPT, forgetMe } from "./forget.js";
 import { channelRow, memberRow, shouldCount, type MemberRow } from "./activity.js";
 import {
@@ -721,8 +720,8 @@ async function statsReply(interaction: ChatInputCommandInteraction<"cached">) {
   return { embeds: [channelEmbed(target.name, data, config.siteUrl, timezone)] };
 }
 
-// The committed placeholder catalogue (#148), one level above both src/ and dist/.
-const catalogue = JSON.parse(readFileSync(new URL("../riftbound-catalogue.json", import.meta.url), "utf8")) as Catalogue;
+// The catalogue in the database (#206), read on start and after an Accept: empty until then.
+let catalogue: Catalogue = { cards: [], printings: [] };
 
 /** /card: one card from the catalogue, for everyone in the channel. */
 async function cardCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
@@ -2351,16 +2350,11 @@ async function startServer(guild: Guild): Promise<void> {
   queueBackfill(guild.id);
 }
 
-/** The committed placeholder catalogue (#148), upserted on every start: only the bot writes it. */
+/** The catalogue the commands read, from the database: Accept (#204) is the only thing that changes it. */
 async function loadCatalogue(): Promise<void> {
-  const { cards, printings } = catalogue;
-  // shortcut: a card dropped from the file stays in the table; delete it by hand until the real API (#96) replaces them all.
-  const updated_at = new Date().toISOString();
-  const written = await db.from("riftbound_cards").upsert(cards.map((r) => ({ ...r, updated_at })), { onConflict: "id" });
-  if (written.error) throw new Error(`riftbound_cards upsert: ${written.error.message}`);
-  const printed = await db.from("riftbound_printings").upsert(printings.map((r) => ({ ...r, updated_at })), { onConflict: "id" });
-  if (printed.error) throw new Error(`riftbound_printings upsert: ${printed.error.message}`);
-  log("info", "riftbound_catalogue_loaded", { cards: cards.length });
+  // A null type (Riot's tokens) is only shown, never compared with a type.
+  catalogue = (await storedCatalogue()) as Catalogue;
+  log("info", "riftbound_catalogue_loaded", { cards: catalogue.cards.length });
 }
 
 /** The application's owner as Discord reports it: the team owner if the app belongs to a team. */
@@ -2487,6 +2481,7 @@ async function proposalButton(
       .upsert(diff.printings.map((r) => ({ ...r, updated_at })), { onConflict: "id" });
     if (printed.error) throw new Error(`riftbound_printings upsert: ${printed.error.message}`);
     log("info", "riftbound_feed_accepted", { proposal: decision.proposal, cards: diff.cards.length, printings: diff.printings.length });
+    void tracked("riftbound_catalogue", loadCatalogue());
   }
   const decided = await db
     .from("riftbound_catalogue_proposals")
@@ -2503,9 +2498,13 @@ client.once(Events.ClientReady, async (c) => {
   setInterval(() => void periodicFlush(), FLUSH_MS);
   void rotatePresence();
   setInterval(() => void rotatePresence(), PRESENCE_MS);
-  // After the placeholders, so the first check compares with a loaded catalogue.
-  void tracked("riftbound_catalogue", loadCatalogue()).then(() => tracked("riftbound_feed_check", checkCardFeed()));
-  setInterval(() => void tracked("riftbound_feed_check", checkCardFeed()), FEED_CHECK_MS);
+  // Reread daily too, so a failed read on start does not leave /card empty until a restart.
+  const cardCatalogue = () => {
+    void tracked("riftbound_catalogue", loadCatalogue());
+    void tracked("riftbound_feed_check", checkCardFeed());
+  };
+  cardCatalogue();
+  setInterval(cardCatalogue, FEED_CHECK_MS);
   monthlyRecaps();
   setInterval(monthlyRecaps, REPORT_CHECK_MS);
   setInterval(() => void refreshRanks(), RANKS_MS);
