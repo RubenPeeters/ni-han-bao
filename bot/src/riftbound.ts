@@ -106,7 +106,7 @@ export function placeholderSvg(card: Pick<Card, "name" | "type">): string {
 }
 
 /** One card per line, so a regenerated catalogue diffs by card. */
-export function catalogueJson({ cards, printings }: Catalogue): string {
+export function catalogueJson({ cards, printings }: { cards: object[]; printings: object[] }): string {
   const list = (rows: object[]) => rows.map((r) => `    ${JSON.stringify(r)}`).join(",\n");
   return `{\n  "cards": [\n${list(cards)}\n  ],\n  "printings": [\n${list(printings)}\n  ]\n}\n`;
 }
