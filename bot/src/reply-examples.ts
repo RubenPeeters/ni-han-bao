@@ -1,0 +1,69 @@
+// The bot replies the docs draw (lib/replies.json), made by the real reply builders from
+// demo data, so the docs show what the bot says today. Only the demo data is written here.
+import type { APIEmbed } from "discord.js";
+import { goingMessage } from "./events.js";
+import { recapMessage } from "./recap.js";
+import { reportEmbed } from "./report.js";
+import { cardEmbed, placeholderCatalogue } from "./riftbound.js";
+import { settingsText } from "./setup.js";
+import { leaderboardEmbed } from "./stats.js";
+
+export interface ReplyExample {
+  /** The slash command the reply answers, as typed; null for a message the bot posts by itself. */
+  command: string | null;
+  /** Only the person who ran the command sees it. */
+  ephemeral: boolean;
+  /** Names for the channel mentions (<#id>) in the reply. */
+  channels: Record<string, string>;
+  message: { content?: string; embeds?: APIEmbed[]; components?: unknown[] };
+}
+
+const SITE = "https://ni-han-bao.example";
+const ZONE = "Europe/Brussels";
+const REPORT_CHANNEL = "900000000000000201";
+const SATURDAY = "2026-10-17T17:00:00Z";
+const reply = (command: string | null, message: ReplyExample["message"], more: Partial<ReplyExample> = {}): ReplyExample =>
+  ({ command, ephemeral: false, channels: {}, message, ...more });
+
+export function replyExamples(): Record<string, ReplyExample> {
+  const catalogue = placeholderCatalogue([{ id: "Ahri", key: "103", name: "Ahri" }]);
+  const card = catalogue.cards.find((c) => c.id === "placeholder-legend-ahri")!;
+  const { files: _image, ...recap } = recapMessage("2026-09-01", Buffer.alloc(0), `${SITE}/recap`);
+  const going = goingMessage(1, { game: "Riftbound", name: "The Dice Tower", city: "Gent" }, SATURDAY, ZONE, null);
+  const rows = [
+    { user_id: "1", display_name: "Mira", message_count: 1284 },
+    { user_id: "2", display_name: "Joost", message_count: 967 },
+    { user_id: "3", display_name: "Sanne", message_count: 412 },
+  ];
+  return {
+    leaderboard: reply("/leaderboard", { embeds: [leaderboardEmbed("week", rows, "2026-10-12", SITE, ZONE)] }),
+    setup: reply(
+      "/setup show",
+      { content: settingsText({ report_channel_id: REPORT_CHANNEL, timezone: ZONE, public_totals_opt_out: false, rank_roles: false }) },
+      { ephemeral: true, channels: { [REPORT_CHANNEL]: "weekly-report" } },
+    ),
+    report: reply(null, {
+      embeds: [
+        reportEmbed(
+          "2026-10-12",
+          {
+            top_talkers: rows,
+            busiest_channel: { name: "general", message_count: 1712 },
+            top_emoji: { emoji_key: "😂", emoji_id: null, name: null, animated: false, reaction_count: 58 },
+            joins: 3,
+            leaves: 1,
+          },
+          SITE,
+          ZONE,
+          [{ id: 1, name: "Riftbound night", starts_at: SATURDAY, url: null, store_name: "The Dice Tower", store_city: "Gent", going: ["Mira", "Joost"] }],
+          [{ display_name: "Joost", games: 14, champion: "Ahri" }],
+        ),
+      ],
+    }),
+    recap: reply("/recap", recap),
+    card: reply("/card", { embeds: [cardEmbed(card, catalogue.printings.filter((p) => p.card_id === card.id), SITE)] }),
+    going: reply("/event going", going),
+  };
+}
+
+export const EXAMPLES_PATH = new URL("../../lib/replies.json", import.meta.url);
