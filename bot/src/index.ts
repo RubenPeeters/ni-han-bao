@@ -119,12 +119,13 @@ import {
   type Wanted,
 } from "./lending.js";
 import { CARD_COMMAND, cardChoices, cardEmbed, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
-import { feedItems, fetchFeed, transformFeed, type FeedCard, type FeedPrinting } from "./riftbound-feed.js";
+import { feedItems, fetchFeed, transformFeed, type FeedCard, type FeedIcon, type FeedPrinting } from "./riftbound-feed.js";
 import {
   brokenText,
   CARD_COLUMNS,
   checksum,
   diffCatalogue,
+  ICON_COLUMNS,
   parseProposalButtonId,
   PRINTING_COLUMNS,
   proposalButtonId,
@@ -2369,14 +2370,19 @@ async function readFeedCatalogue() {
   return { buildId, catalogue, checksum: checksum(catalogue) };
 }
 
-async function storedCatalogue(): Promise<{ cards: FeedCard[]; printings: FeedPrinting[] }> {
-  const read = <T>(table: string, columns: string) =>
+async function storedCatalogue(): Promise<{ cards: FeedCard[]; printings: FeedPrinting[]; icons: FeedIcon[] }> {
+  const read = <T>(table: string, columns: string, order = ["id"]) =>
     readAll(async (from, to) => {
-      const { data, error } = await db.from(table).select(columns).order("id").range(from, to);
+      const query = order.reduce((q, column) => q.order(column), db.from(table).select(columns));
+      const { data, error } = await query.range(from, to);
       if (error) throw new Error(`${table} select: ${error.message}`);
       return data as T[];
     });
-  return { cards: await read("riftbound_cards", CARD_COLUMNS), printings: await read("riftbound_printings", PRINTING_COLUMNS) };
+  return {
+    cards: await read("riftbound_cards", CARD_COLUMNS),
+    printings: await read("riftbound_printings", PRINTING_COLUMNS),
+    icons: await read("riftbound_icons", ICON_COLUMNS, ["facet", "value"]),
+  };
 }
 
 /** Riot's card feed against the catalogue (#204): a difference not proposed before goes to the owner. */
@@ -2405,7 +2411,7 @@ async function checkCardFeed(): Promise<void> {
     return;
   }
   const diff = diffCatalogue(fetched.catalogue, await storedCatalogue());
-  if (diff.sets.length === 0) {
+  if (diff.sets.length === 0 && diff.icons.length === 0) {
     log("info", "riftbound_feed_unchanged", { build_id: fetched.buildId });
     return;
   }
@@ -2480,7 +2486,13 @@ async function proposalButton(
       .from("riftbound_printings")
       .upsert(diff.printings.map((r) => ({ ...r, updated_at })), { onConflict: "id" });
     if (printed.error) throw new Error(`riftbound_printings upsert: ${printed.error.message}`);
-    log("info", "riftbound_feed_accepted", { proposal: decision.proposal, cards: diff.cards.length, printings: diff.printings.length });
+    const iconed = await db
+      .from("riftbound_icons")
+      .upsert(diff.icons.map((r) => ({ ...r, updated_at })), { onConflict: "facet,value" });
+    if (iconed.error) throw new Error(`riftbound_icons upsert: ${iconed.error.message}`);
+    log("info", "riftbound_feed_accepted", {
+      proposal: decision.proposal, cards: diff.cards.length, printings: diff.printings.length, icons: diff.icons.length,
+    });
     void tracked("riftbound_catalogue", loadCatalogue());
   }
   const decided = await db

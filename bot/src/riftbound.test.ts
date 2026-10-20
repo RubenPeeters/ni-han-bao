@@ -10,10 +10,32 @@ import {
   type Catalogue,
   type Printing,
 } from "./riftbound.js";
-import { plainText } from "./card-match.js";
+import { plainText, textParts, tokenWords } from "./card-match.js";
 
 // Riot's real cards (#206), as the feed gave them.
 const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue;
+
+describe("card text tokens", () => {
+  it("splits Riot's tokens from the words, each with its name", () => {
+    expect(textParts("+1 :rb_might: and :rb_energy_2::rb_rune_fury:")).toEqual([
+      "+1 ",
+      { kind: "might", value: "might", label: "Might" },
+      " and ",
+      { kind: "energy", value: "2", label: "2 energy" },
+      "",
+      { kind: "rune", value: "fury", label: "Fury rune" },
+      "",
+    ]);
+    expect(textParts(":rb_exhaust:")[1]).toEqual({ kind: "other", value: "exhaust", label: "Exhaust" });
+  });
+
+  it("reads as words where no icon shows", () => {
+    expect(tokenWords(":rb_exhaust:: [Add] :rb_energy_1::rb_rune_rainbow:. +1 :rb_might:")).toBe(
+      "Exhaust: [Add] 1 energy Rainbow rune. +1 Might",
+    );
+    expect(tokenWords("No tokens.")).toBe("No tokens.");
+  });
+});
 
 describe("plainText", () => {
   it("keeps Riot's words and lines, without the HTML", () => {
@@ -134,7 +156,7 @@ describe("/card", () => {
     expect(embed.title).toBe("Nine-Tailed Fox");
     expect(embed.url).toBe("https://site.test/cards/nine-tailed-fox");
     expect(embed.description).toBe(
-      "When an enemy unit attacks a battlefield you control, give it -1 :rb_might: this turn, to a minimum of 1 :rb_might:.",
+      "When an enemy unit attacks a battlefield you control, give it -1 Might this turn, to a minimum of 1 Might.",
     );
     const image = new URL(embed.image!.url);
     expect(image.host).toBe("cmsassets.rgpub.io");

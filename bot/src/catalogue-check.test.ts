@@ -13,11 +13,11 @@ import { feedItems, transformFeed, type FeedCard } from "./riftbound-feed.js";
 
 const feed = transformFeed(feedItems(JSON.parse(readFileSync(new URL("riftbound-feed.fixture.json", import.meta.url), "utf8"))));
 // What the database returns: the same columns, from an earlier copy of the feed.
-const stored = () => structuredClone({ cards: feed.cards, printings: feed.printings });
+const stored = () => structuredClone({ cards: feed.cards, printings: feed.printings, icons: feed.icons });
 
 describe("diffCatalogue", () => {
   it("finds nothing when the database has the feed", () => {
-    expect(diffCatalogue(feed, stored())).toEqual({ sets: [], cards: [], printings: [] });
+    expect(diffCatalogue(feed, stored())).toEqual({ sets: [], cards: [], printings: [], icons: [] });
   });
 
   it("ignores placeholders, and a null the database leaves out", () => {
@@ -52,8 +52,18 @@ describe("diffCatalogue", () => {
     expect(diff.printings.map((p) => p.id)).toEqual(["ven-r04", "ven-sp2-006"]);
   });
 
+  it("upserts new and changed icons, and names them in the DM", () => {
+    const db = stored();
+    db.icons = db.icons.filter((i) => i.value !== "fury");
+    db.icons.find((i) => i.value === "unit")!.icon_url = "https://cmsassets.rgpub.io/old.png";
+    const diff = diffCatalogue(feed, db);
+    expect(diff.sets).toEqual([]);
+    expect(diff.icons.map((i) => i.label)).toEqual(["Fury", "Unit"]);
+    expect(proposalText("b", diff)).toContain("2 new or changed icons (Fury, Unit)");
+  });
+
   it("puts sets in release order", () => {
-    const diff = diffCatalogue(feed, { cards: [], printings: [] });
+    const diff = diffCatalogue(feed, { cards: [], printings: [], icons: [] });
     const order = ["OGN", "OGS", "SFD", "UNL", "VEN", "RAD"];
     expect(diff.sets.map((s) => order.indexOf(s.set))).toEqual(diff.sets.map((s) => order.indexOf(s.set)).sort());
     expect(proposalCounts(diff).added).toBe(feed.cards.length);
@@ -78,6 +88,7 @@ describe("proposalText", () => {
       ],
       cards: [],
       printings: [],
+      icons: [],
     });
     expect(text).toBe(
       "Riot's Riftbound card feed (build `abc123`) differs from the catalogue.\n" +
@@ -88,7 +99,7 @@ describe("proposalText", () => {
   });
 
   it("stays within Discord's limit", () => {
-    expect(proposalText("x", diffCatalogue(feed, { cards: [], printings: [] })).length).toBeLessThanOrEqual(2000);
+    expect(proposalText("x", diffCatalogue(feed, { cards: [], printings: [], icons: [] })).length).toBeLessThanOrEqual(2000);
   });
 });
 

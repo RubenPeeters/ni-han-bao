@@ -1,7 +1,8 @@
 "use client";
 
-import { cardImageUrl } from "@/bot/src/card-match";
 import { addToDeck, type MyDeck } from "@/components/add-to-deck";
+import { CardThumb } from "@/components/card-thumb";
+import { DomainIcon, EnergyBadge, FacetIcon, TypeIcon, type RiftboundIcon } from "@/components/riftbound-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/stat-ui";
@@ -24,6 +25,7 @@ import {
   type OwnedRow,
 } from "@/lib/collection";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import { Minus, Plus } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -31,7 +33,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export interface LibraryCard {
   id: string;
   name: string;
-  type: string;
+  type: string | null;
   domains: string[];
   energy: number | null;
   tags: string[];
@@ -72,7 +74,7 @@ const field =
   "h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 text-base shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 /** The library: everything is sent once and filtered here, so search answers on every key. */
-export function CardGrid({ cards, mine }: { cards: LibraryCard[]; mine: MyCollection }) {
+export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: RiftboundIcon[]; mine: MyCollection }) {
   const [query, setQuery] = useState("");
   const [type, setType] = useState("");
   const [domain, setDomain] = useState("");
@@ -99,8 +101,16 @@ export function CardGrid({ cards, mine }: { cards: LibraryCard[]; mine: MyCollec
       (!set || c.sets.includes(set)),
   );
   const filters = [
-    { label: "Type", all: "All types", value: type, set: setType, options: sorted(cards.map((c) => c.type)) },
-    { label: "Domain", all: "All domains", value: domain, set: setDomain, options: sorted(cards.flatMap((c) => c.domains)) },
+    {
+      label: "Type",
+      all: "All types",
+      value: type,
+      set: setType,
+      // Riot's tokens have no type: no option of their own, which would also blank "All types".
+      options: sorted(cards.flatMap((c) => (c.type ? [c.type] : []))),
+      facet: "type",
+    },
+    { label: "Domain", all: "All domains", value: domain, set: setDomain, options: sorted(cards.flatMap((c) => c.domains)), facet: "domain" },
     {
       label: "Cost",
       all: "Any cost",
@@ -137,16 +147,27 @@ export function CardGrid({ cards, mine }: { cards: LibraryCard[]; mine: MyCollec
           className="h-11 text-base md:text-base"
         />
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {filters.map((f) => (
-            <select key={f.label} aria-label={f.label} value={f.value} onChange={(e) => f.set(e.target.value)} className={field}>
-              <option value="">{f.all}</option>
-              {f.options.map((o) => (
-                <option key={o} value={o}>
-                  {f.label === "Cost" ? `${o} energy` : o}
-                </option>
-              ))}
-            </select>
-          ))}
+          {filters.map((f) => {
+            // An <option> cannot hold an image: the chosen value's icon sits in the field instead.
+            const facet = f.value && "facet" in f && icons.some((i) => i.facet === f.facet && i.label === f.value) ? f.facet : null;
+            return (
+              <div key={f.label} className="relative min-w-0">
+                {facet && (
+                  <span aria-hidden className="pointer-events-none absolute left-3 top-1/2 flex -translate-y-1/2">
+                    <FacetIcon icons={icons} facet={facet} name={f.value} />
+                  </span>
+                )}
+                <select aria-label={f.label} value={f.value} onChange={(e) => f.set(e.target.value)} className={cn(field, facet && "pl-9")}>
+                  <option value="">{f.all}</option>
+                  {f.options.map((o) => (
+                    <option key={o} value={o}>
+                      {f.label === "Cost" ? `${o} energy` : o}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
         </div>
         {editing && (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -246,13 +267,17 @@ export function CardGrid({ cards, mine }: { cards: LibraryCard[]; mine: MyCollec
                   href={`/cards/${c.id}`}
                   className="flex flex-col gap-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:opacity-80"
                 >
-                  <CardImage url={c.image_url} />
+                  <CardThumb url={c.image_url} name={c.name} landscape={c.type === "Battlefield"} />
                   <span className="flex min-w-0 flex-col gap-1">
                     <span className="truncate text-sm font-medium" title={c.name}>
                       {c.name}
                     </span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {[c.type, c.energy !== null && `${c.energy} energy`, ...c.domains].filter(Boolean).join(" · ")}
+                    <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                      {c.type && <TypeIcon icons={icons} type={c.type} />}
+                      {c.energy !== null && <EnergyBadge value={c.energy} />}
+                      {c.domains.map((d) => (
+                        <DomainIcon key={d} icons={icons} domain={d} />
+                      ))}
                     </span>
                     {owned > 0 && <span className="text-xs font-medium">{owned.toLocaleString("en-US")} owned</span>}
                   </span>
@@ -290,25 +315,6 @@ export function CardGrid({ cards, mine }: { cards: LibraryCard[]; mine: MyCollec
         </Button>
       )}
     </div>
-  );
-}
-
-export function CardImage({ url, eager }: { url: string | null; eager?: boolean }) {
-  return url ? (
-    // Riot's card art is referenced, never rehosted (Riot's terms), and next/image would copy it.
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={cardImageUrl(url, 320)}
-      srcSet={`${cardImageUrl(url, 320)} 1x, ${cardImageUrl(url, 640)} 2x`}
-      alt=""
-      width={744}
-      height={1039}
-      loading={eager ? "eager" : "lazy"}
-      // Battlefields are printed sideways: whole, not cropped.
-      className="aspect-[744/1039] w-full rounded-lg bg-muted object-contain"
-    />
-  ) : (
-    <div aria-hidden className="aspect-[744/1039] w-full rounded-lg bg-muted" />
   );
 }
 
