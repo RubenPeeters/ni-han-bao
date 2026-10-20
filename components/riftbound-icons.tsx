@@ -1,6 +1,7 @@
 // Riot's official Riftbound icons, from the card feed's riftbound_icons rows: referenced
 // on Riot's CDN, never rehosted or redrawn. A value without an official icon shows its name.
 import { cardImageUrl, plainText, textParts, type CardToken } from "@/bot/src/card-match";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export interface RiftboundIcon {
@@ -76,16 +77,18 @@ function TextBadge({ label }: { label: string }) {
 }
 
 /** One of Riot's white glyphs (might), in the text's colour: their CDN allows the mask's CORS fetch. */
-function Glyph({ url, label }: { url: string; label: string }) {
+function Glyph({ url }: { url: string }) {
   const mask = `url("${url}") center / contain no-repeat`;
+  return <span aria-hidden className="inline-block size-4 bg-current align-[-0.2em]" style={{ mask, WebkitMask: mask }} />;
+}
+
+/** A decorative icon with its words as hidden text: copied rules text keeps "Might", which alt text would not. */
+function Worded({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <span
-      role="img"
-      aria-label={label}
-      title={label}
-      className="inline-block size-4 bg-current align-[-0.2em]"
-      style={{ mask, WebkitMask: mask }}
-    />
+    <span title={label}>
+      {children}
+      <span className="sr-only">{label}</span>
+    </span>
   );
 }
 
@@ -93,11 +96,21 @@ function Token({ token, icons }: { token: CardToken; icons: RiftboundIcon[] }) {
   if (token.kind === "energy") return <EnergyBadge value={token.value} />;
   if (token.kind === "might") {
     const might = find(icons, "glyph", (i) => i.value === "might");
-    if (might) return <Glyph url={might.icon_url} label={token.label} />;
+    if (might)
+      return (
+        <Worded label={token.label}>
+          <Glyph url={might.icon_url} />
+        </Worded>
+      );
   }
   if (token.kind === "rune") {
     const domain = find(icons, "domain", (i) => i.value === token.value);
-    if (domain) return <OfficialImg url={domain.icon_url} white={false} label={token.label} />;
+    if (domain)
+      return (
+        <Worded label={token.label}>
+          <OfficialImg url={domain.icon_url} white={false} label="" />
+        </Worded>
+      );
   }
   return <TextBadge label={token.label} />;
 }
