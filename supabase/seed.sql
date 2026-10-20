@@ -250,6 +250,17 @@ begin
     from public.riftbound_decks d where d.id = '00000000-0000-4000-8000-0000000d0001';
     perform public.snapshot_riftbound_deck(id) from public.riftbound_decks where user_id = any (users);
 
+    -- Decks and lending (#179): Anna's Annie deck stays built (not for lending), and Bram lent
+    -- her his deck as one loan she has not confirmed yet, for the Loans tab's Confirm. Two
+    -- copies again, from his collection, other ones than his first loan's.
+    update public.riftbound_decks set not_for_lending = true where id = '00000000-0000-4000-8000-0000000d0002';
+    perform public.lend_riftbound_cards(users[2], users[1], today + 7, null, (
+        select jsonb_agg(jsonb_build_object('printing_id', c.printing_id, 'finish', c.finish,
+            'condition', c.condition, 'language', c.language, 'quantity', 1))
+        from (select * from public.riftbound_collection c where c.user_id = users[2]
+              order by c.printing_id, c.language offset 2 limit 2) c),
+        '00000000-0000-4000-8000-0000000d0004');
+
     -- Wishlist (#177): Anna answered the question with Shared. Her demo deck stays built, the
     -- Annie deck lends it cards, and she wants two cards by hand, one of them a printing.
     update public.profiles set wishlist_mode = 'shared' where user_id = users[1];

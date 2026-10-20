@@ -95,11 +95,14 @@ import { addToCollection, COLLECTION_COMMAND, setLending } from "./collection.js
 import {
   answerId,
   answerReply,
+  deckChoices,
+  deckWanted,
   disputeFormId,
   LEND_COMMAND,
   lendAnnouncement,
   lendChoices,
   lendReceipt,
+  lendWhat,
   loanCardList,
   NOT_BORROWER,
   nudgeText,
@@ -111,6 +114,7 @@ import {
   RETURN_COMMAND,
   returnReply,
   type CopyRow,
+  type Wanted,
 } from "./lending.js";
 import { CARD_COMMAND, cardChoices, cardEmbed, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
@@ -780,20 +784,37 @@ async function lendCommand(interaction: ChatInputCommandInteraction<"cached">): 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const lender = interaction.user.id;
   const borrower = interaction.options.getUser("member", true);
-  const wanted = parseCards(catalogue, interaction.options.getString("cards", true));
+  const what = lendWhat(interaction.options.getString("cards"), interaction.options.getString("deck"));
   const due = parseDue(interaction.options.getString("due"), today());
   const fixes = interaction.options.getInteger("fixes");
   if (borrower.id === lender || borrower.bot) {
     await interaction.editReply("Lend to another member, not to yourself or a bot.");
     return;
   }
-  if (typeof wanted === "string" || typeof due === "string") {
-    await interaction.editReply(typeof wanted === "string" ? wanted : (due as string));
+  if (typeof what === "string" || typeof due === "string") {
+    await interaction.editReply(typeof what === "string" ? what : (due as string));
     return;
   }
+  let wanted: Wanted[] | string;
+  let deck: { id: string; name: string } | null = null;
   let loan: number;
   let unmarked: number;
   try {
+    if ("deck" in what) {
+      const found = await lenderDeck(lender, what.deck);
+      if (typeof found === "string") {
+        await interaction.editReply(found);
+        return;
+      }
+      deck = found;
+      wanted = deckWanted(catalogue, found);
+    } else {
+      wanted = parseCards(catalogue, what.cards);
+    }
+    if (typeof wanted === "string") {
+      await interaction.editReply(wanted);
+      return;
+    }
     const options = await db.rpc("riftbound_lend_options", {
       p_lender: lender,
       p_cards: wanted.map((w) => w.card.id),
@@ -811,9 +832,14 @@ async function lendCommand(interaction: ChatInputCommandInteraction<"cached">): 
       p_due: due.due,
       p_fixes: fixes,
       p_cards: picked.cards,
+      p_deck: deck?.id ?? null,
     });
     if (error?.message === "not_your_loan") {
       await interaction.editReply(`Loan #${fixes} is not one of yours to correct, or was corrected already.`);
+      return;
+    }
+    if (error?.message === "not_lendable_deck") {
+      await interaction.editReply(`${deck?.name} is marked not for lending. Change that on the deck's page first.`);
       return;
     }
     if (error) throw new Error(`lend_riftbound_cards: ${error.message}`);
@@ -828,16 +854,34 @@ async function lendCommand(interaction: ChatInputCommandInteraction<"cached">): 
     await interaction.editReply(FAILED);
     return;
   }
-  await interaction.editReply(lendReceipt(loan, wanted, unmarked, fixes));
+  await interaction.editReply(lendReceipt(loan, wanted, unmarked, fixes, deck?.name ?? null));
   const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(answerId("confirm", loan, borrower.id)).setLabel("Confirm").setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId(answerId("dispute", loan, borrower.id)).setLabel("Dispute").setStyle(ButtonStyle.Secondary),
   );
   await interaction.followUp({
-    content: lendAnnouncement(lender, borrower.id, loan, wanted, due.due),
+    content: lendAnnouncement(lender, borrower.id, loan, wanted, due.due, deck?.name ?? null),
     components: [buttons],
     allowedMentions: { users: [borrower.id] },
   });
+}
+
+/** /lend deck: the lender's own deck with its cards, by the id autocomplete gives or a typed name. */
+async function lenderDeck(
+  lender: string,
+  typed: string,
+): Promise<{ id: string; name: string; legend_id: string | null; entries: { card_id: string; quantity: number }[]; not_for_lending: boolean } | string> {
+  const { data, error } = await db
+    .from("riftbound_decks")
+    .select("id, name, legend_id, not_for_lending, entries:riftbound_deck_cards(card_id, quantity)")
+    .eq("user_id", lender);
+  if (error) throw new Error(`riftbound_decks select: ${error.message}`);
+  const named = data.filter((d) => d.id === typed || d.name.toLowerCase() === typed.toLowerCase());
+  if (named.length !== 1) {
+    return named.length ? `You have ${named.length} decks called ${typed}: pick one from the list.` : `You have no deck called ${typed}. Pick one from the list.`;
+  }
+  if (named[0].not_for_lending) return `${named[0].name} is marked not for lending. Change that on the deck's page first.`;
+  return named[0];
 }
 
 /** Confirm saves at once; Dispute first asks for the borrower's side in a form. */
@@ -976,11 +1020,15 @@ async function notifyTradeMatches(): Promise<void> {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isAutocomplete() && interaction.commandName === LEND_COMMAND.name) {
+    const focused = interaction.options.getFocused(true);
     await tracked(
       "command",
-      interaction
-        .respond(lendChoices(catalogue, interaction.options.getFocused()))
-        .catch((err: unknown) => log("error", "autocomplete_failed", { command: interaction.commandName, error: err })),
+      (async () => {
+        if (focused.name !== "deck") return interaction.respond(lendChoices(catalogue, focused.value));
+        const { data, error } = await db.from("riftbound_decks").select("id, name").eq("user_id", interaction.user.id);
+        if (error) throw new Error(`riftbound_decks select: ${error.message}`);
+        return interaction.respond(deckChoices(data, focused.value));
+      })().catch((err: unknown) => log("error", "autocomplete_failed", { command: interaction.commandName, error: err })),
     );
     return;
   }

@@ -3,7 +3,7 @@
 -- servers only; that profiles follow their visibility (#100); that the lending ledger holds
 -- (#172); that decks follow their visibility (#173) and only public ones are remembered as
 -- opened (#174), their versions with them (#176), and wishlists their profile (#177); that trade
--- matches follow it too (#178); then that /forget-me deletes
+-- matches follow it too (#178), and decks not for lending hold their cards (#179); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`. Run against a local Supabase or the dev project
 -- (never production); everything is rolled back:
@@ -561,6 +561,74 @@ begin
         raise exception 'an owner cannot write off a loan';
     end if;
     if public.riftbound_loan_state(fixed) <> 'written_off' then raise exception 'a write-off does not close the loan'; end if;
+end $$;
+
+-- Decks and lending (#179): a deck not for lending holds its cards back from lending, a deck is
+-- lent whole as one loan that names it, and the site takes only the borrower's answers. Every
+-- loan above is closed, so rls-rls-mine has both copies in hand.
+reset role;
+do $$
+declare kept uuid := (select id from public.riftbound_decks where user_id = 'rls-rls-mine' and name = 'private');
+begin
+    if (select copies from public.riftbound_free_to_lend('rls-rls-mine') where card_id = 'rls-card') <> 2 then
+        raise exception 'riftbound_free_to_lend() does not offer the copies in hand';
+    end if;
+    update public.riftbound_decks set not_for_lending = true where id = kept;
+    if (select copies from public.riftbound_free_to_lend('rls-rls-mine') where card_id = 'rls-card') <> 1
+        or (select held from public.riftbound_lend_options('rls-rls-mine', array['rls-card'], null)) <> 1 then
+        raise exception 'a deck not for lending does not hold its cards back';
+    end if;
+    begin
+        perform public.lend_riftbound_cards('rls-rls-mine', 'rls-user', null, null, '[]', kept);
+        raise exception 'a deck not for lending is lent';
+    exception when raise_exception then
+        if sqlerrm <> 'not_lendable_deck' then raise; end if;
+    end;
+end $$;
+
+set local role authenticated;
+do $$
+declare deck uuid; loan bigint;
+    cards constant jsonb := '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"zh-Hans","quantity":1}]';
+begin
+    if (select array_agg(card_id || ':' || user_id || ':' || copies) from public.riftbound_card_lenders(array['rls-card', 'rls-card-2']))
+        <> array['rls-card:rls-rls-mine:1'] then
+        raise exception 'riftbound_card_lenders() offers copies a deck not for lending holds, or lenders who may not show';
+    end if;
+    deck := public.save_riftbound_deck(null, 'lend me', null, null, null, null, null, null,
+        '[{"section":"main","card_id":"rls-card","printing_id":null,"quantity":1}]');
+    if (select string_agg(language || ':' || quantity || ':' || lendable || ':' || held, ',')
+        from public.my_riftbound_lend_options(array['rls-card'])) <> 'zh-Hans:3:0:0' then
+        raise exception 'my_riftbound_lend_options() is not the caller''s own copies';
+    end if;
+    begin
+        perform public.lend_my_riftbound_deck(deck, 'rls-rls-other', null, cards);
+        raise exception 'a deck is lent to someone in none of the lender''s servers';
+    exception when raise_exception then
+        if sqlerrm not like 'lend to a member%' then raise; end if;
+    end;
+    loan := public.lend_my_riftbound_deck(deck, 'rls-rls-mine', current_date, cards);
+    if (select deck_name from public.profile_loans('rls-rls-mine') where id = loan) is distinct from 'lend me' then
+        raise exception 'a deck loan does not name its deck';
+    end if;
+    if public.answer_my_riftbound_loan(loan, 'confirmed', null) <> 'not_borrower'
+        or public.answer_my_riftbound_loan(loan, 'returned', null) <> 'not_borrower'
+        or (select state from public.profile_loans('rls-rls-mine') where id = loan) <> 'open' then
+        raise exception 'answer_my_riftbound_loan() takes an answer that is not the borrower''s';
+    end if;
+    perform public.set_riftbound_deck_lending(deck, true);
+    begin
+        perform public.lend_my_riftbound_deck(deck, 'rls-rls-mine', null, cards);
+        raise exception 'a deck not for lending is lent on the site';
+    exception when raise_exception then
+        if sqlerrm <> 'not_lendable_deck' then raise; end if;
+    end;
+    begin
+        perform public.set_riftbound_deck_lending((select id from public.riftbound_decks where name = 'servers-shared'), true);
+        raise exception 'a member marks someone else''s deck not for lending';
+    exception when raise_exception then
+        if sqlerrm <> 'not your deck' then raise; end if;
+    end;
 end $$;
 
 -- /forget-me (#72): no row about the user is left anywhere, and none can be written again

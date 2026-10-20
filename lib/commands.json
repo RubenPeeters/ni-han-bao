@@ -464,7 +464,14 @@
             "name": "cards",
             "description": "The cards, separated by ; with a count if more than one: 2 Jinx; Ahri",
             "type": "string",
-            "required": true,
+            "required": false,
+            "choices": []
+          },
+          {
+            "name": "deck",
+            "description": "Or one of your decks, lent whole as one loan",
+            "type": "string",
+            "required": false,
             "choices": []
           },
           {

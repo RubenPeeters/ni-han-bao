@@ -3,7 +3,10 @@
 // ownership: the lender's collection keeps counting the copies.
 
 import { ApplicationCommandOptionType } from "discord.js";
-import { cardChoices, cardMiss, choiceLabel, lookupCard, type Card, type Catalogue } from "./riftbound.js";
+import { deckWanted, pickCopies, type CopyRow, type LoanCard, type Wanted } from "./lend-copies.js";
+import { cardChoices, cardMiss, choiceLabel, lookupCard, type Catalogue } from "./riftbound.js";
+
+export { deckWanted, pickCopies, type CopyRow, type LoanCard, type Wanted };
 
 export const LEND_COMMAND = {
   name: "lend",
@@ -19,7 +22,12 @@ export const LEND_COMMAND = {
       type: ApplicationCommandOptionType.String,
       name: "cards",
       description: "The cards, separated by ; with a count if more than one: 2 Jinx; Ahri",
-      required: true,
+      autocomplete: true,
+    },
+    {
+      type: ApplicationCommandOptionType.String,
+      name: "deck",
+      description: "Or one of your decks, lent whole as one loan",
       autocomplete: true,
     },
     {
@@ -59,11 +67,6 @@ export const RETURN_COMMAND = {
     },
   ],
 } as const;
-
-export interface Wanted {
-  card: Card;
-  count: number;
-}
 
 // "2 Jinx", "2x Jinx" or "Jinx x2". Card names have commas ("Ahri, ..."), so items split on ;.
 const COUNT_FIRST = /^(\d{1,2})\s*[x×]?\s+(\S.*)$/i;
@@ -122,60 +125,29 @@ export function parseDue(text: string | null, today: string): { due: string | nu
   return { due: iso };
 }
 
-/** A row of riftbound_lend_options(): one of the lender's collection rows of a wanted card. */
-export interface CopyRow {
-  card_id: string;
-  printing_id: string;
-  finish: string;
-  condition: string;
-  language: string;
-  quantity: number;
-  /** How many the owner offers to lend (riftbound_lendable()). */
-  lendable: number;
-  /** How many are out on open loans. */
-  lent: number;
-}
-
-export type LoanCard = Pick<CopyRow, "printing_id" | "finish" | "condition" | "language" | "quantity">;
-
-/**
- * Which copies a loan takes: those available to lend first, then the rest of what is in hand
- * (owned and not out on a loan), counted in `unmarked` for a warning. Or why it cannot.
- */
-export function pickCopies(rows: CopyRow[], wanted: Wanted[]): { cards: LoanCard[]; unmarked: number } | string {
-  const cards: LoanCard[] = [];
-  let unmarked = 0;
-  for (const { card, count } of wanted) {
-    const free = rows
-      .filter((r) => r.card_id === card.id)
-      .sort((a, b) => `${a.printing_id} ${a.finish} ${a.language} ${a.condition}`.localeCompare(`${b.printing_id} ${b.finish} ${b.language} ${b.condition}`))
-      .map((row) => {
-        const inHand = Math.max(row.quantity - row.lent, 0);
-        // Lent copies count against the lendable ones first, as card_lenders() does.
-        const marked = Math.min(Math.max(row.lendable - row.lent, 0), inHand);
-        return { row, marked, rest: inHand - marked, take: 0 };
-      });
-    const inHand = free.reduce((n, f) => n + f.marked + f.rest, 0);
-    if (inHand < count) {
-      return `You have ${inHand ? `only ${inHand}` : "no"} ${card.name} to lend: that counts the copies in your collection (/collection add) that are not out on a loan.`;
-    }
-    let left = count;
-    for (const pass of ["marked", "rest"] as const) {
-      for (const f of free) {
-        const n = Math.min(left, f[pass]);
-        f.take += n;
-        left -= n;
-        if (pass === "rest") unmarked += n;
-      }
-    }
-    for (const { row, take } of free) {
-      if (take) cards.push({ printing_id: row.printing_id, finish: row.finish, condition: row.condition, language: row.language, quantity: take });
-    }
-  }
-  return { cards, unmarked };
-}
-
 export const cardList = (wanted: Wanted[]) => wanted.map((w) => `${w.count} × ${w.card.name}`).join(", ");
+
+/** What a loan lent: a deck by its name and size (its list is long), else the cards. */
+const lentText = (wanted: Wanted[], deck: string | null) =>
+  deck ? `the deck ${deck} (${wanted.reduce((n, w) => n + w.count, 0)} cards)` : cardList(wanted);
+
+/** The /lend options, cards or a deck: exactly one of them. */
+export function lendWhat(cards: string | null, deck: string | null): { cards: string } | { deck: string } | string {
+  if (cards?.trim() && deck?.trim()) return "Lend cards or a deck, not both: run /lend once for each.";
+  if (deck?.trim()) return { deck: deck.trim() };
+  if (cards?.trim()) return { cards };
+  return "Name the cards to lend, or pick one of your decks.";
+}
+
+/** Autocomplete for the deck option: the lender's decks by name, a deck's id as its value. */
+export function deckChoices(decks: { id: string; name: string }[], typed: string): { name: string; value: string }[] {
+  const q = typed.trim().toLowerCase();
+  return decks
+    .filter((d) => d.name.toLowerCase().includes(q))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(0, 25)
+    .map((d) => ({ name: d.name, value: d.id }));
+}
 
 /** The ledger's rows of a loan, named from the catalogue. */
 export function loanCardList(catalogue: Catalogue, rows: { printing_id: string; quantity: number }[]): string {
@@ -188,20 +160,27 @@ export function loanCardList(catalogue: Catalogue, rows: { printing_id: string; 
 }
 
 /** What only the lender sees after /lend. */
-export function lendReceipt(loan: number, wanted: Wanted[], unmarked: number, fixes: number | null): string {
+export function lendReceipt(loan: number, wanted: Wanted[], unmarked: number, fixes: number | null, deck: string | null = null): string {
   return [
-    `Recorded loan #${loan}: ${cardList(wanted)}.`,
+    `Recorded loan #${loan}: ${lentText(wanted, deck)}.`,
     fixes !== null && `Loan #${fixes} no longer counts.`,
     unmarked > 0 &&
-      `Heads-up: ${unmarked} of these copies ${unmarked === 1 ? "is" : "are"} not marked to lend. Lent anyway; mark what you lend with To lend on the Cards page or /collection lending.`,
+      `Heads-up: ${unmarked} of these copies ${unmarked === 1 ? "is" : "are"} not marked to lend, or held by a deck not for lending. Lent anyway; mark what you lend with To lend on the Cards page or /collection lending.`,
   ]
     .filter(Boolean)
     .join(" ");
 }
 
 /** The channel message the borrower answers with Confirm or Dispute. */
-export function lendAnnouncement(lender: string, borrower: string, loan: number, wanted: Wanted[], due: string | null): string {
-  return `<@${lender}> lent <@${borrower}> ${cardList(wanted)}${due ? `, due ${due}` : ""} (loan #${loan}). <@${borrower}>, did you get them?`;
+export function lendAnnouncement(
+  lender: string,
+  borrower: string,
+  loan: number,
+  wanted: Wanted[],
+  due: string | null,
+  deck: string | null = null,
+): string {
+  return `<@${lender}> lent <@${borrower}> ${lentText(wanted, deck)}${due ? `, due ${due}` : ""} (loan #${loan}). <@${borrower}>, did you get them?`;
 }
 
 const ANSWER_ID = /^loan-(confirm|dispute):(\d+):(\d+)$/;

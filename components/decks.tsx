@@ -1,11 +1,14 @@
 import { createDeck } from "@/app/decks/actions";
 import { DeckEditor, RestoreVersion, type Deck, type VersionListed } from "@/components/deck-editor";
+import { DeckLending } from "@/components/deck-lending";
 import { WishlistModeQuestion } from "@/components/profile-wishlist";
 import { LogInPrompt } from "@/components/server-picker";
-import { EmptyState, ErrorState, RankList, RankRow, StatCard } from "@/components/stat-ui";
+import { EmptyState, ErrorState, MemberRankRow, RankList, RankRow, StatCard } from "@/components/stat-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Card, Printing } from "@/bot/src/card-match";
+import { deckWanted } from "@/bot/src/lend-copies";
+import { languageName } from "@/lib/collection";
 import { allPages, deckChanges, missingCards, SECTIONS, VISIBILITIES, type Entry, type OwnedCopy, type Pin } from "@/lib/decks";
 import { formatExact } from "@/lib/time";
 import { createClient } from "@/lib/supabase/server";
@@ -35,12 +38,13 @@ async function ownedCopies(supabase: Awaited<ReturnType<typeof createClient>>) {
 }
 
 const DECK =
-  "id, user_id, name, visibility, legend_id, language, allow_other_languages, updated_at, legend:riftbound_cards!legend_id(name, tags), cards:riftbound_deck_cards(section, card_id, printing_id, quantity)";
+  "id, user_id, name, visibility, not_for_lending, legend_id, language, allow_other_languages, updated_at, legend:riftbound_cards!legend_id(name, tags), cards:riftbound_deck_cards(section, card_id, printing_id, quantity)";
 type ListedDeck = {
   id: string;
   user_id: string;
   name: string;
   visibility: string;
+  not_for_lending: boolean;
   legend_id: string | null;
   language: string;
   allow_other_languages: boolean;
@@ -116,7 +120,10 @@ export async function DeckList() {
                         d.legend ? `${d.legend.tags.join(", ")}, ${d.legend.name}` : "No Legend yet",
                         `${main} main deck cards`,
                         VISIBILITIES.find((v) => v.value === d.visibility)?.label.split(":")[0],
-                      ].join(" · ")}
+                        d.not_for_lending && "Not for lending",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </span>
                   </Link>
                 </li>
@@ -160,7 +167,7 @@ export async function DeckDetail({ id }: { id: string }) {
   const [deck, entries, cards, printings, me, owned, versions] = await Promise.all([
     supabase
       .from("riftbound_decks")
-      .select("id, user_id, name, legend_id, champion_id, notes, visibility, language, allow_other_languages, wishlist_mode")
+      .select("id, user_id, name, legend_id, champion_id, notes, visibility, language, allow_other_languages, wishlist_mode, not_for_lending")
       .eq("id", id)
       .maybeSingle(),
     supabase.from("riftbound_deck_cards").select("section, card_id, printing_id, quantity").eq("deck_id", id),
@@ -176,21 +183,118 @@ export async function DeckDetail({ id }: { id: string }) {
   if (!deck.data) notFound();
   // The deck still opens without its history, which says it could not load.
   if (versions.error) console.error("riftbound_deck_versions failed:", versions.error.message);
-  const { user_id, ...rest } = deck.data;
+  const { user_id, not_for_lending, ...rest } = deck.data;
+  const mine = user_id === me.data;
   // Into the visitor's Which decks can I build?; the function ignores their own and non-public decks.
-  if (user_id !== me.data && rest.visibility === "public") {
+  if (!mine && rest.visibility === "public") {
     const { error } = await supabase.rpc("open_riftbound_deck", { p_deck: id });
     if (error) console.error("open_riftbound_deck failed:", error.message);
   }
+  const missing = missingCards(rest, entries.data as Entry[], owned.data).rows.filter((r) => r.owned < r.quantity);
+  const missingIds = [...new Set(missing.map((r) => r.card_id))];
+  const [lenders, members] = await Promise.all([
+    missingIds.length ? supabase.rpc("riftbound_card_lenders", { p_cards: missingIds }) : { data: [], error: null },
+    // Whom the owner can lend to: their servers' members (RLS), not those hidden with /hide-me.
+    mine
+      ? allPages((from, to) =>
+          supabase.from("members").select("user_id, display_name").eq("hidden", false).neq("user_id", me.data).order("guild_id").order("user_id").range(from, to),
+        )
+      : { data: [], error: null },
+  ]);
+  // The deck still opens without them, and each says it could not load.
+  if (lenders.error) console.error("riftbound_card_lenders failed:", lenders.error.message);
+  if (members.error) console.error("members failed:", members.error.message);
+  const names = new Map((cards.data as Card[]).map((c) => [c.id, c.name]));
+  const short = new Map<string, number>();
+  for (const r of missing) short.set(r.card_id, (short.get(r.card_id) ?? 0) + r.quantity - r.owned);
+  const borrowers = [...new Map((members.data ?? []).map((m) => [m.user_id, m])).values()].toSorted((a, b) =>
+    a.display_name.localeCompare(b.display_name),
+  );
   return (
     <DeckEditor
       deck={rest as Deck}
       entries={entries.data as Entry[]}
       catalogue={{ cards: cards.data as Card[], printings: printings.data as Printing[] }}
       owned={owned.data}
-      mine={user_id === me.data}
+      mine={mine}
       versions={versions.data}
+      lending={
+        <>
+          <WhoHasMissing
+            missing={[...short].map(([card_id, n]) => ({ card_id, name: names.get(card_id) ?? card_id, missing: n }))}
+            lenders={lenders.error ? null : (lenders.data as CardLender[])}
+          />
+          {mine && (
+            <DeckLending
+              deckId={id}
+              notForLending={not_for_lending}
+              wanted={deckWanted({ cards: cards.data as Card[] }, { legend_id: rest.legend_id, entries: entries.data as Entry[] })}
+              members={members.error ? [] : borrowers}
+            />
+          )}
+        </>
+      }
     />
+  );
+}
+
+/** A row of riftbound_card_lenders(): a member of one of the visitor's servers with copies of a card to lend. */
+interface CardLender {
+  card_id: string;
+  guild_id: string;
+  user_id: string;
+  display_name: string;
+  avatar_url: string | null;
+  copies: number;
+  languages: string[] | null;
+}
+
+/**
+ * Who has my missing cards?: for each card the visitor is short of, who in their servers has
+ * copies to lend. riftbound_card_lenders() leaves out copies not available, and whoever may not show.
+ */
+function WhoHasMissing({ missing, lenders }: { missing: { card_id: string; name: string; missing: number }[]; lenders: CardLender[] | null }) {
+  if (missing.length === 0) return null;
+  return (
+    <StatCard title="Who has my missing cards?" description="Members of your servers with copies to lend">
+      {lenders === null ? (
+        <ErrorState title="Could not load who lends them">Try again in a minute.</ErrorState>
+      ) : (
+        <ul className="flex flex-col divide-y">
+          {missing.map((m) => {
+            // One row per member, though they may share several servers with the visitor.
+            const who = [...new Map(lenders.filter((l) => l.card_id === m.card_id).map((l) => [l.user_id, l])).values()];
+            return (
+              <li key={m.card_id} className="flex flex-col gap-2 py-3 text-sm first:pt-0 last:pb-0">
+                <span className="flex min-w-0 items-baseline justify-between gap-3">
+                  <Link href={`/cards/${m.card_id}`} className="truncate font-medium hover:underline">
+                    {m.name}
+                  </Link>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">{m.missing} missing</span>
+                </span>
+                {who.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Nobody in your servers lends it yet.</p>
+                ) : (
+                  <RankList>
+                    {who.map((l, i) => (
+                      <MemberRankRow
+                        key={l.user_id}
+                        rank={i + 1}
+                        name={l.display_name}
+                        avatarUrl={l.avatar_url}
+                        value={`${l.copies} to lend`}
+                        detail={(l.languages ?? []).map(languageName).join(", ")}
+                        href={`/u/${l.user_id}`}
+                      />
+                    ))}
+                  </RankList>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </StatCard>
   );
 }
 
