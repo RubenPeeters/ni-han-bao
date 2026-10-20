@@ -69,7 +69,7 @@ export async function TradeStats({ guild }: { guild: string }) {
       {wanted.length === 0 ? (
         <EmptyState>
           Nothing on your wishlist yet. Add the cards you want on your{" "}
-          <Link href={`/u/${me.data}/wishlist`} className="underline underline-offset-4">
+          <Link href="/wishlist" className="underline underline-offset-4">
             wishlist
           </Link>
           .

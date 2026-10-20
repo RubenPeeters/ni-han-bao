@@ -14,8 +14,11 @@ interface Total {
   printings: number;
 }
 
-/** A profile's Collection tab; profile() and profile_collection() check can_see_profile(). */
-export async function ProfileCollection({ user }: { user: string }) {
+/**
+ * A profile's Collection tab; profile() and profile_collection() check can_see_profile().
+ * `own`: only the totals, as the summary under the grid on /collection.
+ */
+export async function ProfileCollection({ user, own }: { user: string; own?: boolean }) {
   const supabase = await createClient();
   const [profile, totals] = await Promise.all([
     supabase.rpc("profile", { u: user }).maybeSingle<Profile>(),
@@ -25,7 +28,7 @@ export async function ProfileCollection({ user }: { user: string }) {
   // Private, hidden, forgotten or unknown: the same 404 as the Activity tab.
   if (!profile.data) notFound();
   const { mine } = profile.data;
-  const lending = mine ? await supabase.from("profiles").select("lends_cards, lend_all").eq("user_id", user).maybeSingle() : null;
+  const lending = mine && !own ? await supabase.from("profiles").select("lends_cards, lend_all").eq("user_id", user).maybeSingle() : null;
   if (lending?.error) return <ErrorState title="Could not load this collection">Try again in a minute.</ErrorState>;
   const all = totals.data as Total[];
   const rows = all.filter((r) => r.language === null);
@@ -39,12 +42,40 @@ export async function ProfileCollection({ user }: { user: string }) {
     return [...by].sort((a, b) => b[1].copies - a[1].copies || a[0].localeCompare(b[0]));
   };
   const copies = rows.reduce((n, r) => n + r.copies, 0);
+  // The grid above already says when there are no cards.
+  if (own && rows.length === 0) return null;
+  const grid = (
+    <StatGrid>
+      {[
+        { title: "Per set", key: "set_code" as const },
+        { title: "Per rarity", key: "rarity" as const },
+        { title: "Per language", key: "language" as const },
+      ].map(({ title, key }) => (
+        <StatCard key={key} title={title} description={`${copies.toLocaleString("en-US")} copies in all`}>
+          <RankList>
+            {sum(key).map(([label, t], i) => (
+              <RankRow key={label} rank={i + 1} value={t.copies.toLocaleString("en-US")}>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">{label}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {t.printings.toLocaleString("en-US")} different {t.printings === 1 ? "card" : "cards"}
+                  </span>
+                </span>
+              </RankRow>
+            ))}
+          </RankList>
+        </StatCard>
+      ))}
+    </StatGrid>
+  );
+  if (own) return grid;
   return (
     <>
       <ProfileHeader
         user={user}
         profile={profile.data}
         subtitle={mine ? "Your Riftbound cards." : "Their Riftbound cards."}
+        manage="/collection"
       />
       {mine && (
         <SettingsLink href="/settings#riftbound">
@@ -63,28 +94,7 @@ export async function ProfileCollection({ user }: { user: string }) {
           )}
         </EmptyState>
       ) : (
-        <StatGrid>
-          {[
-            { title: "Per set", key: "set_code" as const },
-            { title: "Per rarity", key: "rarity" as const },
-            { title: "Per language", key: "language" as const },
-          ].map(({ title, key }) => (
-            <StatCard key={key} title={title} description={`${copies.toLocaleString("en-US")} copies in all`}>
-              <RankList>
-                {sum(key).map(([label, t], i) => (
-                  <RankRow key={label} rank={i + 1} value={t.copies.toLocaleString("en-US")}>
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate">{label}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {t.printings.toLocaleString("en-US")} different {t.printings === 1 ? "card" : "cards"}
-                      </span>
-                    </span>
-                  </RankRow>
-                ))}
-              </RankList>
-            </StatCard>
-          ))}
-        </StatGrid>
+        grid
       )}
     </>
   );
