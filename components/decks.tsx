@@ -1,11 +1,12 @@
 import { createDeck } from "@/app/decks/actions";
-import { DeckEditor, type Deck } from "@/components/deck-editor";
+import { DeckEditor, RestoreVersion, type Deck, type VersionListed } from "@/components/deck-editor";
 import { LogInPrompt } from "@/components/server-picker";
 import { EmptyState, ErrorState, RankList, RankRow, StatCard } from "@/components/stat-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Card, Printing } from "@/bot/src/card-match";
-import { allPages, missingCards, VISIBILITIES, type Entry, type OwnedCopy } from "@/lib/decks";
+import { allPages, deckChanges, missingCards, SECTIONS, VISIBILITIES, type Entry, type OwnedCopy, type Pin } from "@/lib/decks";
+import { formatExact } from "@/lib/time";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -153,7 +154,7 @@ export async function DeckDetail({ id }: { id: string }) {
   if (!claims) return <LogInPrompt text="Log in to see this deck." />;
   // Not a uuid is no deck, rather than a database error.
   if (!UUID.test(id)) notFound();
-  const [deck, entries, cards, printings, me, owned] = await Promise.all([
+  const [deck, entries, cards, printings, me, owned, versions] = await Promise.all([
     supabase
       .from("riftbound_decks")
       .select("id, user_id, name, legend_id, champion_id, notes, visibility, language, allow_other_languages")
@@ -164,11 +165,14 @@ export async function DeckDetail({ id }: { id: string }) {
     supabase.from("riftbound_printings").select("*").order("collector_number").order("collector_code").limit(MAX_CARDS),
     supabase.rpc("current_discord_id"),
     ownedCopies(supabase),
+    versionList(supabase, id),
   ]);
   if (deck.error || entries.error || cards.error || printings.error || me.error || owned.error) {
     return <ErrorState title="Could not load this deck">Try again in a minute.</ErrorState>;
   }
   if (!deck.data) notFound();
+  // The deck still opens without its history, which says it could not load.
+  if (versions.error) console.error("riftbound_deck_versions failed:", versions.error.message);
   const { user_id, ...rest } = deck.data;
   // Into the visitor's Which decks can I build?; the function ignores their own and non-public decks.
   if (user_id !== me.data && rest.visibility === "public") {
@@ -182,6 +186,133 @@ export async function DeckDetail({ id }: { id: string }) {
       catalogue={{ cards: cards.data as Card[], printings: printings.data as Printing[] }}
       owned={owned.data}
       mine={user_id === me.data}
+      versions={versions.data}
     />
+  );
+}
+
+/** A deck's versions, newest first; RLS returns them only if the deck is visible. */
+const versionList = (supabase: Awaited<ReturnType<typeof createClient>>, id: string) =>
+  allPages<VersionListed, { message: string }>((from, to) =>
+    supabase.from("riftbound_deck_versions").select("version, saved_at").eq("deck_id", id).order("version", { ascending: false }).range(from, to),
+  );
+
+const VERSION = "version, saved_at, name, legend_id, champion_id, notes, language, allow_other_languages, entries";
+type SavedVersion = Omit<Deck, "id" | "visibility"> & VersionListed & { entries: Entry[] };
+
+const pinText = (pins: Pin[], codes: Map<string, string>) =>
+  pins.map((p) => `${p.quantity} ${codes.get(p.printing_id) ?? p.printing_id}`).join(", ") || "none";
+
+/**
+ * One saved version, read-only, as the deck page shows a deck, with what changed since another
+ * version (the one before, unless `from` says) and, for the owner, Restore. A 404 for whoever
+ * cannot see the deck now: old versions follow its current visibility.
+ */
+export async function DeckVersionDetail({ id, version, from }: { id: string; version: string; from: string | undefined }) {
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  if (!claims) return <LogInPrompt text="Log in to see this deck." />;
+  const n = Number(version);
+  if (!UUID.test(id) || !Number.isInteger(n) || n < 1) notFound();
+  const [deck, versions, cards, printings, me, owned] = await Promise.all([
+    supabase.from("riftbound_decks").select("user_id, visibility").eq("id", id).maybeSingle(),
+    versionList(supabase, id),
+    supabase.from("riftbound_cards").select("*").order("name").limit(MAX_CARDS),
+    supabase.from("riftbound_printings").select("*").order("collector_number").order("collector_code").limit(MAX_CARDS),
+    supabase.rpc("current_discord_id"),
+    ownedCopies(supabase),
+  ]);
+  if (deck.error || versions.error || cards.error || printings.error || me.error || owned.error) {
+    return <ErrorState title="Could not load this version">Try again in a minute.</ErrorState>;
+  }
+  if (!deck.data || !versions.data.some((v) => v.version === n)) notFound();
+  const fromRequested = Number(from);
+  const before = versions.data.some((v) => v.version === fromRequested && v.version !== n) ? fromRequested : n - 1;
+  const saved = await supabase
+    .from("riftbound_deck_versions")
+    .select(VERSION)
+    .eq("deck_id", id)
+    .in("version", [n, before]);
+  if (saved.error) return <ErrorState title="Could not load this version">Try again in a minute.</ErrorState>;
+  const rows = saved.data as unknown as SavedVersion[];
+  const shown = rows.find((v) => v.version === n)!;
+  const compared = rows.find((v) => v.version === before);
+  const { saved_at, entries, ...settings } = shown;
+  const asDeck: Deck = { ...settings, id, visibility: deck.data.visibility };
+  const names = new Map((cards.data as Card[]).map((c) => [c.id, c.name]));
+  const codes = new Map((printings.data as Printing[]).map((p) => [p.id, p.collector_code]));
+  const changes = compared ? deckChanges(compared, shown) : [];
+  const sectionLabel = (s: string) => (s === "legend" ? "Legend" : s === "champion" ? "Chosen Champion" : SECTIONS.find((x) => x.value === s)?.label);
+  const latest = versions.data[0].version;
+  return (
+    <DeckEditor
+      deck={asDeck}
+      entries={entries}
+      catalogue={{ cards: cards.data as Card[], printings: printings.data as Printing[] }}
+      owned={owned.data}
+      mine={false}
+    >
+      <StatCard
+        title={`Version ${n} of ${latest}`}
+        description={`Saved ${formatExact(new Date(saved_at))}${n === latest ? ", the deck as it is now" : ""}`}
+        aside={
+          <Link href={`/decks/${id}`} className="rounded-md text-sm text-muted-foreground hover:text-foreground">
+            Current deck
+          </Link>
+        }
+      >
+        {versions.data.length > 1 && (
+          // A plain GET form: comparing works without JavaScript.
+          <form className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <label className="flex min-w-0 flex-1 flex-col gap-2 text-sm font-medium">
+              Changes since
+              <select
+                name="from"
+                defaultValue={compared ? String(before) : ""}
+                className="h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 text-base shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                {!compared && <option value="">Pick a version</option>}
+                {versions.data
+                  .filter((v) => v.version !== n)
+                  .map((v) => (
+                    <option key={v.version} value={v.version}>
+                      Version {v.version} · {formatExact(new Date(v.saved_at))}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <Button type="submit" variant="secondary" size="lg" className="h-11">
+              Compare
+            </Button>
+          </form>
+        )}
+        {!compared ? (
+          <EmptyState>The first version: nothing before it to compare.</EmptyState>
+        ) : changes.length === 0 ? (
+          <EmptyState>No card changed since version {before}.</EmptyState>
+        ) : (
+          <ul className="flex flex-col divide-y">
+            {changes.map((c) => (
+              <li key={`${c.section}|${c.card_id}`} className="flex items-center gap-3 py-2 text-sm first:pt-0 last:pb-0">
+                <span
+                  className={`w-10 shrink-0 text-right font-semibold tabular-nums ${c.delta ? "" : "text-muted-foreground"}`}
+                >
+                  {c.delta > 0 ? `+${c.delta}` : c.delta < 0 ? `−${-c.delta}` : "±0"}
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate font-medium">{names.get(c.card_id) ?? c.card_id}</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {[sectionLabel(c.section), c.pins && `pinned: ${pinText(c.pins.from, codes)} → ${pinText(c.pins.to, codes)}`]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {deck.data.user_id === me.data && n !== latest && <RestoreVersion deck={asDeck} entries={entries} version={n} />}
+      </StatCard>
+    </DeckEditor>
   );
 }

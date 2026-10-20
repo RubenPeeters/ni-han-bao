@@ -216,3 +216,50 @@ export async function allPages<T, E>(
     if (data.length < size) return { data: rows, error: null };
   }
 }
+
+export interface Pin {
+  printing_id: string;
+  quantity: number;
+}
+
+/** One card's change between two versions: copies more or fewer, and its pinned printings if they changed. */
+export interface DeckChange {
+  section: Section | "legend" | "champion";
+  card_id: string;
+  delta: number;
+  pins: { from: Pin[]; to: Pin[] } | null;
+}
+
+const CHANGE_ORDER = ["legend", "champion", ...SECTIONS.map((s) => s.value)];
+
+/** From one version to another, card by card: "+2 X", "−1 Y", and pins moved without a count changing. */
+export function deckChanges(from: DeckCards, to: DeckCards): DeckChange[] {
+  // The Legend and the Chosen Champion count as one copy each in sections of their own.
+  type Row = Omit<Entry, "section"> & { section: DeckChange["section"] };
+  const rows = (d: DeckCards): Row[] => [
+    ...d.entries,
+    ...(d.legend_id ? [{ section: "legend" as const, card_id: d.legend_id, printing_id: null, quantity: 1 }] : []),
+    ...(d.champion_id ? [{ section: "champion" as const, card_id: d.champion_id, printing_id: null, quantity: 1 }] : []),
+  ];
+  const cards = new Map<string, { section: DeckChange["section"]; card_id: string; before: Row[]; after: Row[] }>();
+  const add = (e: Row, side: "before" | "after") => {
+    const key = `${e.section}|${e.card_id}`;
+    if (!cards.has(key)) cards.set(key, { section: e.section, card_id: e.card_id, before: [], after: [] });
+    cards.get(key)![side].push(e);
+  };
+  rows(from).forEach((e) => add(e, "before"));
+  rows(to).forEach((e) => add(e, "after"));
+  const count = (es: Row[]) => es.reduce((n, e) => n + e.quantity, 0);
+  const pins = (es: Row[]): Pin[] =>
+    es
+      .filter((e) => e.printing_id)
+      .map((e) => ({ printing_id: e.printing_id!, quantity: e.quantity }))
+      .toSorted((a, b) => a.printing_id.localeCompare(b.printing_id));
+  return [...cards.values()]
+    .map(({ section, card_id, before, after }) => {
+      const [a, b] = [pins(before), pins(after)];
+      return { section, card_id, delta: count(after) - count(before), pins: JSON.stringify(a) === JSON.stringify(b) ? null : { from: a, to: b } };
+    })
+    .filter((c) => c.delta || c.pins)
+    .toSorted((a, b) => CHANGE_ORDER.indexOf(a.section) - CHANGE_ORDER.indexOf(b.section));
+}

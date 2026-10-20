@@ -2,7 +2,7 @@
 -- rows from every table with a guild_id, and a logged-in user reads rows of their own
 -- servers only; that profiles follow their visibility (#100); that the lending ledger holds
 -- (#172); that decks follow their visibility (#173) and only public ones are remembered as
--- opened (#174); then that /forget-me deletes
+-- opened (#174), their versions with them (#176); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`. Run against a local Supabase or the dev project
 -- (never production); everything is rolled back:
@@ -99,6 +99,7 @@ begin
            ('rls-rls-other', 'servers-not-shared', 'servers'), ('rls-public', 'public', 'public');
     insert into public.riftbound_deck_cards (deck_id, section, card_id, quantity)
     select id, 'main', 'rls-card', 1 from public.riftbound_decks where user_id like 'rls-%';
+    perform public.snapshot_riftbound_deck(id) from public.riftbound_decks where user_id like 'rls-%';
     -- anon cannot read keys itself, so hand it one for the recap checks below.
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
@@ -137,6 +138,7 @@ begin
         raise exception 'anon reads a deck, even a public one';
     end if;
     if exists (select from public.riftbound_deck_opens) then raise exception 'anon reads an opened deck'; end if;
+    if exists (select from public.riftbound_deck_versions) then raise exception 'anon reads a deck version'; end if;
     if exists (select from public.lol_ranks) or exists (select from public.profile_ranks('rls-rls-mine')) then
         raise exception 'anon reads a rank';
     end if;
@@ -313,6 +315,14 @@ begin
         or (select count(*) from public.riftbound_deck_cards) <> 2 then
         raise exception 'a member reads decks that are private, or shared only with servers they are not in';
     end if;
+    if (select count(*) from public.riftbound_deck_versions) <> 2 then
+        raise exception 'a member reads versions of a deck they cannot see';
+    end if;
+    begin
+        perform public.snapshot_riftbound_deck((select id from public.riftbound_decks where name = 'public'));
+        raise exception 'a member writes a version of someone else''s deck';
+    exception when insufficient_privilege then null;
+    end;
     deck := public.save_riftbound_deck(null, 'mine', null, null, null, null, null, null,
         '[{"section":"main","card_id":"rls-card","printing_id":"rls-printing","quantity":2},
           {"section":"main","card_id":"rls-card","printing_id":"rls-printing","quantity":1}]');
@@ -325,6 +335,11 @@ begin
     if (select string_agg(coalesce(printing_id, '-') || ':' || quantity, ',' order by printing_id) from public.riftbound_deck_cards
         where deck_id = deck) <> 'rls-printing:3,-:1' then
         raise exception 'add_riftbound_deck_card() does not add an unpinned copy';
+    end if;
+    -- Versions (#176): the save and the add are one each, the last the deck as it is.
+    if (select array_agg(version order by version) from public.riftbound_deck_versions where deck_id = deck) <> array[1, 2]
+        or (select jsonb_array_length(entries) from public.riftbound_deck_versions where deck_id = deck and version = 2) <> 2 then
+        raise exception 'a save or an add does not keep a version of the deck';
     end if;
     begin
         perform public.save_riftbound_deck(deck, 'mine', null, null, null, 'private', 'en', true,
@@ -488,6 +503,9 @@ begin
     end loop;
     if exists (select from public.stores where added_by = 'rls-user') then
         raise exception 'forget_user() leaves the user on the stores they added';
+    end if;
+    if exists (select from public.riftbound_deck_versions where name = 'kept') then
+        raise exception 'forget_user() leaves the versions of the user''s decks';
     end if;
     -- Their loans go; the correction that replaced one stays, without the link (#172).
     if exists (select from public.riftbound_loans where 'rls-user' in (lender_id, borrower_id))
