@@ -7,9 +7,10 @@ import { EmptyState, ErrorState, MemberRankRow, RankList, RankRow, StatCard } fr
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Card, Printing } from "@/bot/src/card-match";
+import { missingCards, type OwnedCopy } from "@/bot/src/deck-match";
 import { deckWanted } from "@/bot/src/lend-copies";
 import { languageName } from "@/lib/collection";
-import { allPages, deckChanges, missingCards, SECTIONS, VISIBILITIES, type Entry, type OwnedCopy, type Pin } from "@/lib/decks";
+import { allPages, deckChanges, SECTIONS, VISIBILITIES, type Entry, type Pin } from "@/lib/decks";
 import { formatExact } from "@/lib/time";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
@@ -161,7 +162,7 @@ export async function DeckList() {
 export async function DeckDetail({ id }: { id: string }) {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
-  if (!claims) return <LogInPrompt text="Log in to see this deck." />;
+  if (!claims) return <DeckTeaser id={id} />;
   // Not a uuid is no deck, rather than a database error.
   if (!UUID.test(id)) notFound();
   const [deck, entries, cards, printings, me, owned, versions] = await Promise.all([
@@ -246,6 +247,43 @@ export async function DeckDetail({ id }: { id: string }) {
         </>
       }
     />
+  );
+}
+
+/**
+ * A public deck logged out: its Legend and Chosen Champion only, as a teaser for logging in.
+ * Any other deck, or none, is just the login prompt, as before.
+ */
+async function DeckTeaser({ id }: { id: string }) {
+  const prompt = <LogInPrompt text="Log in with Discord to see this deck." />;
+  if (!UUID.test(id)) return prompt;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("public_deck_teaser", { p_deck: id }).maybeSingle<{
+    legend_name: string | null;
+    legend_tags: string[] | null;
+    champion_name: string | null;
+  }>();
+  if (error) console.error("public_deck_teaser failed:", error.message);
+  if (!data) return prompt;
+  return (
+    <div className="flex flex-col gap-6">
+      <h1 className="text-4xl font-semibold">A Riftbound deck</h1>
+      <StatCard title="The deck" description="Its full list is for members logged in with Discord">
+        <dl className="grid gap-3 text-sm sm:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-1">
+            <dt className="text-muted-foreground">Legend</dt>
+            <dd className="break-words font-medium">
+              {data.legend_name ? [...(data.legend_tags ?? []), data.legend_name].join(", ") : "No Legend yet"}
+            </dd>
+          </div>
+          <div className="flex min-w-0 flex-col gap-1">
+            <dt className="text-muted-foreground">Chosen Champion</dt>
+            <dd className="break-words font-medium">{data.champion_name ?? "None yet"}</dd>
+          </div>
+        </dl>
+      </StatCard>
+      {prompt}
+    </div>
   );
 }
 

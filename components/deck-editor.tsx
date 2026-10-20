@@ -1,6 +1,7 @@
 "use client";
 
 import { codeKey, normal, resolveCard, type Card, type Catalogue } from "@/bot/src/card-match";
+import { missingCards, type OwnedCopy } from "@/bot/src/deck-match";
 import { EmptyState, StatCard } from "@/components/stat-ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,15 +14,14 @@ import {
   addCard,
   championOf,
   changeEntry,
+  deckText,
   deckWarnings,
-  missingCards,
   parseDeckList,
   replaceEntry,
   SECTIONS,
   VISIBILITIES,
   type DeckCards,
   type Entry,
-  type OwnedCopy,
   type PastedLine,
   type Section,
   withoutLine,
@@ -94,6 +94,7 @@ export function DeckEditor({
   const [query, setQuery] = useState("");
   const [pasted, setPasted] = useState("");
   const [problems, setProblems] = useState<Problem[]>([]);
+  const [copied, setCopied] = useState("");
   const cards = useMemo(() => new Map(catalogue.cards.map((c) => [c.id, c])), [catalogue]);
   const printings = useMemo(() => Map.groupBy(catalogue.printings, (p) => p.card_id), [catalogue]);
   const legends = useMemo(() => catalogue.cards.filter((c) => c.type === "Legend").toSorted((a, b) => legendLabel(a).localeCompare(legendLabel(b))), [catalogue]);
@@ -175,6 +176,15 @@ export function DeckEditor({
     router.refresh();
   };
 
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(deckText(current, cards));
+      setCopied("Copied: paste it into any deck's Or paste a list.");
+    } catch {
+      setCopied("Could not copy: your browser blocked it.");
+    }
+  };
+
   const remove = async () => {
     if (!window.confirm(`Delete ${settings.name}? This cannot be undone.`)) return;
     const { error } = await createClient().rpc("delete_riftbound_deck", { p_deck: settings.id });
@@ -196,6 +206,14 @@ export function DeckEditor({
             .filter(Boolean)
             .join(" · ")}
         </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="secondary" className="h-11" onClick={copy}>
+            Copy as text
+          </Button>
+          <p aria-live="polite" className="text-xs text-muted-foreground">
+            {copied}
+          </p>
+        </div>
       </div>
 
       {children}

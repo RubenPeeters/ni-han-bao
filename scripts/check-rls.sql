@@ -3,7 +3,8 @@
 -- servers only; that profiles follow their visibility (#100); that the lending ledger holds
 -- (#172); that decks follow their visibility (#173) and only public ones are remembered as
 -- opened (#174), their versions with them (#176), and wishlists their profile (#177); that trade
--- matches follow it too (#178), and decks not for lending hold their cards (#179); then that /forget-me deletes
+-- matches follow it too (#178), and decks not for lending hold their cards (#179); that only public decks are teased logged
+-- out (#175); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`. Run against a local Supabase or the dev project
 -- (never production); everything is rolled back:
@@ -108,6 +109,9 @@ begin
     -- Trades (#178): everyone but the test user has a copy of rls-card for trade.
     update public.riftbound_collection set for_trade = 1 where user_id <> 'rls-user';
     -- anon cannot read keys itself, so hand it one for the recap checks below.
+    -- Nor deck ids, for the deck teaser checks (#175) below.
+    perform set_config('rls.public_deck', (select id::text from public.riftbound_decks where name = 'public'), true);
+    perform set_config('rls.servers_deck', (select id::text from public.riftbound_decks where name = 'servers-shared'), true);
     perform set_config('rls.other_key', (select key::text from public.monthly_recaps where guild_id = 'rls-other'), true);
 end $$;
 
@@ -145,6 +149,11 @@ begin
         raise exception 'anon reads a deck, even a public one';
     end if;
     if exists (select from public.riftbound_deck_opens) then raise exception 'anon reads an opened deck'; end if;
+    -- Logged-out deck pages (#175): a teaser of a public deck, of no other.
+    if not exists (select from public.public_deck_teaser(current_setting('rls.public_deck')::uuid))
+        or exists (select from public.public_deck_teaser(current_setting('rls.servers_deck')::uuid)) then
+        raise exception 'public_deck_teaser() misses a public deck or teases another';
+    end if;
     if exists (select from public.riftbound_deck_versions) then raise exception 'anon reads a deck version'; end if;
     if exists (select from public.riftbound_wishlist) or exists (select from public.profile_wishlist('rls-rls-mine')) then
         raise exception 'anon reads a wishlist';

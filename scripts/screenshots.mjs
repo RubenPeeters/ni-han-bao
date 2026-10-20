@@ -158,7 +158,11 @@ async function main() {
       const shots = DOCS
         ? DOCS_SHOTS.map(({ name, route, signedOut }) => ({ route, name, cookies: signedOut ? [] : cookies }))
         : [...routesFrom(), "/not-found"].map((route) => ({ route, name: slug(route), cookies }));
-      if (cookies.length && !DOCS) shots.push({ route: "/", name: "home-signed-out", cookies: [] });
+      if (cookies.length && !DOCS) {
+        shots.push({ route: "/", name: "home-signed-out", cookies: [] });
+        // A public deck's teaser (#175).
+        shots.push({ route: `/decks/${DEMO.deckId}`, name: "deck-signed-out", cookies: [] });
+      }
       const dupes = shots.map((s) => s.name).filter((n, i, all) => all.indexOf(n) !== i);
       if (dupes.length) throw new Error(`two pages would share a screenshot name: ${dupes.join(", ")}`);
       for (const { route, name, cookies } of shots) {

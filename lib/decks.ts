@@ -107,6 +107,32 @@ export function addCard(deck: DeckCards, card: RuleCard, quantity: number, headi
   };
 }
 
+/**
+ * The deck as a list parseDeckList() reads back: "3 Card Name" lines under headings, a card once
+ * per section. The Chosen Champion's main deck copies go under "Champion:", which makes it the
+ * Chosen Champion again. Pinned printings are not kept: a list names cards.
+ */
+export function deckText(deck: DeckCards, cards: Map<string, Pick<RuleCard, "name" | "tags">>): string {
+  const name = (id: string) => cards.get(id)?.name ?? id;
+  const count = (section: Section, id: string) => deck.entries.filter((e) => e.section === section && e.card_id === id).reduce((n, e) => n + e.quantity, 0);
+  const legend = deck.legend_id && cards.get(deck.legend_id);
+  const blocks: [string, string[]][] = [
+    // A legend by champion and epithet, as resolveCard() takes it: the epithet alone may be another card's name.
+    ["Legend", deck.legend_id ? [`1 ${legend ? [...legend.tags.slice(0, 1), legend.name].join(", ") : deck.legend_id}`] : []],
+    ["Champion", deck.champion_id ? [`${count("main", deck.champion_id) || 1} ${name(deck.champion_id)}`] : []],
+    ...SECTIONS.map(({ value, label }): [string, string[]] => [
+      label,
+      [...new Set(deck.entries.filter((e) => e.section === value && !(value === "main" && e.card_id === deck.champion_id)).map((e) => e.card_id))]
+        .toSorted((a, b) => name(a).localeCompare(name(b)))
+        .map((id) => `${count(value, id)} ${name(id)}`),
+    ]),
+  ];
+  return blocks
+    .filter(([, lines]) => lines.length)
+    .map(([heading, lines]) => [`${heading}:`, ...lines].join("\n"))
+    .join("\n\n");
+}
+
 /** What the rules need of a card. */
 export interface RuleCard {
   id: string;
@@ -154,53 +180,6 @@ export function deckWarnings(
   }
   const placeholder = [legend, champion, ...used].some((c) => c?.placeholder);
   return { warnings, placeholder };
-}
-
-/** Copies the viewer owns, as riftbound_collection counts them (a lent copy is still theirs). */
-export interface OwnedCopy {
-  card_id: string;
-  printing_id: string;
-  language: string;
-  quantity: number;
-}
-
-export interface Owning extends Omit<Entry, "section"> {
-  section: Section | "legend";
-  owned: number;
-}
-
-/**
- * What the viewer owns of each card the deck needs (its Legend first, then the entries) and how
- * many are missing in all. A copy counts once across entries: pinned entries take their printing
- * first, unpinned ones any printing left. With other languages off, only the deck's language counts.
- */
-export function missingCards(
-  deck: { legend_id: string | null; language: string; allow_other_languages: boolean },
-  entries: Entry[],
-  owned: OwnedCopy[],
-): { rows: Owning[]; missing: number } {
-  const left = new Map<string, number>();
-  const byCard = new Map<string, string[]>();
-  for (const o of owned) {
-    if (!deck.allow_other_languages && o.language !== deck.language) continue;
-    if (!left.has(o.printing_id)) byCard.set(o.card_id, [...(byCard.get(o.card_id) ?? []), o.printing_id]);
-    left.set(o.printing_id, (left.get(o.printing_id) ?? 0) + o.quantity);
-  }
-  const take = (printing: string, want: number) => {
-    const n = Math.min(want, left.get(printing) ?? 0);
-    left.set(printing, (left.get(printing) ?? 0) - n);
-    return n;
-  };
-  const needs: Omit<Owning, "owned">[] = [
-    ...(deck.legend_id ? [{ section: "legend" as const, card_id: deck.legend_id, printing_id: null, quantity: 1 }] : []),
-    ...entries,
-  ];
-  const got = needs.map((n) => (n.printing_id ? take(n.printing_id, n.quantity) : 0));
-  needs.forEach((n, i) => {
-    if (!n.printing_id) got[i] = (byCard.get(n.card_id) ?? []).reduce((sum, p) => sum + take(p, n.quantity - sum), 0);
-  });
-  const rows = needs.map((n, i) => ({ ...n, owned: got[i] }));
-  return { rows, missing: rows.reduce((sum, r) => sum + r.quantity - r.owned, 0) };
 }
 
 /** Every row of a query, `size` at a time: PostgREST caps a response at 1000 rows. `page` must order deterministically. */
