@@ -81,6 +81,34 @@ export const plainText = (html: string) =>
     .replace(/&amp;/g, "&")
     .trim();
 
+/** An icon token in Riot's card text (#218), ":rb_might:" read as "might", and what it says in words. */
+export interface CardToken {
+  kind: "might" | "rune" | "energy" | "other";
+  // The domain id for a rune ("fury"), the number for energy.
+  value: string;
+  label: string;
+}
+
+const TOKEN = /:rb_([a-z0-9_]+):/g;
+const words = (name: string) => name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+
+export function cardToken(name: string): CardToken {
+  if (name === "might") return { kind: "might", value: name, label: "Might" };
+  const rune = /^rune_([a-z]+)$/.exec(name);
+  if (rune) return { kind: "rune", value: rune[1], label: `${words(rune[1])} rune` };
+  const energy = /^energy_(\d+)$/.exec(name);
+  if (energy) return { kind: "energy", value: energy[1], label: `${energy[1]} energy` };
+  return { kind: "other", value: name, label: words(name) };
+}
+
+/** Text with its tokens apart, for rendering them: "+1 :rb_might:" is ["+1 ", might, ""]. */
+export const textParts = (text: string): (string | CardToken)[] =>
+  text.split(TOKEN).map((part, i) => (i % 2 ? cardToken(part) : part));
+
+/** Tokens as words, where no icon can show (Discord): ":rb_energy_1::rb_rune_fury:" is "1 energy Fury rune". */
+export const tokenWords = (text: string) =>
+  text.replace(/(:rb_[a-z0-9_]+:)(?=:rb_)/g, "$1 ").replace(TOKEN, (_, name: string) => cardToken(name).label);
+
 /** A card image at `width` pixels, from Riot's CDN: the originals are about 800 kB. Referenced, never rehosted. */
 export function cardImageUrl(url: string, width: number): string {
   // Only Riot's CDN takes these parameters.

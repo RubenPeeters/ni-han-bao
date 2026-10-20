@@ -104,7 +104,7 @@
         {
           "title": "Nine-Tailed Fox",
           "url": "https://ni-han-bao.example/cards/nine-tailed-fox",
-          "description": "When an enemy unit attacks a battlefield you control, give it -1 :rb_might: this turn, to a minimum of 1 :rb_might:.",
+          "description": "When an enemy unit attacks a battlefield you control, give it -1 Might this turn, to a minimum of 1 Might.",
           "fields": [
             {
               "name": "Type",

@@ -343,6 +343,11 @@ as $$
         collector_code = excluded.collector_code, collector_number = excluded.collector_number,
         rarity = excluded.rarity, illustrator = excluded.illustrator, image_url = excluded.image_url,
         rules_text = excluded.rules_text, effect_text = excluded.effect_text, updated_at = now();
+    insert into public.riftbound_icons (facet, value, label, icon_url, color_primary, color_secondary)
+        select facet, value, label, icon_url, color_primary, color_secondary
+        from jsonb_populate_recordset(null::public.riftbound_icons, j -> 'icons')
+    on conflict (facet, value) do update set label = excluded.label, icon_url = excluded.icon_url,
+        color_primary = excluded.color_primary, color_secondary = excluded.color_secondary, updated_at = now();
 $$;
 
 revoke execute on function private.load_riftbound_catalogue(jsonb) from public;
@@ -2865,6 +2870,30 @@ select private.load_riftbound_catalogue($catalogue$
     {"id":"ven-sp5-006","card_id":"ezreal-prodigy","set_code":"VEN","collector_code":"VEN-SP5/006","collector_number":5,"rarity":"Showcase","illustrator":"Wild Rift Splash Team","image_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/fd4beecca19d4e84ead0852acce83d4c34ac1b4c-744x1039.png?accountingTag=RB","rules_text":"<p>When you play me, discard 1, then draw 2.<br />Optional additional costs you pay cost :rb_energy_1: or :rb_rune_rainbow: less.</p>","effect_text":null},
     {"id":"ven-sp6-006","card_id":"lux-crownguard","set_code":"VEN","collector_code":"VEN-SP6/006","collector_number":6,"rarity":"Showcase","illustrator":"Envar Studio","image_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/b9778ec229e052268ea66213ca2dbf60612b2862-744x1039.png?accountingTag=RB","rules_text":"<p>:rb_exhaust:: [Reaction] — [Add] :rb_energy_2:. Spend this Energy only to play spells.</p>","effect_text":null},
     {"id":"ven-t04","card_id":"recruit","set_code":"VEN","collector_code":"VEN-T04","collector_number":4,"rarity":"Common","illustrator":"Six More Vodka","image_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/08b9ccf225fc2ae9eb9b5668e5361b09789210ee-744x1039.png?accountingTag=RB","rules_text":null,"effect_text":null}
+  ],
+  "icons": [
+    {"facet":"domain","value":"body","label":"Body","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/7a5533034de5870808347bc4b296f0029bdd8eea-64x64.png?accountingTag=RB","color_primary":"#221A11","color_secondary":"#F9EADC"},
+    {"facet":"domain","value":"calm","label":"Calm","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/b9ef2f5b74841ad11f3629aa381a76ac0187d007-64x64.png?accountingTag=RB","color_primary":"#152311","color_secondary":"#E0FFD6"},
+    {"facet":"domain","value":"chaos","label":"Chaos","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/597ddb82be59e87b467c52bb10204f02c2005d06-64x64.png?accountingTag=RB","color_primary":"#100B16","color_secondary":"#EDD6FF"},
+    {"facet":"domain","value":"fury","label":"Fury","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/5aeb4bfd203b5d265902f65aa5afae7da1682eaa-64x64.png?accountingTag=RB","color_primary":"#1A0D0E","color_secondary":"#F9DCDE"},
+    {"facet":"domain","value":"mind","label":"Mind","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/17ab95a6bd052085b6803d846a287f625f347288-64x64.png?accountingTag=RB","color_primary":"#0C1418","color_secondary":"#D6F0FF"},
+    {"facet":"domain","value":"order","label":"Order","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/8bb1b193a8e1adc26ca28e1a21da8d1e2f5d2f72-64x64.png?accountingTag=RB","color_primary":"#14120A","color_secondary":"#FFF7D6"},
+    {"facet":"glyph","value":"illustrator","label":"Artist","icon_url":"https://assetcdn.rgpub.io/public/live/riot-shared/player-experiences/riot-glyphs/rb/latest/artist.svg","color_primary":null,"color_secondary":null},
+    {"facet":"glyph","value":"might","label":"Might","icon_url":"https://assetcdn.rgpub.io/public/live/riot-shared/player-experiences/riot-glyphs/rb/latest/might.svg","color_primary":null,"color_secondary":null},
+    {"facet":"glyph","value":"mightBonus","label":"Might Bonus","icon_url":"https://assetcdn.rgpub.io/public/live/riot-shared/player-experiences/riot-glyphs/rb/latest/might.svg","color_primary":null,"color_secondary":null},
+    {"facet":"glyph","value":"power","label":"Power","icon_url":"https://assetcdn.rgpub.io/public/live/riot-shared/player-experiences/riot-glyphs/rb/latest/card_type_rune.svg","color_primary":null,"color_secondary":null},
+    {"facet":"rarity","value":"common","label":"Common","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/a088ae851d94b5c34aa4900e8ccb4cc103144dce-354x354.png?accountingTag=RB","color_primary":"#A4B8AA","color_secondary":"#293333"},
+    {"facet":"rarity","value":"epic","label":"Epic","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/5e9799d87d0f8baa55f6d9bddb9750669a0f485b-455x419.png?accountingTag=RB","color_primary":"#B8794C","color_secondary":"#332F29"},
+    {"facet":"rarity","value":"rare","label":"Rare","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/d90078e1ec2ef7cbcbba2be86da1b192c389581a-429x425.png?accountingTag=RB","color_primary":"#B881A9","color_secondary":"#332932"},
+    {"facet":"rarity","value":"showcase","label":"Showcase","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/a0e92b9edf3291fa62c9b35ffd6363de0d7947c0-376x426.png?accountingTag=RB","color_primary":"#B89D3B","color_secondary":"#333229"},
+    {"facet":"rarity","value":"uncommon","label":"Uncommon","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/808205a0f070e479107a7655e622fe15a356275b-480x410.png?accountingTag=RB","color_primary":"#41B4B8","color_secondary":"#293331"},
+    {"facet":"supertype","value":"champion","label":"Champion","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/c56f1df327f53562a56b493d3d38c3cee5780c5a-64x64.png?accountingTag=RB","color_primary":null,"color_secondary":null},
+    {"facet":"type","value":"battlefield","label":"Battlefield","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/1f37eb1bed2605bdaab8270a9dc4396cad746522-64x64.png?accountingTag=RB","color_primary":null,"color_secondary":null},
+    {"facet":"type","value":"gear","label":"Gear","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/ee2664a6dfe767b7e8b4b08ed04611e019d2c166-64x64.png?accountingTag=RB","color_primary":null,"color_secondary":null},
+    {"facet":"type","value":"legend","label":"Legend","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/59e98d14f83125c88880af1d61213e3aef941370-64x64.png?accountingTag=RB","color_primary":null,"color_secondary":null},
+    {"facet":"type","value":"rune","label":"Rune","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/fa3d8362379b722a5025995077a7fbd1b4a6ba0e-24x24.png?accountingTag=RB","color_primary":null,"color_secondary":null},
+    {"facet":"type","value":"spell","label":"Spell","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/73c26354435212281d3f1cefe7cdbd7c803fe18f-64x64.png?accountingTag=RB","color_primary":null,"color_secondary":null},
+    {"facet":"type","value":"unit","label":"Unit","icon_url":"https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/cb0caf49361546ece0c25d65b7fbf57c0eee57f0-64x64.png?accountingTag=RB","color_primary":null,"color_secondary":null}
   ]
 }
 $catalogue$::jsonb);

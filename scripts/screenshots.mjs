@@ -174,6 +174,21 @@ async function main() {
             await ctx.addInitScript((t) => localStorage.setItem("theme", t), theme);
             const page = await ctx.newPage();
             await page.goto(base + route, { waitUntil: "networkidle", timeout: 30_000 });
+            // A full-page shot never scrolls, so lazy images below the first screen would stay empty frames.
+            await page.evaluate(() =>
+              Promise.all(
+                [...document.images].map((img) => {
+                  img.loading = "eager";
+                  return img.complete
+                    ? null
+                    : new Promise((done) => {
+                        img.addEventListener("load", done, { once: true });
+                        img.addEventListener("error", done, { once: true });
+                        setTimeout(done, 10_000);
+                      });
+                }),
+              ),
+            );
             if (A11Y) {
               await page.addScriptTag({ path: AXE });
               const found = blocking(await page.evaluate(() => window.axe.run().then((r) => r.violations)));

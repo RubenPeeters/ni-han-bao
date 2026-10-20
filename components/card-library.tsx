@@ -1,6 +1,7 @@
 import { AddToDeck, type MyDeck } from "@/components/add-to-deck";
-import { plainText } from "@/bot/src/card-match";
-import { CardGrid, CardImage, type LibraryCard } from "@/components/card-grid";
+import { CardGrid, type LibraryCard } from "@/components/card-grid";
+import { CardThumb } from "@/components/card-thumb";
+import { DomainIcon, RarityIcon, RulesText, SupertypeIcon, TypeIcon, type RiftboundIcon } from "@/components/riftbound-icons";
 import { LogInPrompt } from "@/components/server-picker";
 import { EmptyState, ErrorState, MemberRankRow, RankList, StatCard } from "@/components/stat-ui";
 import { languageName, type Language, type OwnedRow } from "@/lib/collection";
@@ -9,6 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { ReactNode } from "react";
 
 interface Printing {
   id: string;
@@ -60,6 +62,12 @@ async function ownedRows(supabase: Awaited<ReturnType<typeof createClient>>) {
   }
 }
 
+/** Riot's icons. Decoration: a failed read, or none yet, shows names instead. */
+async function riftboundIcons(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const { data } = await supabase.from("riftbound_icons").select("facet, value, label, icon_url").returns<RiftboundIcon[]>();
+  return data ?? [];
+}
+
 /** The visitor's own decks, for Add to deck (RLS also returns others' visible ones). */
 async function myDecks(supabase: Awaited<ReturnType<typeof createClient>>, me: string) {
   return supabase.from("riftbound_decks").select("id, name").eq("user_id", me).order("name").returns<MyDeck[]>();
@@ -73,10 +81,11 @@ export async function CardLibrary({ owned: ownedOnly = false }: { owned?: boolea
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims) return <LogInPrompt text={LOG_IN} />;
-  const [{ data, error }, me, owned] = await Promise.all([
+  const [{ data, error }, me, owned, icons] = await Promise.all([
     allPages((from, to) => supabase.from("riftbound_cards").select("*, printings:riftbound_printings(*)").order("id").range(from, to)),
     supabase.rpc("current_discord_id"),
     ownedRows(supabase),
+    riftboundIcons(supabase),
   ]);
   if (error || me.error || owned.error) return <ErrorState title="Could not load the cards">Try again in a minute.</ErrorState>;
   // Logged in, but not with Discord: no collection to edit.
@@ -116,6 +125,7 @@ export async function CardLibrary({ owned: ownedOnly = false }: { owned?: boolea
   return (
     <CardGrid
       cards={library}
+      icons={icons}
       mine={{
         userId: me.data as string,
         owned: owned.data,
@@ -134,10 +144,11 @@ export async function CardDetail({ id }: { id: string }) {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims) return <LogInPrompt text={LOG_IN} />;
-  const [{ data, error }, lenders, me] = await Promise.all([
+  const [{ data, error }, lenders, me, icons] = await Promise.all([
     supabase.from("riftbound_cards").select("*, printings:riftbound_printings(*)").eq("id", id).maybeSingle<Card>(),
     supabase.rpc("card_lenders", { p_card: id }),
     supabase.rpc("current_discord_id"),
+    riftboundIcons(supabase),
   ]);
   // Like Who has it?, a failed lookup drops Add to deck, not the card.
   const decks = me.data ? await myDecks(supabase, me.data as string) : null;
@@ -145,13 +156,24 @@ export async function CardDetail({ id }: { id: string }) {
   if (!data) notFound();
   const printings = data.printings.toSorted(byNumber);
   const dash = (n: number | null) => (n === null ? "-" : String(n));
-  const stats = [
-    ["Type", [...data.supertypes, data.type].join(" ")],
+  const rarities = [...new Set(printings.flatMap((p) => (p.rarity ? [p.rarity] : [])))];
+  const listed = (items: ReactNode[]) =>
+    items.length ? <span className="flex flex-wrap items-center gap-x-3 gap-y-1">{items}</span> : "-";
+  const stats: [string, ReactNode][] = [
+    [
+      "Type",
+      listed([
+        ...data.supertypes.map((s) => <SupertypeIcon key={s} icons={icons} supertype={s} withText />),
+        ...(data.type ? [<TypeIcon key="type" icons={icons} type={data.type} withText />] : []),
+      ]),
+    ],
     ["Cost", dash(data.energy)],
     ["Might", dash(data.might)],
-    ["Domains", data.domains.join(", ") || "-"],
+    ["Domains", listed(data.domains.map((d) => <DomainIcon key={d} icons={icons} domain={d} withText />))],
+    ["Rarity", listed(rarities.map((r) => <RarityIcon key={r} icons={icons} rarity={r} withText />))],
     ["Tags", data.tags.join(", ") || "-"],
   ];
+  const landscape = data.type === "Battlefield";
   return (
     <>
       <Link
@@ -163,13 +185,13 @@ export async function CardDetail({ id }: { id: string }) {
       </Link>
       <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
         <div className="mx-auto w-full max-w-xs shrink-0 sm:mx-0 sm:w-64">
-          <CardImage url={printings.find((p) => p.image_url)?.image_url ?? null} eager />
+          <CardThumb url={printings.find((p) => p.image_url)?.image_url ?? null} name={data.name} landscape={landscape} eager />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="flex flex-col gap-2">
             <h1 className="break-words text-4xl font-semibold">{data.name}</h1>
           </div>
-          {data.rules_text && <p className="whitespace-pre-line text-muted-foreground">{plainText(data.rules_text)}</p>}
+          {data.rules_text && <RulesText html={data.rules_text} icons={icons} className="text-muted-foreground" />}
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
             {stats.map(([label, value]) => (
               <div key={label} className="contents">
@@ -188,9 +210,12 @@ export async function CardDetail({ id }: { id: string }) {
         <ul className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {printings.map((p) => (
             <li key={p.id} className="flex min-w-0 flex-col gap-2">
-              <CardImage url={p.image_url} />
+              <CardThumb url={p.image_url} name={data.name} landscape={landscape} />
               <span className="flex min-w-0 flex-col gap-1">
-                <span className="truncate text-sm font-medium">{p.collector_code}</span>
+                <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
+                  {p.rarity && <RarityIcon icons={icons} rarity={p.rarity} />}
+                  <span className="truncate">{p.collector_code}</span>
+                </span>
                 <span className="truncate text-xs text-muted-foreground">
                   {[p.set_code, p.rarity, p.illustrator].filter(Boolean).join(" · ")}
                 </span>

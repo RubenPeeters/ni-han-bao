@@ -18,10 +18,22 @@ export const SET_ORDER = ["OGN", "OGS", "SFD", "UNL", "VEN", "RAD"];
 export type FeedCard = Omit<Card, "type"> & { type: string | null };
 // The official text as the feed gives it: HTML with icon tokens such as ":rb_energy_1:".
 export type FeedPrinting = Printing & { rules_text: string | null; effect_text: string | null };
+// Riot's official icon of one facet value (#218), referenced on Riot's CDN, never rehosted: facet
+// "type", "supertype", "rarity" or "domain" with the feed's value id ("fury"), or "glyph" with
+// the feed field whose values all share one glyph ("might", "power", "illustrator").
+export interface FeedIcon {
+  facet: string;
+  value: string;
+  label: string;
+  icon_url: string;
+  color_primary: string | null;
+  color_secondary: string | null;
+}
 
 export interface FeedCatalogue {
   cards: FeedCard[];
   printings: FeedPrinting[];
+  icons: FeedIcon[];
   // Card ids with an empty type in the feed.
   untyped: string[];
   // Cards whose printings differ in rules text (errata, templating), printing ids per text.
@@ -72,6 +84,10 @@ const list = (v: unknown, code: string, what: string) => (Array.isArray(v) ? v :
 const labels = (v: unknown, code: string, what: string) =>
   list(v, code, what).map((x) => str(obj(x, code, what).label, code, `${what} label`));
 const optional = <T>(v: unknown, read: (v: unknown) => T): T | null => (v === undefined ? null : read(v));
+// Icons only from Riot's own CDNs: nothing from another source.
+const RIOT_CDN = /^https:\/\/(cmsassets|assetcdn)\.rgpub\.io\//;
+const hex = (v: unknown, code: string, what: string) =>
+  v === undefined ? null : typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? v : fail(code, what);
 
 /** "Ahri Inquisitive" -> "ahri-inquisitive", "Kai'Sa" -> "kaisa". */
 export const slug = (text: string) =>
@@ -87,6 +103,7 @@ const comparable = (html: string | null) =>
 interface Parsed {
   card: FeedCard;
   printing: FeedPrinting;
+  icons: FeedIcon[];
   rank: number;
 }
 
@@ -102,11 +119,38 @@ function parse(raw: unknown): Parsed {
     const n = obj(obj(v, code, what).value, code, what).id;
     return typeof n === "number" && Number.isInteger(n) && n >= 0 ? n : fail(code, what);
   };
+  const icons: FeedIcon[] = [];
+  const icon = (facet: string, value: string, label: string, v: unknown) => {
+    if (v === undefined) return;
+    const i = obj(v, code, `${facet} icon`);
+    const url = str(i.url, code, `${facet} icon url`);
+    if (!RIOT_CDN.test(url)) fail(code, `${facet} icon url ${url}`);
+    const colors = i.colors === undefined ? {} : obj(i.colors, code, `${facet} icon colors`);
+    icons.push({
+      facet, value, label, icon_url: url,
+      color_primary: hex(colors.primary, code, `${facet} icon colors`),
+      color_secondary: hex(colors.secondary, code, `${facet} icon colors`),
+    });
+  };
+  // A faceted value's label, its icon noted.
+  const facet = (v: unknown, name: string) => {
+    const e = obj(v, code, name);
+    const label = str(e.label, code, `${name} label`);
+    icon(name, str(e.id, code, `${name} id`), label, e.icon);
+    return label;
+  };
+  const facets = (v: unknown, name: string) => list(v, code, name).map((x) => facet(x, name));
+  for (const field of ["might", "mightBonus", "power", "illustrator"]) {
+    if (r[field] === undefined) continue;
+    const f = obj(r[field], code, field);
+    for (const x of f.values === undefined ? [f.value] : list(f.values, code, field))
+      icon("glyph", field, str(f.label, code, `${field} label`), obj(x, code, field).icon);
+  }
   const set = str(obj(obj(r.set, code, "set").value, code, "set").id, code, "set id");
   const rank = SET_ORDER.indexOf(set);
   if (rank < 0) throw new Error(`feed card ${code}: set ${set} is not in SET_ORDER, add it with its release order`);
   const cardType = obj(r.cardType, code, "cardType");
-  const types = labels(cardType.type, code, "type");
+  const types = facets(cardType.type, "type");
   if (types.length > 1) fail(code, `types ${types.join(", ")}`);
   const name = str(r.name, code, "name");
   const subtitle = optional(r.subtitle, (v) => str(v, code, "subtitle"));
@@ -118,8 +162,8 @@ function parse(raw: unknown): Parsed {
     id: slug(subtitle ? `${name} ${subtitle}` : name),
     name: subtitle ? `${name}, ${subtitle}` : name,
     type: types[0] ?? null,
-    supertypes: optional(cardType.superType, (v) => labels(v, code, "superType")) ?? [],
-    domains: labels(obj(r.domain, code, "domain").values, code, "domain"),
+    supertypes: optional(cardType.superType, (v) => facets(v, "supertype")) ?? [],
+    domains: facets(obj(r.domain, code, "domain").values, "domain"),
     energy: optional(r.energy, (v) => value(v, "energy")),
     might: optional(r.might, (v) => value(v, "might")),
     tags: optional(r.tags, (v) => list(obj(v, code, "tags").tags, code, "tags").map((t) => str(t, code, "tag"))) ?? [],
@@ -132,19 +176,28 @@ function parse(raw: unknown): Parsed {
     set_code: set,
     collector_code: code,
     collector_number: number,
-    rarity: str(obj(obj(r.rarity, code, "rarity").value, code, "rarity").label, code, "rarity label"),
+    rarity: facet(obj(r.rarity, code, "rarity").value, "rarity"),
     illustrator: illustrators.length ? illustrators.join(", ") : null,
     image_url: str(obj(r.cardImage, code, "cardImage").url, code, "image url"),
     rules_text: rulesText,
     effect_text: optional(r.effect, (v) => html(v, "effect")),
   };
-  return { card, printing, rank };
+  return { card, printing, icons, rank };
 }
 
 /** The raw feed cards to rows of riftbound_cards and riftbound_printings, sorted by id. */
 export function transformFeed(items: unknown[]): FeedCatalogue {
   const bySlug = new Map<string, Parsed[]>();
-  for (const p of items.map(parse)) bySlug.set(p.card.id, [...(bySlug.get(p.card.id) ?? []), p]);
+  const icons = new Map<string, FeedIcon>();
+  for (const p of items.map(parse)) {
+    bySlug.set(p.card.id, [...(bySlug.get(p.card.id) ?? []), p]);
+    for (const i of p.icons) {
+      const key = `${i.facet}:${i.value}`;
+      const was = icons.get(key);
+      if (was && JSON.stringify(was) !== JSON.stringify(i)) throw new Error(`icon ${key} differs between cards`);
+      icons.set(key, i);
+    }
+  }
 
   const cards: FeedCard[] = [];
   const printings: FeedPrinting[] = [];
@@ -167,10 +220,14 @@ export function transformFeed(items: unknown[]): FeedCatalogue {
   printings.sort((a, b) => (a.id < b.id ? -1 : 1));
   const repeated = printings.filter((p, i) => i > 0 && printings[i - 1].id === p.id).map((p) => p.id);
   if (repeated.length) throw new Error(`the feed repeats printing ids: ${repeated.join(", ")}`);
-  return { cards, printings, untyped: cards.filter((c) => c.type === null).map((c) => c.id), textDifferences };
+  return {
+    cards,
+    printings,
+    icons: [...icons.values()].sort((a, b) => (a.facet < b.facet ? -1 : a.facet > b.facet ? 1 : a.value < b.value ? -1 : 1)),
+    untyped: cards.filter((c) => c.type === null).map((c) => c.id), textDifferences };
 }
 
-export const cardsJson = ({ cards, printings }: FeedCatalogue) => catalogueJson({ cards, printings });
+export const cardsJson = ({ cards, printings, icons }: FeedCatalogue) => catalogueJson({ cards, printings, icons });
 
 export function manifest(catalogue: FeedCatalogue, json: string, source: { url: string; buildId: string; fetchedAt: Date }) {
   const sets: Record<string, number> = Object.fromEntries(SET_ORDER.map((s) => [s, 0]));

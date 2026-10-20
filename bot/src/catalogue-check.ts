@@ -1,11 +1,12 @@
 // The daily check of Riot's card feed (#204): what differs from the catalogue in the database,
 // and the DMs that ask the bot's owner to accept it.
 import { createHash } from "node:crypto";
-import { cardsJson, SET_ORDER, type FeedCard, type FeedCatalogue, type FeedPrinting } from "./riftbound-feed.js";
+import { cardsJson, SET_ORDER, type FeedCard, type FeedCatalogue, type FeedIcon, type FeedPrinting } from "./riftbound-feed.js";
 
 export const CARD_COLUMNS = "id, name, type, supertypes, domains, energy, might, tags, rules_text, placeholder";
 export const PRINTING_COLUMNS =
   "id, card_id, set_code, collector_code, collector_number, rarity, illustrator, image_url, rules_text, effect_text";
+export const ICON_COLUMNS = "facet, value, label, icon_url, color_primary, color_secondary";
 
 export interface SetDiff {
   set: string;
@@ -20,6 +21,8 @@ export interface CatalogueDiff {
   // The rows Accept upserts: new or different. Cards gone from the feed are never deleted.
   cards: FeedCard[];
   printings: FeedPrinting[];
+  // New or different icons (#218), upserted with the cards; none are deleted either.
+  icons: FeedIcon[];
 }
 
 /** The content of a feed, whatever its build id: the manifest's sha256 for the same feed. */
@@ -35,8 +38,8 @@ const same = <T extends object>(feed: T, stored: T | undefined) =>
  * counts under the set of its newest printing.
  */
 export function diffCatalogue(
-  feed: Pick<FeedCatalogue, "cards" | "printings">,
-  stored: { cards: FeedCard[]; printings: FeedPrinting[] },
+  feed: Pick<FeedCatalogue, "cards" | "printings" | "icons">,
+  stored: { cards: FeedCard[]; printings: FeedPrinting[]; icons: FeedIcon[] },
 ): CatalogueDiff {
   const storedCards = new Map(stored.cards.map((c) => [c.id, c]));
   const storedPrintings = new Map(stored.printings.map((p) => [p.id, p]));
@@ -53,6 +56,8 @@ export function diffCatalogue(
 
   const printings = feed.printings.filter((p) => !same(p, storedPrintings.get(p.id)));
   const cards = feed.cards.filter((c) => !same(c, storedCards.get(c.id)));
+  const storedIcons = new Map(stored.icons.map((i) => [`${i.facet}:${i.value}`, i]));
+  const icons = feed.icons.filter((i) => !same(i, storedIcons.get(`${i.facet}:${i.value}`)));
   const changed = new Set([...printings.map((p) => p.card_id), ...cards.map((c) => c.id)]);
   const feedIds = new Set(feed.cards.map((c) => c.id));
 
@@ -67,7 +72,7 @@ export function diffCatalogue(
   }
   const rank = (s: string) => (SET_ORDER.includes(s) ? SET_ORDER.indexOf(s) : SET_ORDER.length);
   const sets = [...bySet.values()].sort((a, b) => rank(a.set) - rank(b.set) || (a.set < b.set ? -1 : 1));
-  return { sets, cards, printings };
+  return { sets, cards, printings, icons };
 }
 
 export const proposalCounts = (diff: CatalogueDiff) => ({
@@ -87,6 +92,7 @@ export function proposalText(buildId: string, diff: CatalogueDiff): string {
       `**${s.set}**: ${some(s.added.length, "new", s.added)}, ${some(s.changed.length, "changed", s.changed)}, ` +
       some(s.gone.length, "no longer in the feed", s.gone),
   );
+  if (diff.icons.length) lines.push(some(diff.icons.length, "new or changed icons", diff.icons.map((i) => i.label)));
   // Discord's message limit; three names per list keep it far below in practice.
   return [
     `Riot's Riftbound card feed (build \`${buildId}\`) differs from the catalogue.`,

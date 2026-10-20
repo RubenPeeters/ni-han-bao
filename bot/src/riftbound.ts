@@ -2,14 +2,14 @@
 // cards. Rows have the columns of riftbound_cards and riftbound_printings.
 
 import { ApplicationCommandOptionType, type APIEmbed } from "discord.js";
-import { cardImageUrl, codeKey, normal, plainText, resolveCard, type Card, type Catalogue, type Printing, type Resolved } from "./card-match.js";
+import { cardImageUrl, codeKey, normal, plainText, resolveCard, tokenWords, type Card, type Catalogue, type Printing, type Resolved } from "./card-match.js";
 
 export { codeKey, resolveCard, type Card, type Catalogue, type Printing, type Resolved };
 
 /** One card per line, so a regenerated catalogue diffs by card. */
-export function catalogueJson({ cards, printings }: { cards: object[]; printings: object[] }): string {
+export function catalogueJson({ cards, printings, icons }: { cards: object[]; printings: object[]; icons: object[] }): string {
   const list = (rows: object[]) => rows.map((r) => `    ${JSON.stringify(r)}`).join(",\n");
-  return `{\n  "cards": [\n${list(cards)}\n  ],\n  "printings": [\n${list(printings)}\n  ]\n}\n`;
+  return `{\n  "cards": [\n${list(cards)}\n  ],\n  "printings": [\n${list(printings)}\n  ],\n  "icons": [\n${list(icons)}\n  ]\n}\n`;
 }
 
 export const CARD_COMMAND = {
@@ -61,7 +61,7 @@ export function cardEmbed(card: Card, printings: Printing[], siteUrl: string | n
   return {
     title: card.name,
     url: siteUrl ? `${siteUrl.replace(/\/$/, "")}/cards/${card.id}` : undefined,
-    description: card.rules_text ? plainText(card.rules_text) : undefined,
+    description: card.rules_text ? tokenWords(plainText(card.rules_text)) : undefined,
     fields: [
       { name: "Type", value: [...card.supertypes, card.type].join(" ").trim() || "-", inline: true },
       { name: "Cost", value: dash(card.energy), inline: true },
