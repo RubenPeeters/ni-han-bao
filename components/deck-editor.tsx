@@ -2,6 +2,9 @@
 
 import { codeKey, normal, resolveCard, type Card, type Catalogue } from "@/bot/src/card-match";
 import { missingCards, type OwnedCopy } from "@/bot/src/deck-match";
+import { CardThumb } from "@/components/card-thumb";
+import { CardFigure, cardImage, EnergyCurve, VisualDecklist } from "@/components/deck-cards";
+import { DomainIcon, EnergyBadge, TypeIcon, type RiftboundIcon } from "@/components/riftbound-icons";
 import { EmptyState, StatCard } from "@/components/stat-ui";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -67,6 +70,7 @@ export function DeckEditor({
   entries,
   catalogue,
   owned,
+  icons,
   mine,
   versions,
   lending,
@@ -77,6 +81,7 @@ export function DeckEditor({
   catalogue: Catalogue;
   /** The visitor's copies, for Missing cards (of their own collection, whoever owns the deck). */
   owned: OwnedCopy[];
+  icons: RiftboundIcon[];
   mine: boolean;
   /** Newest first, for History; null if they could not be loaded, absent to show no History. */
   versions?: VersionListed[] | null;
@@ -94,6 +99,9 @@ export function DeckEditor({
   const [pasted, setPasted] = useState("");
   const [problems, setProblems] = useState<Problem[]>([]);
   const [copied, setCopied] = useState("");
+  // Reading the deck comes first; a new, empty deck opens ready to fill.
+  const [editing, setEditing] = useState(mine && entries.length === 0);
+  const [view, setView] = useState<"cards" | "list">("cards");
   const cards = useMemo(() => new Map(catalogue.cards.map((c) => [c.id, c])), [catalogue]);
   const printings = useMemo(() => Map.groupBy(catalogue.printings, (p) => p.card_id), [catalogue]);
   const legends = useMemo(() => catalogue.cards.filter((c) => c.type === "Legend").toSorted((a, b) => legendLabel(a).localeCompare(legendLabel(b))), [catalogue]);
@@ -102,6 +110,7 @@ export function DeckEditor({
   const warnings = deckWarnings(settings, list, cards);
   const missing = missingCards(settings, list, owned);
   const codes = useMemo(() => new Map(catalogue.printings.map((p) => [p.id, p.collector_code])), [catalogue]);
+  const image = useMemo(() => cardImage(catalogue.printings), [catalogue]);
 
   // Leaving with unsaved changes asks first.
   useEffect(() => {
@@ -193,79 +202,99 @@ export function DeckEditor({
   };
 
   const champion = settings.champion_id ? cards.get(settings.champion_id) : undefined;
+  const byName = (a: Entry, b: Entry) => (cards.get(a.card_id)?.name ?? "").localeCompare(cards.get(b.card_id)?.name ?? "");
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
         <Link href="/decks" className="w-fit rounded-md text-sm text-muted-foreground hover:text-foreground">
           {mine ? "Your decks" : "Decks"}
         </Link>
-        <h1 className="break-words text-4xl font-semibold">{settings.name || "Untitled deck"}</h1>
-        <p className="text-muted-foreground">
-          {[legend ? legendLabel(legend) : "No Legend yet", champion && `Chosen Champion: ${champion.name}`, languageName(settings.language)]
-            .filter(Boolean)
-            .join(" · ")}
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button variant="secondary" className="h-11" onClick={copy}>
-            Copy as text
-          </Button>
-          <p aria-live="polite" className="text-xs text-muted-foreground">
-            {copied}
-          </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+          <div className="flex gap-3">
+            <CardFigure label="Legend" card={legend} image={image} />
+            <CardFigure label="Chosen Champion" card={champion} image={image} />
+          </div>
+          <div className="flex min-w-0 flex-col gap-2">
+            <h1 className="break-words text-4xl font-semibold">{settings.name || "Untitled deck"}</h1>
+            <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-muted-foreground">
+              {legend?.domains.map((d) => <DomainIcon key={d} icons={icons} domain={d} />)}
+              {[legend ? legendLabel(legend) : "No Legend yet", champion && `Chosen Champion: ${champion.name}`, languageName(settings.language)]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              {mine && (
+                <Button variant={editing ? "default" : "secondary"} className="h-11" aria-pressed={editing} onClick={() => setEditing(!editing)}>
+                  {editing ? "Done editing" : "Edit"}
+                </Button>
+              )}
+              <Button variant="secondary" className="h-11" onClick={copy}>
+                Copy as text
+              </Button>
+              <p aria-live="polite" className="text-xs text-muted-foreground">
+                {copied}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
       {children}
 
-      <StatCard
-        title="Rules check"
-        description="Warnings only: a deck is saved whatever they say"
-      >
-        {warnings.length === 0 ? (
-          <p className="text-sm">No rule with a source is broken.</p>
-        ) : (
-          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
-            {warnings.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-        )}
-      </StatCard>
+      {!editing && (
+        <StatCard
+          title="Decklist"
+          description={`${list.reduce((n, e) => n + e.quantity, 0)} cards`}
+          aside={
+            <div className="flex gap-1">
+              {(["cards", "list"] as const).map((v) => (
+                <Button key={v} variant={view === v ? "default" : "ghost"} size="sm" className="h-11" aria-pressed={view === v} onClick={() => setView(v)}>
+                  {v === "cards" ? "Cards" : "List"}
+                </Button>
+              ))}
+            </div>
+          }
+        >
+          {list.length === 0 ? (
+            <EmptyState>No cards yet.{mine && " Edit the deck to add some."}</EmptyState>
+          ) : (
+            <>
+              <EnergyCurve entries={list} cards={cards} />
+              {view === "cards" ? (
+                <VisualDecklist entries={list} cards={cards} image={image} icons={icons} />
+              ) : (
+                SECTIONS.map(({ value, label }) => {
+                  const rows = list.filter((e) => e.section === value);
+                  if (rows.length === 0) return null;
+                  return (
+                    <section key={value} className="flex flex-col gap-2">
+                      <h3 className="text-sm font-semibold">
+                        {label} <span className="font-normal tabular-nums text-muted-foreground">· {rows.reduce((n, e) => n + e.quantity, 0)}</span>
+                      </h3>
+                      <ul className="flex flex-col divide-y">
+                        {rows.toSorted(byName).map((e) => (
+                          <EntryRow
+                            key={`${e.card_id}|${e.printing_id}`}
+                            entry={e}
+                            card={cards.get(e.card_id)}
+                            printings={printings.get(e.card_id) ?? []}
+                            image={image(e.card_id, e.printing_id)}
+                            icons={icons}
+                            mine={false}
+                            onChange={() => {}}
+                          />
+                        ))}
+                      </ul>
+                    </section>
+                  );
+                })
+              )}
+            </>
+          )}
+        </StatCard>
+      )}
 
-      <StatCard
-        title="Missing cards"
-        description={`${missing.missing ? `${missing.missing} missing` : "Nothing missing"} against your collection${settings.allow_other_languages ? "" : `, ${languageName(settings.language)} copies only`}`}
-      >
-        {missing.rows.length === 0 ? (
-          <EmptyState>No cards yet.</EmptyState>
-        ) : (
-          <ul className="flex flex-col divide-y">
-            {missing.rows.map((r) => (
-              <li key={`${r.section}|${r.card_id}|${r.printing_id}`} className="flex items-center gap-3 py-2 text-sm first:pt-0 last:pb-0">
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate font-medium">{cards.get(r.card_id)?.name ?? r.card_id}</span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    {[
-                      r.section === "legend" ? "Legend" : SECTIONS.find((x) => x.value === r.section)?.label,
-                      r.printing_id && codes.get(r.printing_id),
-                      `you own ${r.owned} of ${r.quantity}`,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                </span>
-                <span className={`shrink-0 tabular-nums ${r.owned < r.quantity ? "font-medium" : "text-muted-foreground"}`}>
-                  {r.owned < r.quantity ? `${r.quantity - r.owned} missing` : "Complete"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </StatCard>
-
-      {lending}
-
-      {mine && (
+      {editing && (
         <StatCard title="Add cards" description="Search by name, champion or collector code">
           <Input
             type="search"
@@ -349,10 +378,9 @@ export function DeckEditor({
         </StatCard>
       )}
 
-      {SECTIONS.map(({ value, label }) => {
+      {editing && SECTIONS.map(({ value, label }) => {
         const rows = list.filter((e) => e.section === value);
         const count = rows.reduce((n, e) => n + e.quantity, 0);
-        if (!mine && rows.length === 0) return null;
         return (
           <StatCard key={value} title={label} description={`${count} ${count === 1 ? "card" : "cards"}`}>
             {rows.length === 0 ? (
@@ -360,14 +388,16 @@ export function DeckEditor({
             ) : (
               <ul className="flex flex-col divide-y">
                 {rows
-                  .toSorted((a, b) => (cards.get(a.card_id)?.name ?? "").localeCompare(cards.get(b.card_id)?.name ?? ""))
+                  .toSorted(byName)
                   .map((e) => (
                     <EntryRow
                       key={`${e.card_id}|${e.printing_id}`}
                       entry={e}
                       card={cards.get(e.card_id)}
                       printings={printings.get(e.card_id) ?? []}
-                      mine={mine}
+                      image={image(e.card_id, e.printing_id)}
+                      icons={icons}
+                      mine
                       onChange={(next) => {
                         setList(next(list));
                         setDirty(true);
@@ -380,35 +410,7 @@ export function DeckEditor({
         );
       })}
 
-      {!mine && settings.notes && (
-        <StatCard title="Notes" description="From the deck's owner">
-          <p className="whitespace-pre-line break-words text-sm">{settings.notes}</p>
-        </StatCard>
-      )}
-
-      {versions !== undefined && (
-        <StatCard title="History" description="Every save is a version: view one, compare it or restore it">
-          {versions === null ? (
-            <EmptyState>Could not load the history. Try again in a minute.</EmptyState>
-          ) : (
-            <ul className="flex flex-col divide-y">
-              {versions.map((v, i) => (
-                <li key={v.version}>
-                  <Link
-                    href={`/decks/${deck.id}/versions/${v.version}`}
-                    className="flex min-h-11 items-center justify-between gap-3 rounded-md py-2 text-sm hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <span className="font-medium">Version {v.version}</span>
-                    <span className="truncate text-xs text-muted-foreground">{[i === 0 && "Current", formatExact(new Date(v.saved_at))].filter(Boolean).join(" · ")}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </StatCard>
-      )}
-
-      {mine && (
+      {editing && (
         <StatCard title="Deck" description="Name, Legend, who sees it, its language and wishlist">
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-2 text-sm font-medium">
@@ -507,7 +509,86 @@ export function DeckEditor({
         </StatCard>
       )}
 
-      {mine && (
+      <StatCard
+        title="Rules check"
+        description="Warnings only: a deck is saved whatever they say"
+      >
+        {warnings.length === 0 ? (
+          <p className="text-sm">No rule with a source is broken.</p>
+        ) : (
+          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
+            {warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        )}
+      </StatCard>
+
+      <StatCard
+        title="Missing cards"
+        description={`${missing.missing ? `${missing.missing} missing` : "Nothing missing"} against your collection${settings.allow_other_languages ? "" : `, ${languageName(settings.language)} copies only`}`}
+      >
+        {missing.rows.length === 0 ? (
+          <EmptyState>No cards yet.</EmptyState>
+        ) : (
+          <ul className="flex flex-col divide-y">
+            {missing.rows.map((r) => (
+              <li key={`${r.section}|${r.card_id}|${r.printing_id}`} className="flex items-center gap-3 py-2 text-sm first:pt-0 last:pb-0">
+                <span className="w-8 shrink-0">
+                  <CardThumb url={image(r.card_id, r.printing_id)} name="" width={64} landscape={r.section === "battlefields"} />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate font-medium">{cards.get(r.card_id)?.name ?? r.card_id}</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {[
+                      r.section === "legend" ? "Legend" : SECTIONS.find((x) => x.value === r.section)?.label,
+                      r.printing_id && codes.get(r.printing_id),
+                      `you own ${r.owned} of ${r.quantity}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                </span>
+                <span className={`shrink-0 tabular-nums ${r.owned < r.quantity ? "font-medium" : "text-muted-foreground"}`}>
+                  {r.owned < r.quantity ? `${r.quantity - r.owned} missing` : "Complete"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </StatCard>
+
+      {lending}
+
+      {!mine && settings.notes && (
+        <StatCard title="Notes" description="From the deck's owner">
+          <p className="whitespace-pre-line break-words text-sm">{settings.notes}</p>
+        </StatCard>
+      )}
+
+      {versions !== undefined && (
+        <StatCard title="History" description="Every save is a version: view one, compare it or restore it">
+          {versions === null ? (
+            <EmptyState>Could not load the history. Try again in a minute.</EmptyState>
+          ) : (
+            <ul className="flex flex-col divide-y">
+              {versions.map((v, i) => (
+                <li key={v.version}>
+                  <Link
+                    href={`/decks/${deck.id}/versions/${v.version}`}
+                    className="flex min-h-11 items-center justify-between gap-3 rounded-md py-2 text-sm hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span className="font-medium">Version {v.version}</span>
+                    <span className="truncate text-xs text-muted-foreground">{[i === 0 && "Current", formatExact(new Date(v.saved_at))].filter(Boolean).join(" · ")}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </StatCard>
+      )}
+
+      {(editing || dirty) && (
         // In reach of a thumb wherever the page is scrolled to.
         <div className="sticky bottom-0 z-10 -mx-5 flex items-center justify-between gap-2 border-t bg-background/95 px-5 py-3 backdrop-blur">
           <p aria-live="polite" className="min-w-0 text-xs text-muted-foreground">
@@ -526,12 +607,16 @@ function EntryRow({
   entry,
   card,
   printings,
+  image,
+  icons,
   mine,
   onChange,
 }: {
   entry: Entry;
   card: Card | undefined;
   printings: Catalogue["printings"];
+  image: string | null;
+  icons: RiftboundIcon[];
   mine: boolean;
   onChange: (update: (list: Entry[]) => Entry[]) => void;
 }) {
@@ -540,10 +625,18 @@ function EntryRow({
   return (
     <li className="flex flex-col gap-2 py-2 first:pt-0 last:pb-0">
       <div className="flex items-center gap-2">
-        <Link href={`/cards/${entry.card_id}`} className="flex min-w-0 flex-1 flex-col rounded-md hover:underline">
-          <span className="truncate text-sm font-medium">{name}</span>
-          <span className="truncate text-xs text-muted-foreground">
-            {[card?.type, ...(card?.domains ?? []), pinned ? `Only ${pinned.collector_code}` : null].filter(Boolean).join(" · ")}
+        <Link href={`/cards/${entry.card_id}`} className="flex min-w-0 flex-1 items-center gap-3 rounded-md hover:underline">
+          <span className="w-9 shrink-0">
+            <CardThumb url={image} name="" width={72} landscape={card?.type === "Battlefield"} />
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="truncate text-sm font-medium">{name}</span>
+            <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+              {card?.type && <TypeIcon icons={icons} type={card.type} />}
+              {card?.energy != null && <EnergyBadge value={card.energy} />}
+              {card?.domains.map((d) => <DomainIcon key={d} icons={icons} domain={d} />)}
+              {pinned && <span className="truncate">Only {pinned.collector_code}</span>}
+            </span>
           </span>
         </Link>
         {mine ? (

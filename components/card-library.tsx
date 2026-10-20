@@ -63,7 +63,7 @@ async function ownedRows(supabase: Awaited<ReturnType<typeof createClient>>) {
 }
 
 /** Riot's icons. Decoration: a failed read, or none yet, shows names instead. */
-async function riftboundIcons(supabase: Awaited<ReturnType<typeof createClient>>) {
+export async function riftboundIcons(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data } = await supabase.from("riftbound_icons").select("facet, value, label, icon_url").returns<RiftboundIcon[]>();
   return data ?? [];
 }

@@ -231,6 +231,13 @@ begin
     -- Outside Annie's domains, for that warning.
     insert into public.riftbound_deck_cards (deck_id, section, card_id, quantity)
         values ('00000000-0000-4000-8000-0000000d0002', 'main', 'ahri-alluring', 2);
+    -- Runes and battlefields for the demo deck, so its page shows every section (#219).
+    insert into public.riftbound_deck_cards (deck_id, section, card_id, quantity)
+        values ('00000000-0000-4000-8000-0000000d0001', 'runes', 'calm-rune', 6),
+               ('00000000-0000-4000-8000-0000000d0001', 'runes', 'mind-rune', 6),
+               ('00000000-0000-4000-8000-0000000d0001', 'battlefields', 'abandoned-hall', 1),
+               ('00000000-0000-4000-8000-0000000d0001', 'battlefields', 'altar-to-unity', 1),
+               ('00000000-0000-4000-8000-0000000d0001', 'battlefields', 'aspirants-climb', 1);
     -- Bram's public deck, which Anna opened (#174): in her Which decks can I build?
     insert into public.riftbound_decks (id, user_id, name, legend_id, champion_id, visibility)
     values ('00000000-0000-4000-8000-0000000d0004', users[2], 'Bram''s Ahri tempo', 'nine-tailed-fox', 'ahri-alluring', 'public');
