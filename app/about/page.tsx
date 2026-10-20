@@ -163,7 +163,7 @@ export default function AboutPage() {
           ni han bao is a hobby project by Ruben. Questions, or a request to delete data?{" "}
           <a
             href={`${REPO}/issues`}
-            className="font-medium underline underline-offset-4 hover:text-primary"
+            className="font-medium underline underline-offset-4 hover:text-gold"
           >
             Open an issue on GitHub
           </a>

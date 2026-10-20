@@ -31,7 +31,7 @@ export default function TermsPage() {
           you agree to these terms. What the bot collects and who can see it is on{" "}
           <Link
             href="/about"
-            className="font-medium underline underline-offset-4 hover:text-primary"
+            className="font-medium underline underline-offset-4 hover:text-gold"
           >
             About &amp; privacy
           </Link>
@@ -68,7 +68,7 @@ export default function TermsPage() {
           These terms may change; the version on this page is the one that applies. Questions?{" "}
           <a
             href={`${REPO}/issues`}
-            className="font-medium underline underline-offset-4 hover:text-primary"
+            className="font-medium underline underline-offset-4 hover:text-gold"
           >
             Open an issue on GitHub
           </a>

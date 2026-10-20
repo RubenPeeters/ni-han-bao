@@ -1,4 +1,4 @@
-import { BACKGROUND, BORDER, CARD, FOREGROUND, MUTED, PRIMARY } from "@/lib/og";
+import { BACKGROUND, BORDER, CARD, FOREGROUND, GOLD, MUTED } from "@/lib/og";
 import { funFact, hourLabel, KEY_PATTERN, monthLabel, recapMonth, type RecapData } from "@/lib/recap";
 import { createClient } from "@/lib/supabase/server";
 import { hasEnvVars } from "@/lib/utils";
@@ -48,7 +48,7 @@ function recapImage(month: string, data: RecapData) {
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ fontSize: 28, color: MUTED, ...ellipsis }}>{data.server ?? "ni han bao"}</div>
-          <div style={{ fontSize: 64, color: PRIMARY }}>{`Monthly recap: ${monthLabel(month)}`}</div>
+          <div style={{ fontSize: 64, color: GOLD }}>{`Monthly recap: ${monthLabel(month)}`}</div>
         </div>
         <div style={{ flex: 1, display: "flex", gap: 24 }}>
           <div style={{ ...box, flex: 1 }}>
