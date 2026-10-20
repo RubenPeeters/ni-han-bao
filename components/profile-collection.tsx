@@ -1,7 +1,5 @@
-import { setLending } from "@/app/u/[userId]/actions";
-import { ProfileHeader, type Profile } from "@/components/profile-stats";
+import { ProfileHeader, SettingsLink, type Profile } from "@/components/profile-stats";
 import { EmptyState, ErrorState, RankList, RankRow, StatCard, StatGrid } from "@/components/stat-ui";
-import { Button } from "@/components/ui/button";
 import { languageName } from "@/lib/collection";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
@@ -15,11 +13,6 @@ interface Total {
   copies: number;
   printings: number;
 }
-
-const DEFAULTS = [
-  { value: "none", label: "Nothing until I mark cards", hint: "Set a count per card with To lend on the Cards page." },
-  { value: "all", label: "Everything I own", hint: "Per-card counts still override it." },
-];
 
 /** A profile's Collection tab; profile() and profile_collection() check can_see_profile(). */
 export async function ProfileCollection({ user }: { user: string }) {
@@ -53,7 +46,11 @@ export async function ProfileCollection({ user }: { user: string }) {
         profile={profile.data}
         subtitle={mine ? "Your Riftbound cards." : "Their Riftbound cards."}
       />
-      {mine && <LendingForm lends={lending?.data?.lends_cards ?? false} lendAll={lending?.data?.lend_all ?? false} />}
+      {mine && (
+        <SettingsLink href="/settings#riftbound">
+          {!lending?.data?.lends_cards ? "You do not lend cards." : lending.data.lend_all ? "You lend everything you own." : "You lend the cards you mark."}
+        </SettingsLink>
+      )}
       {rows.length === 0 ? (
         <EmptyState>
           {mine ? (
@@ -90,45 +87,5 @@ export async function ProfileCollection({ user }: { user: string }) {
         </StatGrid>
       )}
     </>
-  );
-}
-
-function LendingForm({ lends, lendAll }: { lends: boolean; lendAll: boolean }) {
-  return (
-    <form action={setLending} className="card flex flex-col gap-4">
-      <label className="flex items-start gap-3 text-sm">
-        <input type="checkbox" name="lends" defaultChecked={lends} className="mt-0.5 size-4 accent-primary" />
-        <span className="flex flex-col">
-          <span className="font-medium">I lend cards</span>
-          <span className="text-muted-foreground">
-            Members of your servers see your copies to lend under Who has it? on a card&apos;s page. Off: nobody does.
-          </span>
-        </span>
-      </label>
-      <fieldset className="flex flex-col gap-3">
-        <legend className="mb-3 text-sm font-medium">What I lend</legend>
-        {DEFAULTS.map((d) => (
-          <label key={d.value} className="flex items-start gap-3 text-sm">
-            <input
-              type="radio"
-              name="default"
-              value={d.value}
-              defaultChecked={(d.value === "all") === lendAll}
-              className="mt-0.5 size-4 accent-primary"
-            />
-            <span className="flex flex-col">
-              <span className="font-medium">{d.label}</span>
-              <span className="text-muted-foreground">{d.hint}</span>
-            </span>
-          </label>
-        ))}
-      </fieldset>
-      <p className="text-xs text-muted-foreground">
-        Also with /collection lending in Discord. A private profile is never listed.
-      </p>
-      <Button type="submit" size="sm" className="self-start">
-        Save
-      </Button>
-    </form>
   );
 }

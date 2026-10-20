@@ -129,6 +129,9 @@ export function AuthButton() {
         <DropdownMenuItem asChild>
           <Link href={`/u/${discordId(user)}`}>My profile</Link>
         </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/settings">Settings</Link>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Theme</DropdownMenuLabel>
         <ThemeRadioGroup />

@@ -1,13 +1,12 @@
-import { setVisibility } from "@/app/u/[userId]/actions";
 import { Emoji } from "@/components/emoji-stats";
 import { ProfileRanks, type Rank } from "@/components/lol-ranks";
 import { ProfileNav } from "@/components/site-nav";
 import { EmptyState, ErrorState, RankList, RankRow, StatCard } from "@/components/stat-ui";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { ReactNode } from "react";
 
 interface Server {
   guild_id: string;
@@ -35,7 +34,7 @@ interface Badges {
   longest_streak: number | null;
 }
 
-const VISIBILITIES = [
+export const VISIBILITIES = [
   { value: "private", label: "Private", hint: "Only you." },
   { value: "members", label: "Server members", hint: "People who share a server with you see the servers you share." },
   { value: "public", label: "Public", hint: "Anyone logged in sees your name; people who share a server with you also see your stats and badges there." },
@@ -118,7 +117,11 @@ export async function ProfileStats({ user }: { user: string }) {
           )}
         </ul>
       )}
-      {mine && <VisibilityForm current={visibility ?? "private"} />}
+      {mine && (
+        <SettingsLink href="/settings#profile">
+          Who can see your profile: <span className="font-medium">{VISIBILITIES.find((v) => v.value === visibility)?.label ?? "Private"}</span>.
+        </SettingsLink>
+      )}
       <ProfileRanks
         ranks={ranks.data as (Rank & { queue: string })[]}
         // Decoration only: a failed champion lookup drops the line, not the profile.
@@ -215,33 +218,14 @@ export function ProfileHeader({ user, profile, subtitle }: { user: string; profi
   );
 }
 
-function VisibilityForm({ current }: { current: string }) {
+/** One line on your own profile tabs, pointing at the setting's section of /settings. */
+export function SettingsLink({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <form action={setVisibility} className="card flex flex-col gap-4">
-      <fieldset className="flex flex-col gap-3">
-        <legend className="mb-3 text-lg font-semibold">Who can see this page</legend>
-        {VISIBILITIES.map((v) => (
-          <label key={v.value} className="flex items-start gap-3 text-sm">
-            <input
-              type="radio"
-              name="visibility"
-              value={v.value}
-              defaultChecked={v.value === current}
-              className="mt-0.5 size-4 accent-primary"
-            />
-            <span className="flex flex-col">
-              <span className="font-medium">{v.label}</span>
-              <span className="text-muted-foreground">{v.hint}</span>
-            </span>
-          </label>
-        ))}
-      </fieldset>
-      <p className="text-xs text-muted-foreground">
-        Also with /profile visibility in Discord. While you are hidden with /hide-me, nobody else sees it.
-      </p>
-      <Button type="submit" size="sm" className="self-start">
-        Save
-      </Button>
-    </form>
+    <p className="text-sm text-muted-foreground">
+      {children}{" "}
+      <Link href={href} className="font-medium text-foreground underline underline-offset-4">
+        Change it in Settings
+      </Link>
+    </p>
   );
 }
