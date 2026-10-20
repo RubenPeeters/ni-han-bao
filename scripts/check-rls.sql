@@ -234,6 +234,13 @@ begin
     if (select array_agg(guild_id) from public.profile_servers('rls-user')) <> array['rls-mine'] then
         raise exception 'profile_servers() is not just the shared servers';
     end if;
+    -- Settings (#208): the visitor's own servers and linked accounts, nobody else's.
+    if (select array_agg(guild_id || ':' || hidden) from public.my_server_visibility()) <> array['rls-mine:false'] then
+        raise exception 'my_server_visibility() is not just the visitor''s servers';
+    end if;
+    if (select array_agg(game || ':' || region) from public.my_game_accounts()) <> array['lol:euw1'] then
+        raise exception 'my_game_accounts() is not just the visitor''s accounts';
+    end if;
     if (select longest_streak from public.profile_badges('rls-user')) <> 1 then
         raise exception 'profile_badges() does not count the streak';
     end if;
