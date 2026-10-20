@@ -202,3 +202,17 @@ export function missingCards(
   const rows = needs.map((n, i) => ({ ...n, owned: got[i] }));
   return { rows, missing: rows.reduce((sum, r) => sum + r.quantity - r.owned, 0) };
 }
+
+/** Every row of a query, `size` at a time: PostgREST caps a response at 1000 rows. `page` must order deterministically. */
+export async function allPages<T, E>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: E | null }>,
+  size = 1000,
+): Promise<{ data: T[]; error: null } | { data: null; error: E }> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += size) {
+    const { data, error } = await page(from, from + size - 1);
+    if (error || !data) return { data: null, error: error as E };
+    rows.push(...data);
+    if (data.length < size) return { data: rows, error: null };
+  }
+}

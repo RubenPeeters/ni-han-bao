@@ -5,7 +5,7 @@ import { EmptyState, ErrorState, RankList, RankRow, StatCard } from "@/component
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { Card, Printing } from "@/bot/src/card-match";
-import { missingCards, VISIBILITIES, type Entry, type OwnedCopy } from "@/lib/decks";
+import { allPages, missingCards, VISIBILITIES, type Entry, type OwnedCopy } from "@/lib/decks";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -15,24 +15,37 @@ const LOG_IN = "Log in to build Riftbound decks.";
 const MAX_CARDS = 1000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The visitor's copies (RLS returns their own rows only), paged past PostgREST's 1000-row cap. */
+/** The visitor's copies (RLS returns their own rows only). */
 async function ownedCopies(supabase: Awaited<ReturnType<typeof createClient>>) {
-  const rows: OwnedCopy[] = [];
-  for (let from = 0; ; from += MAX_CARDS) {
-    const { data, error } = await supabase
+  const res = await allPages((from, to) =>
+    supabase
       .from("riftbound_collection")
       .select("printing_id, language, quantity, printing:riftbound_printings(card_id)")
       .order("printing_id")
       .order("finish")
       .order("condition")
       .order("language")
-      .range(from, from + MAX_CARDS - 1);
-    if (error) return { data: null, error };
-    const page = data as unknown as (Omit<OwnedCopy, "card_id"> & { printing: { card_id: string } })[];
-    rows.push(...page.map(({ printing, ...c }) => ({ ...c, card_id: printing.card_id })));
-    if (data.length < MAX_CARDS) return { data: rows, error: null };
-  }
+      .range(from, to),
+  );
+  if (res.error) return res;
+  const rows = res.data as unknown as (Omit<OwnedCopy, "card_id"> & { printing: { card_id: string } })[];
+  return { data: rows.map(({ printing, ...c }): OwnedCopy => ({ ...c, card_id: printing.card_id })), error: null };
 }
+
+const DECK =
+  "id, user_id, name, visibility, legend_id, language, allow_other_languages, updated_at, legend:riftbound_cards!legend_id(name, tags), cards:riftbound_deck_cards(section, card_id, printing_id, quantity)";
+type ListedDeck = {
+  id: string;
+  user_id: string;
+  name: string;
+  visibility: string;
+  legend_id: string | null;
+  language: string;
+  allow_other_languages: boolean;
+  updated_at: string;
+  legend: { name: string; tags: string[] } | null;
+  cards: Entry[];
+};
 
 /**
  * The visitor's own decks, and every deck they could build against their collection: their
@@ -43,36 +56,30 @@ export async function DeckList() {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims) return <LogInPrompt text={LOG_IN} />;
-  const [me, opened, owned] = await Promise.all([
-    supabase.rpc("current_discord_id"),
-    supabase.from("riftbound_deck_opens").select("deck_id"),
+  const me = await supabase.rpc("current_discord_id");
+  if (me.error) return <ErrorState title="Could not load your decks">Try again in a minute.</ErrorState>;
+  if (!me.data) return <LogInPrompt text={LOG_IN} />;
+  const [mine, opened, owned] = await Promise.all([
+    allPages((from, to) =>
+      supabase
+        .from("riftbound_decks")
+        .select(DECK)
+        .or(`user_id.eq.${me.data},visibility.eq.servers`)
+        .order("id")
+        .range(from, to),
+    ),
+    // Through the opens, so no id list goes in the URL; RLS drops a deck no longer public.
+    allPages((from, to) => supabase.from("riftbound_deck_opens").select(`deck:riftbound_decks(${DECK})`).order("deck_id").range(from, to)),
     ownedCopies(supabase),
   ]);
-  if (me.error || opened.error || owned.error) return <ErrorState title="Could not load your decks">Try again in a minute.</ErrorState>;
-  if (!me.data) return <LogInPrompt text={LOG_IN} />;
-  const visible = [`user_id.eq.${me.data}`, "visibility.eq.servers"];
-  if (opened.data.length) visible.push(`id.in.(${opened.data.map((o) => o.deck_id).join(",")})`);
-  const { data, error } = await supabase
-    .from("riftbound_decks")
-    .select(
-      "id, user_id, name, visibility, legend_id, language, allow_other_languages, legend:riftbound_cards!legend_id(name, tags), cards:riftbound_deck_cards(section, card_id, printing_id, quantity)",
-    )
-    .or(visible.join(","))
-    .order("updated_at", { ascending: false });
-  if (error) return <ErrorState title="Could not load your decks">Try again in a minute.</ErrorState>;
-  const all = (
-    data as unknown as {
-      id: string;
-      user_id: string;
-      name: string;
-      visibility: string;
-      legend_id: string | null;
-      language: string;
-      allow_other_languages: boolean;
-      legend: { name: string; tags: string[] } | null;
-      cards: Entry[];
-    }[]
-  ).map((d) => ({ ...d, missing: missingCards(d, d.cards, owned.data).missing }));
+  if (mine.error || opened.error || owned.error) return <ErrorState title="Could not load your decks">Try again in a minute.</ErrorState>;
+  const byId = new Map<string, ListedDeck>();
+  for (const d of [...(mine.data as unknown as ListedDeck[]), ...(opened.data as unknown as { deck: ListedDeck | null }[]).map((o) => o.deck)]) {
+    if (d) byId.set(d.id, d);
+  }
+  const all = [...byId.values()]
+    .toSorted((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
+    .map((d) => ({ ...d, missing: missingCards(d, d.cards, owned.data).missing }));
   const decks = all.filter((d) => d.user_id === me.data);
   const buildable = all.toSorted((a, b) => a.missing - b.missing || a.name.localeCompare(b.name));
   return (
