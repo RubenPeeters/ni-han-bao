@@ -1,4 +1,12 @@
 {
+  "welcome": {
+    "command": null,
+    "ephemeral": false,
+    "channels": {},
+    "message": {
+      "content": "Hi, I'm ni han bao! I count messages, reactions and voice time in this server: counts and timestamps only, never what anyone writes.\nSee the stats (members only, log in with Discord): https://ni-han-bao.example/s/900000000000000001/leaderboard\nRather not appear in the lists and charts? Use /hide-me, and /show-me to come back."
+    }
+  },
   "leaderboard": {
     "command": "/leaderboard",
     "ephemeral": false,
@@ -143,6 +151,24 @@
               "type": 2,
               "custom_id": "event-going:1",
               "label": "Going",
+              "style": 1
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "lol-link": {
+    "command": "/lol link",
+    "ephemeral": true,
+    "channels": {},
+    "message": {
+      "content": "To prove Mira#EUW is yours, set your League profile icon to **Debonair Rose Icon** (icon 7, a starter icon), then press Verify. Search for it by name in the client's icon picker, or pick the icon shown below. It can take up to 5 minutes to show up. You can change it back afterwards.",
+      "components": [
+        {
+          "components": [
+            {
+              "label": "Verify",
               "style": 1
             }
           ]

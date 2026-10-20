@@ -6,6 +6,9 @@ export const DOCS = [
     pages: [
       { href: "/docs/get-started/add-the-bot", label: "Add the bot" },
       { href: "/docs/get-started/set-up", label: "Set it up" },
+      { href: "/docs/get-started/link-accounts", label: "Link your accounts" },
+      { href: "/docs/get-started/events", label: "Events and stores" },
+      { href: "/docs/get-started/riftbound", label: "Riftbound" },
     ],
   },
   {
