@@ -68,15 +68,21 @@ describe("tradeDm", () => {
   const match = { guild_id: "g1", trader_id: "bram", card_id: "ahri", copies: 2, ...regulars };
 
   it("introduces the trader, says where to meet and that no money goes through the bot", () => {
-    const text = tradeDm([match], () => "Ahri", () => "UTC", "https://example.com");
+    const { content: text } = tradeDm([match], () => "Ahri", () => "UTC", "https://example.com");
     expect(text).toContain("You want **Ahri**: <@bram> has 2 for trade. Meet up: you are both regulars at The Card Corner (Leuven).");
     expect(text).toContain("no prices or payments go through the bot");
     expect(text).toContain("<https://example.com/s/g1/trades>");
     expect(text).not.toMatch(/€|\$|price:/i);
   });
 
-  it("stays within Discord's 2000 characters", () => {
-    const text = tradeDm(Array(100).fill(match), () => "A card with a long name", () => "UTC", null);
-    expect(text.length).toBeLessThanOrEqual(2000);
+  it("names only the matches that fit in Discord's 2000 characters, and keeps the link", () => {
+    const many = Array.from({ length: 100 }, (_, i) => ({ ...match, card_id: `c${i}` }));
+    const { content, shown } = tradeDm(many, () => "A card with a long name", () => "UTC", "https://example.com");
+    expect(content.length).toBeLessThanOrEqual(2000);
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown.length).toBeLessThan(100);
+    expect(content.match(/^- You want/gm)).toHaveLength(shown.length);
+    expect(content).toContain("More in your next DM.");
+    expect(content).toContain("<https://example.com/s/g1/trades>");
   });
 });

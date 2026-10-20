@@ -949,21 +949,24 @@ async function notifyTradeMatches(): Promise<void> {
       rows.set(user, wishes);
     }
     const cardName = (id: string) => catalogue.cards.find((c) => c.id === id)?.name ?? id;
+    const timeZone = (g: string) => settingsFor(g).timezone;
     for (const [user, matches] of newMatches(candidates, (u) => wishlist(rows.get(u) ?? []))) {
       // Recorded before the DM, and only what this run recorded is sent (a forgotten user's
       // rows are dropped): a closed DM or a failure is not retried, so each match is one DM.
+      // Only the matches that fit in the DM: the rest stay new for the next run.
+      const { shown } = tradeDm(matches, cardName, timeZone, config.siteUrl);
       const { data, error } = await db
         .from("riftbound_trade_matches")
         .upsert(
-          matches.map((m) => ({ user_id: user, trader_id: m.trader_id, card_id: m.card_id })),
+          shown.map((m) => ({ user_id: user, trader_id: m.trader_id, card_id: m.card_id })),
           { onConflict: "user_id,trader_id,card_id", ignoreDuplicates: true },
         )
         .select("trader_id, card_id");
       if (error) throw new Error(`riftbound_trade_matches upsert: ${error.message}`);
-      const fresh = matches.filter((m) => data.some((d) => d.trader_id === m.trader_id && d.card_id === m.card_id));
+      const fresh = shown.filter((m) => data.some((d) => d.trader_id === m.trader_id && d.card_id === m.card_id));
       if (fresh.length === 0) continue;
       await client.users
-        .send(user, { content: tradeDm(fresh, cardName, (g) => settingsFor(g).timezone, config.siteUrl), allowedMentions: { parse: [] } })
+        .send(user, { content: tradeDm(fresh, cardName, timeZone, config.siteUrl).content, allowedMentions: { parse: [] } })
         .catch((err: unknown) => log("info", "trade_dm_not_sent", { user, error: err }));
     }
   } catch (err) {

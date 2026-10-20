@@ -78,22 +78,33 @@ export function placeText(place: Place, timeZone: string): string | null {
   return null;
 }
 
-/** The one DM a member gets for the matches found since the last one. */
+/**
+ * The one DM a member gets for the matches found since the last one, and the matches it
+ * names: as many as fit Discord's 2000 characters, the rest wait for the next DM.
+ */
 export function tradeDm(
   matches: Match[],
   cardName: (card: string) => string,
   timeZone: (guild: string) => string,
   siteUrl: string | null,
-): string {
-  const lines = matches.map((m) => {
+): { content: string; shown: Match[] } {
+  const line = (m: Match) => {
     const place = placeText(m, timeZone(m.guild_id));
     return `- You want **${escapeMarkdown(cardName(m.card_id))}**: <@${m.trader_id}> has ${m.copies} for trade.${place ? ` Meet up: ${place}.` : ""}`;
-  });
+  };
   const guilds = [...new Set(matches.map((m) => m.guild_id))];
   const page = siteUrl ? `\nAll your matches: ${guilds.map((g) => `<${siteUrl}/s/${g}/trades>`).join(" ")}` : "";
-  const text =
-    `${matches.length === 1 ? "A new trade match" : "New trade matches"} in your servers:\n${lines.join("\n")}\n` +
-    `Say hi and trade at the table: no prices or payments go through the bot.${page}`;
-  // shortcut: a long list is cut at Discord's 2000 characters; the Trades page has them all.
-  return text.length <= 2000 ? text : `${text.slice(0, 1997)}...`;
+  const head = `${matches.length === 1 ? "A new trade match" : "New trade matches"} in your servers:\n`;
+  const tail = `Say hi and trade at the table: no prices or payments go through the bot.${page}`;
+  const more = "- More in your next DM.\n";
+  const lines: string[] = [];
+  let length = head.length + tail.length + more.length;
+  for (const m of matches) {
+    const text = `${line(m)}\n`;
+    if (length + text.length > 2000) break;
+    lines.push(text);
+    length += text.length;
+  }
+  const rest = lines.length < matches.length ? more : "";
+  return { content: `${head}${lines.join("")}${rest}${tail}`, shown: matches.slice(0, lines.length) };
 }

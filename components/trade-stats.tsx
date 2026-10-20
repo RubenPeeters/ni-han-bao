@@ -37,7 +37,7 @@ export async function TradeStats({ guild }: { guild: string }) {
   const ids = [...new Set(wanted.map((w) => w.card_id))];
   const [timeZone, offers, cards] = await Promise.all([
     guildTimeZone(guild),
-    supabase.rpc("guild_trade_offers", { guild, p_cards: ids }),
+    allPages<Offer, { message: string }>((from, to) => supabase.rpc("guild_trade_offers", { guild, p_cards: ids }).range(from, to)),
     supabase.from("riftbound_cards").select("id, name").in("id", ids),
   ]);
   if (offers.error || cards.error) return <ErrorState title="Could not load your trades">Try again in a minute.</ErrorState>;
@@ -55,7 +55,7 @@ export async function TradeStats({ guild }: { guild: string }) {
   const matches = ids
     .map((card) => {
       const traders = new Map<string, Offer>();
-      for (const o of offers.data as Offer[]) {
+      for (const o of offers.data) {
         if (o.card_id !== card || !wanted.some((w) => w.card_id === card && fits(o, w))) continue;
         const t = traders.get(o.user_id);
         traders.set(o.user_id, t ? { ...t, copies: t.copies + o.copies } : o);
