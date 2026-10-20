@@ -64,12 +64,15 @@ export default function AboutPage() {
             has, until when, and whether they confirmed or disputed it (with what they wrote);
             <Cmd>/return</Cmd> closes it. Loans are never edited: a correction is a new loan that
             replaces the old one. Only you and the other member see a loan, on your profiles&apos;
-            Loans tab. The bot sends the borrower one reminder on the due date, if they accept DMs.
+            Loans tab. The bot sends the borrower one reminder on the due date, if they accept DMs. A
+            deck lent whole (<Cmd>/lend</Cmd> with a deck, or on its page) is one loan that also keeps
+            the deck&apos;s name.
           </li>
           <li>
             Riftbound decks: the decks you build on the Decks page, with their cards, Legend,
             Chosen Champion, language and notes. A deck is private unless you share it with the
-            members of your servers, or with anyone logged in who has its link.
+            members of your servers, or with anyone logged in who has its link. A deck you mark not
+            for lending keeps its cards out of what you offer to lend.
           </li>
           <li>
             Riftbound wishlist: the cards you add to it by hand with how many you want, and per deck

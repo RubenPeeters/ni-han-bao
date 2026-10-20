@@ -70,6 +70,7 @@ export function DeckEditor({
   owned,
   mine,
   versions,
+  lending,
   children,
 }: {
   deck: Deck;
@@ -80,6 +81,8 @@ export function DeckEditor({
   mine: boolean;
   /** Newest first, for History; null if they could not be loaded, absent to show no History. */
   versions?: VersionListed[] | null;
+  /** Under Missing cards: who lends them, and the owner's Lending card (rendered on the server, of the deck as saved). */
+  lending?: ReactNode;
   /** Under the heading: what a version page says about the version shown. */
   children?: ReactNode;
 }) {
@@ -242,6 +245,8 @@ export function DeckEditor({
           </ul>
         )}
       </StatCard>
+
+      {lending}
 
       {mine && (
         <StatCard title="Add cards" description="Search by name, champion or collector code">
