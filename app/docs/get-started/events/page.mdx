@@ -1,0 +1,45 @@
+import { DiscordShot } from "@/components/discord-shot";
+import { ReplyExample } from "@/components/discord-message";
+
+export const metadata = { title: "Events and stores · ni han bao docs" };
+
+# Events and stores
+
+Tell the server where you play and which events you go to, so others can come along.
+
+## Add your stores
+
+1. `/store add name:The Dice Tower city:Gent` adds a local game store. `link` takes its PlayRiftbound page; `game` is Riftbound unless you say otherwise. Give the city only, never an address.
+2. `/store mine store:` and pick it from the suggestions: it is one of your regulars. Run it again to unmark it.
+3. `/store list` shows the server's stores. `/store remove` removes one: the member who added it can, or anyone with Manage Server.
+
+## Say you are going
+
+Give the event's link, or its store and time:
+
+- `/event going link:https://…` for a PlayRiftbound or Discord event link the bot already knows.
+- `/event going store:The Dice Tower when:2026-10-25 19:00`, in the server's [time zone](/docs/get-started/set-up).
+
+<DiscordShot name="event-going" alt="/event going with a store and a time filled in" />
+
+**What you should see**: "You are going." for you, and a message for the whole channel with a **Going** button, so others can join with one click:
+
+<ReplyExample name="going" />
+
+Events made in Discord itself (the server's Events list) are picked up by the bot, and clicking **Interested** there counts as going.
+
+`/event not-going event:` and pick the event undoes it.
+
+**If you don't**:
+
+- **"That event is not known yet"**: add `store` and `when` as well, and the event is added.
+- **"That store is not on this server's list"**: pick one from the suggestions, or add it with `/store add` first.
+- **"The link must be a full https:// address"**: paste the whole link, starting with `https://`.
+
+## On the site
+
+The server's **Where we play** page lists the stores, their regulars, and under **Coming up** who is going where. The weekly report lists the coming week's events too.
+
+![The Where we play page](/docs/shots/stores.png)
+
+Next: [Riftbound](/docs/get-started/riftbound).

@@ -1,0 +1,53 @@
+import { DiscordShot } from "@/components/discord-shot";
+import { ReplyExample } from "@/components/discord-message";
+
+export const metadata = { title: "Riftbound · ni han bao docs" };
+
+# Riftbound
+
+Look up cards, keep your collection, and lend cards to the people you play with. The cards are placeholders for now, until Riot's card data is available.
+
+## Look up a card
+
+`/card name:` and a card's name, a legend's champion, or a collector code like `PLH-L001`. Pick one from the suggestions as you type.
+
+<DiscordShot name="card-autocomplete" alt="/card with suggestions while typing" />
+
+**What you should see**: the card, with a link to its page on the site:
+
+<ReplyExample name="card" />
+
+**If you don't**: "No card called or numbered …" means nothing matched; pick from the suggestions. "More than one card matches" lists them, so you can be more precise.
+
+## The Cards page
+
+**Cards** in the site's header lists every card, with search and filters for type, domain, cost and set. A card's page shows its printings, and under **Who has it?** the members of your servers with copies to lend.
+
+![The Cards page](/docs/shots/cards.png)
+
+## Your collection
+
+On the Cards page, press **Edit my collection**, then count copies with the steppers on each card. **What the steppers count** switches between **Owned**, **For trade** and **To lend**; condition and language apply to the copies you add. Changes save as you go: "All changes saved".
+
+From Discord, `/collection add card:Ahri count:2` adds copies too, in the language you last used unless you pick one.
+
+Your profile's **Collection** tab sums it up per set, rarity and language. Who sees it follows your [profile visibility](/docs/get-started/link-accounts#your-profile).
+
+![A collection](/docs/shots/collection.png)
+
+## Lending
+
+Lending is off until you turn it on, per person:
+
+- On your **Collection** tab, tick **I lend cards**, and choose what you lend: **Nothing until I mark cards** (then set **To lend** per card) or **Everything I own**, and press **Save**.
+- Or in Discord: `/collection lending state:On: I lend cards`.
+
+Members of your servers then see your copies to lend under **Who has it?** on a card's page. Your profile must not be private for that.
+
+To record a loan: `/lend member:@Joost cards:2 Jinx; Ahri`, with an optional `due` date. The borrower gets **Confirm** and **Dispute** buttons in the channel. When the cards are back, either of you runs `/return member:@Joost`. Lost cards: the owner runs `/return` with `lost:True`.
+
+The **Loans** tab of your profile shows who has your cards, what you owe, and what is overdue, unconfirmed or disputed.
+
+![The Loans tab](/docs/shots/loans.png)
+
+**If you don't** see a member's cards to lend: they have not turned lending on, their profile is private, or they are not in a server with you.

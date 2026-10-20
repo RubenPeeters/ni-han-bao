@@ -49,6 +49,10 @@ export const DOCS_SHOTS = [
   { name: "servers", route: "/s" },
   { name: "leaderboard", route: `/s/${DEMO.guildId}/leaderboard` },
   { name: "profile", route: `/u/${DEMO.userId}` },
+  { name: "stores", route: `/s/${DEMO.guildId}/stores` },
+  { name: "cards", route: "/cards" },
+  { name: "collection", route: `/u/${DEMO.userId}/collection` },
+  { name: "loans", route: `/u/${DEMO.userId}/loans` },
 ];
 
 export function routesFrom(appDir = "app") {
