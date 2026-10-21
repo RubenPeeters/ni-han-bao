@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { ComponentType, MessageFlags } from "discord.js";
 import { describe, expect, it } from "vitest";
 import type { FeedIcon } from "./riftbound-feed.js";
-import type { Catalogue, Printing } from "./riftbound.js";
-import { MAX_COMPONENTS, MAX_TEXT, accentColor, cardHeading, cardMessage, cardSection, discordRules, fitLines } from "./riftbound-reply.js";
+import type { Catalogue } from "./riftbound.js";
+import { MAX_COMPONENTS, MAX_TEXT, accentColor, cardHeading, cardMessage, cardSection, discordRules, fitLines, pageButtonId, parsePageButtonId } from "./riftbound-reply.js";
 
 const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue & { icons: FeedIcon[] };
 const card = (id: string) => catalogue.cards.find((c) => c.id === id)!;
@@ -72,26 +72,61 @@ describe("the shared card layout", () => {
 });
 
 describe("/card", () => {
-  it("shows the image, heading, rules text, printings with rarities and a link", () => {
+  type Page = {
+    accent_color: number;
+    components: { type: number; content?: string; items?: { media: { url: string } }[] }[];
+  };
+  type Row = { components: { label: string; url?: string; custom_id?: string; disabled?: boolean }[] };
+  const fox = (index: number, printings = printed("nine-tailed-fox")) =>
+    cardMessage(card("nine-tailed-fox"), printings, catalogue.icons, emojis, "https://site.test/", index).components as unknown as [Page, Row];
+  const footnote = (page: Page) => page.components.at(-1)!.content;
+  const imageUrl = (page: Page) => new URL(page.components[0].items![0].media.url);
+
+  it("shows the first printing's image alone, with every version in a footnote", () => {
     const message = cardMessage(card("nine-tailed-fox"), printed("nine-tailed-fox"), catalogue.icons, emojis, "https://site.test/");
     expect(message.flags).toBe(MessageFlags.IsComponentsV2);
-    const [container, row] = message.components as unknown as [
-      { accent_color: number; components: { type: number; content?: string; items?: { media: { url: string } }[] }[] },
-      { components: { url: string; label: string }[] },
-    ];
-    expect(container.accent_color).toBe(0x152311);
-    expect(container.components.map((c) => c.type)).toEqual([
-      ComponentType.MediaGallery,
-      ComponentType.TextDisplay,
-      ComponentType.Separator,
-      ComponentType.TextDisplay,
-      ComponentType.Separator,
-      ComponentType.TextDisplay,
+    const [page, row] = message.components as unknown as [Page, Row];
+    expect(page.accent_color).toBe(0x152311);
+    expect(page.components.map((c) => c.type)).toEqual([ComponentType.MediaGallery, ComponentType.TextDisplay]);
+    expect(imageUrl(page).searchParams.get("w")).toBe("600");
+    expect(footnote(page)).toBe("-# **OGN-255/298** · OGN-303\\*/298 · OGN-303/298");
+    expect(row.components.map((b) => [b.label, b.custom_id, b.disabled])).toEqual([
+      ["Previous", "card-page:nine-tailed-fox:0", true],
+      ["Next", "card-page:nine-tailed-fox:1", false],
+      ["Card page", undefined, undefined],
     ]);
-    expect(new URL(container.components[0].items![0].media.url).searchParams.get("w")).toBe("600");
-    expect(container.components[3].content).toContain("give it -1 <:rb_might:1> this turn");
-    expect(container.components[5].content).toBe("<:rb_rare:8> **OGN-255/298** · Rare\n**OGN-303\\*/298** · Showcase\n**OGN-303/298** · Showcase");
-    expect(row.components[0]).toMatchObject({ label: "Card page", url: "https://site.test/cards/nine-tailed-fox" });
+    expect(row.components[2].url).toBe("https://site.test/cards/nine-tailed-fox");
+  });
+
+  it("pages to the middle and the last printing", () => {
+    const [middle, middleRow] = fox(1);
+    expect(footnote(middle)).toBe("-# OGN-255/298 · **OGN-303\\*/298** · OGN-303/298");
+    expect(imageUrl(middle).pathname).not.toBe(imageUrl(fox(0)[0]).pathname);
+    expect(middleRow.components.slice(0, 2).map((b) => [b.custom_id, b.disabled])).toEqual([
+      ["card-page:nine-tailed-fox:0", false],
+      ["card-page:nine-tailed-fox:2", false],
+    ]);
+    const [last, lastRow] = fox(2);
+    expect(footnote(last)).toBe("-# OGN-255/298 · OGN-303\\*/298 · **OGN-303/298**");
+    expect(lastRow.components.slice(0, 2).map((b) => [b.custom_id, b.disabled])).toEqual([
+      ["card-page:nine-tailed-fox:1", false],
+      ["card-page:nine-tailed-fox:3", true],
+    ]);
+  });
+
+  it("has no paging buttons for a single printing", () => {
+    const [, row] = fox(0, printed("nine-tailed-fox").slice(0, 1));
+    expect(row.components.map((b) => b.label)).toEqual(["Card page"]);
+  });
+
+  it("shows the collector code and rarity of a printing without an image", () => {
+    const [page] = fox(0, [{ ...printed("nine-tailed-fox")[0], image_url: null }]);
+    expect(page.components.map((c) => c.content)).toEqual(["<:rb_rare:8> **OGN-255/298** · Rare", "-# **OGN-255/298**"]);
+  });
+
+  it("reads a paging button's card and page back", () => {
+    expect(parsePageButtonId(pageButtonId("nine-tailed-fox", 2))).toEqual({ cardId: "nine-tailed-fox", index: 2 });
+    expect(parsePageButtonId("deck-copy:d1")).toBeNull();
   });
 
   it("leaves out what a card or the bot does not have", () => {
@@ -107,9 +142,5 @@ describe("/card", () => {
       expect(n.components).toBeLessThanOrEqual(MAX_COMPONENTS);
       expect(n.text).toBeLessThanOrEqual(MAX_TEXT);
     }
-    const many: Printing[] = Array.from({ length: 300 }, (_, i) => ({ ...printed("nine-tailed-fox")[0], id: `p${i}`, collector_code: `OGN-${i}/298` }));
-    const { components } = cardMessage(card("nine-tailed-fox"), many, catalogue.icons, emojis, "https://site.test");
-    expect(count(components).text).toBeLessThanOrEqual(MAX_TEXT);
-    expect(JSON.stringify(components)).toMatch(/and \d+ more: https:\/\/site.test\/cards\/nine-tailed-fox/);
   });
 });

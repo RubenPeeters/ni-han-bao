@@ -27,6 +27,7 @@ interface Component {
   accent_color?: number;
   label?: string;
   style?: number;
+  disabled?: boolean;
 }
 /** A message as the bot sends it (Discord's API shape), plus how it was asked for. */
 export interface Reply {
@@ -193,7 +194,7 @@ function ComponentView({ c, names }: { c: Component; names: Names }) {
       return c.divider === false ? <div aria-hidden className="h-1" /> : <hr className="border-border" />;
     case 2:
       return (
-        <span className={cn("inline-flex items-center gap-1.5 rounded-md px-4 py-1.5 font-medium", BUTTON[c.style ?? 2])}>
+        <span className={cn("inline-flex items-center gap-1.5 rounded-md px-4 py-1.5 font-medium", BUTTON[c.style ?? 2], c.disabled && "opacity-50")}>
           {c.label}
           {c.style === 5 && <ExternalLink aria-hidden className="size-3.5" />}
         </span>

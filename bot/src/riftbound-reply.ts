@@ -4,14 +4,12 @@ import {
   ButtonStyle,
   ComponentType,
   MessageFlags,
-  SeparatorSpacingSize,
   type APIActionRowComponent,
   type APIButtonComponent,
   type APIContainerComponent,
   type APIMediaGalleryComponent,
   type APIMessageTopLevelComponent,
   type APISectionComponent,
-  type APISeparatorComponent,
   type APITextDisplayComponent,
 } from "discord.js";
 import { byPrinting, cardImageUrl, plainText, textParts, type Card, type CardToken, type Catalogue, type Printing } from "./card-match.js";
@@ -101,44 +99,57 @@ export function fitLines(lines: string[], budget: number, moreUrl: string | null
   return more(lines.length).slice(0, budget);
 }
 
-const separator: APISeparatorComponent = { type: ComponentType.Separator, divider: true, spacing: SeparatorSpacingSize.Small };
 const gallery = (url: string, description: string): APIMediaGalleryComponent => ({
   type: ComponentType.MediaGallery,
   items: [{ media: { url }, description }],
 });
 
-/** /card: the card's image, heading, rules text and printings, and a button to its page on the site. */
+/** How long /card's Previous and Next answer, counted from the reply. */
+export const PAGING_MS = 15 * 60_000;
+/** A paging button's id: the card and the page it opens, so a click works after a restart. */
+export const pageButtonId = (cardId: string, index: number) => `card-page:${cardId}:${index}`;
+export function parsePageButtonId(customId: string): { cardId: string; index: number } | null {
+  const m = /^card-page:(.+):(\d+)$/.exec(customId);
+  return m ? { cardId: m[1], index: Number(m[2]) } : null;
+}
+
+const escaped = (code: string) => code.replace(/[*_~`|\\]/g, "\\$&");
+
+/** /card: one page per printing, its image and every version below it, the shown one in bold. */
 export function cardMessage(
   card: Card,
   printings: Printing[],
   icons: { facet: string; label: string; color_primary: string | null }[],
   emojis: Emojis,
   siteUrl: string | null,
-): { components: APIMessageTopLevelComponent[]; flags: MessageFlags.IsComponentsV2 } {
+  index = 0,
+): V2 {
   const sorted = [...printings].sort(byPrinting);
-  const image = sorted.find((p) => p.image_url)?.image_url;
+  const shown = sorted[index] ?? null;
   const page = siteUrl ? `${siteUrl.replace(/\/$/, "")}/cards/${card.id}` : null;
-  const heading = cardHeading(card, emojis);
-  const rules = card.rules_text ? discordRules(card.rules_text, emojis) : "";
-  const lines = sorted.map((p) => {
-    const rarity = p.rarity ? emoji(emojis, `rb_${p.rarity.toLowerCase()}`) : null;
-    return [rarity, `**${p.collector_code.replace(/[*_~`|\\]/g, "\\$&")}**`, p.rarity && `· ${p.rarity}`].filter(Boolean).join(" ");
-  });
-  // The image description and the button label count too.
-  const budget = MAX_TEXT - heading.length - rules.length - card.name.length - 50;
   const text = (content: string): APITextDisplayComponent => ({ type: ComponentType.TextDisplay, content });
+  const rarity = shown?.rarity ? emoji(emojis, `rb_${shown.rarity.toLowerCase()}`) : null;
+  const body = shown?.image_url
+    ? gallery(cardImageUrl(shown.image_url, 600), card.name)
+    : text([rarity, `**${escaped(shown?.collector_code ?? card.name)}**`, shown?.rarity && `· ${shown.rarity}`].filter(Boolean).join(" "));
+  // shortcut: a card with hundreds of printings would pass Discord's text limit; real cards have a handful.
+  const footnote = sorted.map((p, i) => (i === index ? `**${escaped(p.collector_code)}**` : escaped(p.collector_code))).join(" · ");
   const container: APIContainerComponent = {
     type: ComponentType.Container,
     accent_color: accentColor(card, icons),
-    components: [
-      ...(image ? [gallery(cardImageUrl(image, 600), card.name)] : []),
-      text(heading),
-      ...(rules ? [separator, text(rules)] : []),
-      ...(lines.length ? [separator, text(fitLines(lines, budget, page))] : []),
-    ],
+    components: [body, ...(footnote ? [text(`-# ${footnote}`)] : [])],
   };
-  const button: APIActionRowComponent<APIButtonComponent>[] = page
-    ? [{ type: ComponentType.ActionRow, components: [{ type: ComponentType.Button, style: ButtonStyle.Link, label: "Card page", url: page }] }]
-    : [];
-  return { components: [container, ...button], flags: MessageFlags.IsComponentsV2 };
+  const paging = (label: string, to: number): APIButtonComponent => ({
+    type: ComponentType.Button,
+    style: ButtonStyle.Secondary,
+    label,
+    custom_id: pageButtonId(card.id, Math.max(to, 0)),
+    disabled: to < 0 || to >= sorted.length,
+  });
+  const buttons: APIButtonComponent[] = [
+    ...(sorted.length > 1 ? [paging("Previous", index - 1), paging("Next", index + 1)] : []),
+    ...(page ? [{ type: ComponentType.Button as const, style: ButtonStyle.Link as const, label: "Card page", url: page }] : []),
+  ];
+  const row: APIActionRowComponent<APIButtonComponent>[] = buttons.length ? [{ type: ComponentType.ActionRow, components: buttons }] : [];
+  return { components: [container, ...row], flags: MessageFlags.IsComponentsV2 };
 }
