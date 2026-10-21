@@ -545,5 +545,17 @@
         ]
       }
     ]
+  },
+  {
+    "name": "feedback",
+    "description": "Send an idea or a problem to the people who make the bot",
+    "admin": false,
+    "usages": [
+      {
+        "name": "feedback",
+        "description": "Send an idea or a problem to the people who make the bot",
+        "options": []
+      }
+    ]
   }
 ]

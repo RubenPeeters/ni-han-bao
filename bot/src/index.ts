@@ -47,6 +47,8 @@ import {
 import { Backoff, flushUntil, InFlight } from "./backoff.js";
 import { flushGames, gameApps, GameBuffer, gameKeys, GameSessions } from "./games.js";
 import { loadConfig } from "./config.js";
+import { FEEDBACK_FAILED, feedbackRequest, feedbackThanks, sendFeedback } from "./feedback.js";
+import { FEEDBACK_COMMAND, feedbackContext, feedbackId, feedbackModal, parseFeedbackId, withFeedback } from "./feedback-modal.js";
 import { countsLive, loadBeforeId } from "./history.js";
 import { createLogger } from "./log.js";
 import { keyedQueue, memberFetchRetryMs, readAll, syncMembers } from "./membership.js";
@@ -119,7 +121,7 @@ import {
   type Wanted,
 } from "./lending.js";
 import { CARD_COMMAND, cardChoices, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
-import { cardMessage, PAGING_MS, parsePageButtonId } from "./riftbound-reply.js";
+import { cardMessage, PAGING_MS, parsePageButtonId, type V2 } from "./riftbound-reply.js";
 import { emojiImage, emojiPlan, wantedEmojis, type Emojis } from "./emojis.js";
 import { feedItems, fetchFeed, transformFeed, type FeedCard, type FeedIcon, type FeedPrinting } from "./riftbound-feed.js";
 import {
@@ -722,6 +724,45 @@ async function statsReply(interaction: ChatInputCommandInteraction<"cached">) {
   return { embeds: [channelEmbed(target.name, data, config.siteUrl, timezone)] };
 }
 
+// Without forge's intake configured, no reply offers a Feedback button.
+const feedback = (message: V2, command: string, id: string | null = null): V2 => (config.forge ? withFeedback(message, command, id) : message);
+const FEEDBACK_OFF = "Feedback is not set up on this bot.";
+
+/** /feedback and the Feedback button: the form, which must be the first response. */
+async function feedbackButton(interaction: ButtonInteraction | ChatInputCommandInteraction, customId: string): Promise<void> {
+  if (!config.forge) {
+    await interaction.reply({ content: FEEDBACK_OFF, flags: MessageFlags.Ephemeral });
+    return;
+  }
+  await interaction.showModal(feedbackModal(customId));
+}
+
+/** The form sent: to forge's intake, and the issue link back to the member only. */
+async function feedbackForm(interaction: ModalSubmitInteraction, from: { command: string | null; id: string | null }): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  if (!config.forge) {
+    await interaction.editReply(FEEDBACK_OFF);
+    return;
+  }
+  const request = feedbackRequest({
+    kind: interaction.fields.getStringSelectValues("kind")[0] ?? "",
+    title: interaction.fields.getTextInputValue("title"),
+    description: interaction.fields.getTextInputValue("description"),
+    submitter: { name: interaction.inCachedGuild() ? interaction.member.displayName : interaction.user.displayName, id: interaction.user.id },
+    context: feedbackContext(from, interaction.message?.url ?? null),
+  });
+  if (typeof request === "string") {
+    await interaction.editReply(request);
+    return;
+  }
+  try {
+    await interaction.editReply(feedbackThanks(await sendFeedback(config.forge.url, config.forge.token, request)));
+  } catch (err) {
+    log("error", "command_failed", { command: FEEDBACK_COMMAND.name, error: err });
+    await interaction.editReply(FEEDBACK_FAILED);
+  }
+}
+
 // The catalogue in the database (#206), read on start and after an Accept: empty until then.
 let catalogue: Catalogue = { cards: [], printings: [] };
 let icons: FeedIcon[] = [];
@@ -735,7 +776,7 @@ async function cardCommand(interaction: ChatInputCommandInteraction<"cached">): 
   try {
     if (found && "card" in found) {
       const printings = catalogue.printings.filter((p) => p.card_id === found.card.id);
-      await interaction.reply(cardMessage(found.card, printings, icons, emojis, config.siteUrl));
+      await interaction.reply(feedback(cardMessage(found.card, printings, icons, emojis, config.siteUrl), "card", found.card.id));
     } else {
       await interaction.reply({ content: cardMiss(typed, found?.ambiguous ?? null), flags: MessageFlags.Ephemeral });
     }
@@ -753,7 +794,7 @@ async function cardPageButton(interaction: ButtonInteraction<"cached">, cardId: 
       await interaction.deferUpdate();
       return;
     }
-    await interaction.update(cardMessage(card, printings, icons, emojis, config.siteUrl, index));
+    await interaction.update(feedback(cardMessage(card, printings, icons, emojis, config.siteUrl, index), "card", card.id));
   } catch (err) {
     log("error", "command_failed", { command: CARD_COMMAND.name, error: err });
   }
@@ -806,7 +847,8 @@ async function collectionCommand(interaction: ChatInputCommandInteraction<"cache
             interaction.options.getString("default"),
             config.siteUrl,
           );
-    await interaction.editReply(reply);
+    const found = lookupCard(catalogue, interaction.options.getString("card") ?? "");
+    await interaction.editReply(typeof reply === "string" ? reply : feedback(reply, "collection", found && "card" in found ? found.card.id : null));
   } catch (err) {
     log("error", "command_failed", { command: COLLECTION_COMMAND.name, error: err });
   }
@@ -891,7 +933,7 @@ async function lendCommand(interaction: ChatInputCommandInteraction<"cached">): 
     return;
   }
   await interaction.editReply({ ...lendReceipt(catalogue, emojis, loan, unmarked, fixes), allowedMentions: { parse: [] } });
-  await interaction.followUp({ ...lendAnnouncement(catalogue, emojis, loan), allowedMentions: { users: [borrower.id] } });
+  await interaction.followUp({ ...feedback(lendAnnouncement(catalogue, emojis, loan), "lend"), allowedMentions: { users: [borrower.id] } });
 }
 
 /** /lend deck: the lender's own deck with its cards, by the id autocomplete gives or a typed name. */
@@ -1051,7 +1093,7 @@ async function deckCommand(interaction: ChatInputCommandInteraction<"cached">): 
     const { missing } = missingCards(deck, entries, await ownedCopies(interaction.user.id));
     await interaction.editReply(textMessage(`Shared, ${deck.visibility === "public" ? "public" : "for your servers' members"}.`));
     await interaction.followUp({
-      ...deckMessage(deck, entries, catalogue, icons, emojis, interaction.member.displayName, missing, config.siteUrl),
+      ...feedback(deckMessage(deck, entries, catalogue, icons, emojis, interaction.member.displayName, missing, config.siteUrl), "deck", deck.id),
       allowedMentions: { parse: [] },
     });
   } catch (err) {
@@ -1147,7 +1189,7 @@ async function notifyTradeMatches(): Promise<void> {
       const fresh = shown.filter((m) => data.some((d) => d.trader_id === m.trader_id && d.card_id === m.card_id));
       if (fresh.length === 0) continue;
       await client.users
-        .send(user, { ...tradeDm(fresh, catalogue, timeZone, config.siteUrl).message, allowedMentions: { parse: [] } })
+        .send(user, { ...feedback(tradeDm(fresh, catalogue, timeZone, config.siteUrl).message, "trade"), allowedMentions: { parse: [] } })
         .catch((err: unknown) => log("info", "trade_dm_not_sent", { user, error: err }));
     }
   } catch (err) {
@@ -1205,6 +1247,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .then((c) => interaction.respond(c))
         .catch((err: unknown) => log("error", "autocomplete_failed", { command: interaction.commandName, error: err })),
     );
+    return;
+  }
+  // Also in DMs (trade matches, the catalogue), so before the server-only handlers below.
+  if ((interaction.isButton() || interaction.isModalSubmit()) && parseFeedbackId(interaction.customId)) {
+    const from = parseFeedbackId(interaction.customId)!;
+    await tracked("command", interaction.isButton() ? feedbackButton(interaction, interaction.customId) : feedbackForm(interaction, from));
+    return;
+  }
+  if (interaction.isChatInputCommand() && interaction.commandName === FEEDBACK_COMMAND.name) {
+    await tracked("command", feedbackButton(interaction, feedbackId()));
     return;
   }
   // In a DM, so before the server-only handlers below.
@@ -2527,7 +2579,7 @@ async function checkCardFeed(): Promise<void> {
   try {
     const owner = await ownerId();
     if (!owner) throw new Error("the application has no owner");
-    await client.users.send(owner, { ...proposalMessage(fetched.buildId, diff, id), allowedMentions: { parse: [] } });
+    await client.users.send(owner, { ...feedback(proposalMessage(fetched.buildId, diff, id), "catalogue"), allowedMentions: { parse: [] } });
     log("info", "riftbound_feed_proposed", { proposal: id, build_id: fetched.buildId, ...proposalCounts(diff) });
   } catch (err) {
     // Unasked, so the next check asks again.

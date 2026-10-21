@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { AuthButton } from "@/components/auth-button";
 import { BotStatusDot } from "@/components/bot-status";
+import { FeedbackLink } from "@/components/feedback-form";
 import { MainNav, RiftboundNav, SiteNav } from "@/components/site-nav";
 import { hasEnvVars, RIOT_DISCLAIMER } from "@/lib/utils";
 import "./globals.css";
@@ -91,6 +92,15 @@ export default function RootLayout({
                 <Link href="/terms" className="hover:text-foreground">
                   Terms
                 </Link>
+                <Suspense
+                  fallback={
+                    <Link href="/feedback" className="hover:text-foreground">
+                      Feedback
+                    </Link>
+                  }
+                >
+                  <FeedbackLink />
+                </Suspense>
               </span>
               {hasEnvVars && (
                 <Suspense fallback={<span>Bot status…</span>}>

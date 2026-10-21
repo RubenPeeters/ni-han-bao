@@ -16,6 +16,7 @@ describe("loadConfig", () => {
       supabaseSecretKey: "s",
       siteUrl: null,
       riotApiKey: null,
+      forge: null,
     });
   });
 
@@ -25,6 +26,11 @@ describe("loadConfig", () => {
 
   it("reads the optional riot api key", () => {
     expect(loadConfig({ ...full, RIOT_API_KEY: "r" }).riotApiKey).toBe("r");
+  });
+
+  it("reads forge's intake only with both its url and token", () => {
+    expect(loadConfig({ ...full, FORGE_URL: "https://forge.example", FORGE_INTAKE_TOKEN: "k" }).forge).toEqual({ url: "https://forge.example", token: "k" });
+    expect(loadConfig({ ...full, FORGE_URL: "https://forge.example" }).forge).toBeNull();
   });
 
   it("reads the optional guild id", () => {
