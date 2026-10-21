@@ -22,7 +22,7 @@ export const MAX_COMPONENTS = 40;
 export const MAX_TEXT = 4000;
 
 /** "Fury" with its emoji in front, or the word alone without one. */
-const labelled = (emojis: Emojis, label: string) => {
+export const labelled = (emojis: Emojis, label: string) => {
   const e = emoji(emojis, `rb_${label.toLowerCase()}`);
   return e ? `${e} ${label}` : label;
 };

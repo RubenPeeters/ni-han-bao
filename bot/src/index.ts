@@ -92,8 +92,8 @@ import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type
 import { rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
 import { addToCollection, COLLECTION_COMMAND, setLending } from "./collection.js";
-import { missingCards, type DeckEntry, type OwnedCopy } from "./deck-match.js";
-import { DECK_COMMAND, deckEmbed, privatePrompt, SHARE_CANCEL_ID, SHARE_PUBLIC_ID, type SharedDeck } from "./decks.js";
+import { deckText, missingCards, type DeckEntry, type OwnedCopy } from "./deck-match.js";
+import { canSeeDeck, DECK_COMMAND, deckMessage, parseCopyButtonId, privatePrompt, SHARE_CANCEL_ID, SHARE_PUBLIC_ID, textMessage, type SharedDeck } from "./decks.js";
 import {
   answerId,
   answerReply,
@@ -1014,18 +1014,19 @@ async function deckCommand(interaction: ChatInputCommandInteraction<"cached">): 
     const named = (data as (SharedDeck & { entries: DeckEntry[] })[]).filter((d) => d.id === typed || d.name.toLowerCase() === typed.toLowerCase());
     if (named.length !== 1) {
       await interaction.editReply(
-        named.length ? `You have ${named.length} decks called ${typed}: pick one from the list.` : `You have no deck called ${typed.slice(0, 100)}. Pick one from the list.`,
+        textMessage(named.length ? `You have ${named.length} decks called ${typed}: pick one from the list.` : `You have no deck called ${typed.slice(0, 100)}. Pick one from the list.`),
       );
       return;
     }
     const { entries, ...deck } = named[0];
     if (deck.visibility === "private") {
-      const prompt = await interaction.editReply(privatePrompt(deck.name));
+      const legend = catalogue.cards.find((c) => c.id === deck.legend_id) ?? null;
+      const prompt = await interaction.editReply(privatePrompt(deck.name, legend, catalogue));
       // Timed out: the same as Cancel.
       const click = await prompt.awaitMessageComponent({ filter: (i) => i.user.id === interaction.user.id, time: SHARE_PROMPT_MS }).catch(() => null);
       if (click) await click.deferUpdate();
       if (!click || click.customId === SHARE_CANCEL_ID) {
-        await interaction.editReply({ content: "Not shared: the deck stays private.", components: [] });
+        await interaction.editReply(textMessage("Not shared: the deck stays private."));
         return;
       }
       deck.visibility = click.customId === SHARE_PUBLIC_ID ? "public" : "servers";
@@ -1037,14 +1038,46 @@ async function deckCommand(interaction: ChatInputCommandInteraction<"cached">): 
       if (error) throw new Error(`riftbound_decks update: ${error.message}`);
     }
     const { missing } = missingCards(deck, entries, await ownedCopies(interaction.user.id));
-    await interaction.editReply({ content: `Shared, ${deck.visibility === "public" ? "public" : "for your servers' members"}.`, components: [] });
+    await interaction.editReply(textMessage(`Shared, ${deck.visibility === "public" ? "public" : "for your servers' members"}.`));
     await interaction.followUp({
-      embeds: [deckEmbed(deck, entries, catalogue, interaction.member.displayName, missing, config.siteUrl)],
+      ...deckMessage(deck, entries, catalogue, icons, emojis, interaction.member.displayName, missing, config.siteUrl),
       allowedMentions: { parse: [] },
     });
   } catch (err) {
     log("error", "command_failed", { command: DECK_COMMAND.name, error: err });
-    await interaction.editReply({ content: FAILED, components: [] });
+    await interaction.editReply(textMessage(FAILED));
+  }
+}
+
+/** Copy as text under a shared deck: its "3 Card Name" list, for whoever pressed it, while they may still see the deck on the site. */
+async function deckCopyButton(interaction: ButtonInteraction<"cached">, deckId: string): Promise<void> {
+  try {
+    const { data, error } = await db
+      .from("riftbound_decks")
+      .select("user_id, name, legend_id, champion_id, visibility, entries:riftbound_deck_cards(section, card_id, printing_id, quantity)")
+      .eq("id", deckId)
+      .maybeSingle();
+    if (error) throw new Error(`riftbound_decks select: ${error.message}`);
+    const deck = data as (Pick<SharedDeck, "name" | "legend_id" | "champion_id" | "visibility"> & { user_id: string; entries: DeckEntry[] }) | null;
+    let memberships: { guild_id: string; user_id: string }[] = [];
+    if (deck?.visibility === "servers" && deck.user_id !== interaction.user.id) {
+      const members = await db.from("guild_members").select("guild_id, user_id").in("user_id", [deck.user_id, interaction.user.id]);
+      if (members.error) throw new Error(`guild_members select: ${members.error.message}`);
+      memberships = members.data;
+    }
+    if (!deck || !canSeeDeck(deck.user_id, deck.visibility, interaction.user.id, memberships)) {
+      await interaction.reply({ content: "This deck is no longer shared.", flags: MessageFlags.Ephemeral });
+      return;
+    }
+    const list = deckText(deck, new Map(catalogue.cards.map((c) => [c.id, c])));
+    // A message holds 2000 characters; a longer list comes as a file.
+    await interaction.reply(
+      list.length <= 1900
+        ? { content: `\`\`\`\n${list}\n\`\`\``, flags: MessageFlags.Ephemeral }
+        : { files: [{ attachment: Buffer.from(list), name: `${deck.name.replace(/[^\w-]+/g, "_").slice(0, 60) || "deck"}.txt` }], flags: MessageFlags.Ephemeral },
+    );
+  } catch (err) {
+    log("error", "command_failed", { command: DECK_COMMAND.name, error: err });
   }
 }
 
@@ -1174,6 +1207,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (eventId !== null) await tracked("command", goingButton(interaction, eventId));
     const answer = parseAnswerId(interaction.customId);
     if (answer !== null) await tracked("command", loanAnswerButton(interaction, answer));
+    const copied = parseCopyButtonId(interaction.customId);
+    if (copied !== null) await tracked("command", deckCopyButton(interaction, copied));
     return;
   }
   if (interaction.isModalSubmit() && interaction.inCachedGuild()) {

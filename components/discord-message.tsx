@@ -86,11 +86,16 @@ function Markdown({ text, channels, emojis }: { text: string } & Names) {
   return (
     <div className="whitespace-pre-line break-words">
       {lines.map((line, i) => {
-        // Discord's headings (### ), which only its newer components draw.
+        // Discord's headings (### ) and subtext (-# ), which only its newer components draw.
         const heading = /^#{1,3} (.*)$/.exec(line);
+        const subtext = /^-# (.*)$/.exec(line);
         return heading ? (
           <p key={i} className="text-base font-bold">
             {draw(discordMarkdown(heading[1], channels))}
+          </p>
+        ) : subtext ? (
+          <p key={i} className="text-xs text-muted-foreground">
+            {draw(discordMarkdown(subtext[1], channels))}
           </p>
         ) : (
           <Fragment key={i}>
@@ -167,7 +172,14 @@ function ComponentView({ c, names }: { c: Component; names: Names }) {
         <div className="flex flex-wrap gap-1">
           {c.items?.map((item) => (
             // eslint-disable-next-line @next/next/no-img-element
-            <img key={item.media.url} src={item.media.url} alt={item.description ?? ""} loading="lazy" className="max-h-80 rounded-md" />
+            // Several images share the row, as Discord tiles them.
+            <img
+              key={item.media.url}
+              src={item.media.url}
+              alt={item.description ?? ""}
+              loading="lazy"
+              className={cn("rounded-md", (c.items?.length ?? 0) > 1 ? "max-h-32" : "max-h-80")}
+            />
           ))}
         </div>
       );
