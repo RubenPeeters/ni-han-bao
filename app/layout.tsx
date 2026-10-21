@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Cormorant_Garamond, Crimson_Pro } from "next/font/google";
 import { ThemeProvider } from "next-themes";
+import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { AuthButton } from "@/components/auth-button";
@@ -8,6 +9,7 @@ import { BotStatusDot } from "@/components/bot-status";
 import { MainNav, RiftboundNav, SiteNav } from "@/components/site-nav";
 import { hasEnvVars, RIOT_DISCLAIMER } from "@/lib/utils";
 import "./globals.css";
+import icon from "./icon.png";
 
 // Link previews need absolute image URLs that unfurlers can fetch. VERCEL_URL is the
 // per-deployment host, which Vercel's deployment protection hides; the production one is not.
@@ -62,8 +64,9 @@ export default function RootLayout({
             <header className="flex items-center gap-1 border-b pb-4 sm:gap-2">
               <Link
                 href="/"
-                className="whitespace-nowrap rounded-md text-lg font-semibold font-heading transition-colors hover:text-gold active:text-gold/80"
+                className="flex items-center gap-2 whitespace-nowrap rounded-md text-lg font-semibold font-heading transition-colors hover:text-gold active:text-gold/80"
               >
+                <Image src={icon} alt="" className="size-7 rounded-full" priority />
                 nexus
               </Link>
               <Suspense fallback={<MainNav pathname={null} />}>

@@ -2,8 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Theme "Archive" (#196): stone black primary, gold (--gold) the one accent; chart-1 repeats
-   primary, chart-2 is gold. success and destructive are status accents only (online/offline,
+/* Theme "Archive" (#196): stone black primary, gold (--gold) the brand accent (site name,
+   headings, chart-2). Crystal blue (--crystal, #236, from the Nexus avatar) marks interaction
+   only: prose links, focus rings, the active tab, and chart-3 when a chart needs a third series.
+   chart-1 repeats primary. success and destructive are status accents only (online/offline,
    up/down). --input is darker than --border so form fields keep a 3:1 outline. */
 @layer base {
   :root {
@@ -23,14 +25,16 @@
     --accent: 60 5% 96%;
     --accent-foreground: 24 10% 10%;
     --gold: 35 92% 33%;
+    --crystal: 199 93% 33%;
     --destructive: 0 74% 42%;
     --destructive-foreground: 0 0% 100%;
     --success: 142 72% 29%;
     --border: 20 6% 90%;
     --input: 25 5% 45%;
-    --ring: 24 10% 10%;
+    --ring: 199 93% 33%;
     --chart-1: 24 10% 10%;
     --chart-2: 35 92% 33%;
+    --chart-3: 199 93% 33%;
     --radius: 0.25rem;
   }
   .dark {
@@ -50,14 +54,16 @@
     --accent: 23 9% 17%;
     --accent-foreground: 60 9% 98%;
     --gold: 41 96% 42%;
+    --crystal: 197 95% 55%;
     --destructive: 0 91% 71%;
     --destructive-foreground: 24 10% 10%;
     --success: 142 69% 58%;
     --border: 30 6% 25%;
     --input: 25 5% 45%;
-    --ring: 60 9% 98%;
+    --ring: 197 95% 55%;
     --chart-1: 60 9% 98%;
     --chart-2: 41 96% 42%;
+    --chart-3: 197 95% 55%;
   }
 }
 
