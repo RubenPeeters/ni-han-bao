@@ -63,7 +63,7 @@ export async function ProfileWishlist({ user, own }: { user: string; own?: boole
             {mine ? (
               <>
                 Nothing wanted. Add cards below, or count a deck&apos;s cards with its Wishlist setting in the{" "}
-                <Link href="/decks" className="underline underline-offset-4">
+                <Link href="/decks" className="text-crystal underline underline-offset-4 hover:text-crystal/80">
                   deck editor
                 </Link>
                 .

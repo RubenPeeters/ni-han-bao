@@ -58,6 +58,7 @@ export default {
           foreground: "hsl(var(--destructive-foreground))",
         },
         gold: "hsl(var(--gold))",
+        crystal: "hsl(var(--crystal))",
         success: "hsl(var(--success))",
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -65,6 +66,7 @@ export default {
         chart: {
           "1": "hsl(var(--chart-1))",
           "2": "hsl(var(--chart-2))",
+          "3": "hsl(var(--chart-3))",
         },
       },
       borderRadius: {

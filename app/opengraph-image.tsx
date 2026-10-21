@@ -5,6 +5,8 @@ import { hasEnvVars } from "@/lib/utils";
 import { createClient } from "@supabase/supabase-js";
 import { cacheLife } from "next/cache";
 import { ImageResponse } from "next/og";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 // The link preview for every page: unfurlers fetch it logged out, so it shows the public
 // totals only, never a server, a member or a per-server number (#55).
@@ -33,6 +35,7 @@ async function loadTotals(): Promise<Totals | null> {
 
 export default async function Image() {
   const totals = await loadTotals();
+  const icon = `data:image/png;base64,${(await readFile(join(process.cwd(), "app/icon.png"))).toString("base64")}`;
   const stats = totals && [
     ["Servers", totals.servers],
     ["Members", totals.members],
@@ -56,7 +59,11 @@ export default async function Image() {
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ fontSize: 96, color: GOLD }}>nexus</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 28 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- Satori draws plain img only */}
+            <img src={icon} alt="" width={96} height={96} style={{ borderRadius: 48 }} />
+            <div style={{ fontSize: 96, color: GOLD }}>nexus</div>
+          </div>
           <div style={{ fontSize: 36, color: MUTED }}>
             Quietly counting every message, so you can argue about who talks too much.
           </div>

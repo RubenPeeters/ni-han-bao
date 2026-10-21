@@ -98,7 +98,7 @@ export async function ProfileCollection({ user, own }: { user: string; own?: boo
         <EmptyState>
           {mine ? (
             <>
-              No cards yet. Add them on the <Link href="/cards" className="underline underline-offset-4">Cards</Link> page
+              No cards yet. Add them on the <Link href="/cards" className="text-crystal underline underline-offset-4 hover:text-crystal/80">Cards</Link> page
               with Edit my collection, or with /collection add in Discord.
             </>
           ) : (

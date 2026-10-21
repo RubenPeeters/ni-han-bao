@@ -163,7 +163,7 @@ export default function AboutPage() {
           nexus is a hobby project by Ruben. Questions, or a request to delete data?{" "}
           <a
             href={`${REPO}/issues`}
-            className="font-medium underline underline-offset-4 hover:text-gold"
+            className="font-medium text-crystal underline underline-offset-4 hover:text-crystal/80"
           >
             Open an issue on GitHub
           </a>
