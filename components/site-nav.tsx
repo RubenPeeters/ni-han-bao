@@ -23,7 +23,7 @@ export interface Guild {
 const tab = (current: boolean) =>
   cn(
     "flex min-h-11 items-center whitespace-nowrap rounded-md px-2 text-sm sm:px-3 transition-colors hover:bg-secondary hover:text-foreground active:bg-secondary/60",
-    current ? "bg-secondary text-foreground" : "text-muted-foreground",
+    current ? "bg-secondary text-foreground shadow-[inset_0_-2px_0_hsl(var(--crystal))]" : "text-muted-foreground",
   );
 
 export function GuildIcon({ guild, className }: { guild: Guild; className: string }) {

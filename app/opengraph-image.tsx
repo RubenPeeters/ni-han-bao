@@ -5,6 +5,8 @@ import { hasEnvVars } from "@/lib/utils";
 import { createClient } from "@supabase/supabase-js";
 import { cacheLife } from "next/cache";
 import { ImageResponse } from "next/og";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 
 // The link preview for every page: unfurlers fetch it logged out, so it shows the public
 // totals only, never a server, a member or a per-server number (#55).
@@ -33,6 +35,8 @@ async function loadTotals(): Promise<Totals | null> {
 
 export default async function Image() {
   const totals = await loadTotals();
+  // Satori needs the bytes, not a path; the same file is the site icon.
+  const icon = `data:image/png;base64,${(await readFile(join(process.cwd(), "app/icon.png"))).toString("base64")}`;
   const stats = totals && [
     ["Servers", totals.servers],
     ["Members", totals.members],
@@ -56,7 +60,11 @@ export default async function Image() {
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ fontSize: 96, color: GOLD }}>nexus</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- Satori draws <img>, next/image does not exist here */}
+            <img src={icon} width={112} height={112} style={{ borderRadius: 56 }} alt="" />
+            <div style={{ fontSize: 96, color: GOLD }}>nexus</div>
+          </div>
           <div style={{ fontSize: 36, color: MUTED }}>
             Quietly counting every message, so you can argue about who talks too much.
           </div>
