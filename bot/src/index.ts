@@ -119,7 +119,7 @@ import {
   type Wanted,
 } from "./lending.js";
 import { CARD_COMMAND, cardChoices, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
-import { cardMessage } from "./riftbound-reply.js";
+import { cardMessage, PAGING_MS, parsePageButtonId } from "./riftbound-reply.js";
 import { emojiImage, emojiPlan, wantedEmojis, type Emojis } from "./emojis.js";
 import { feedItems, fetchFeed, transformFeed, type FeedCard, type FeedIcon, type FeedPrinting } from "./riftbound-feed.js";
 import {
@@ -744,6 +744,21 @@ async function cardCommand(interaction: ChatInputCommandInteraction<"cached">): 
   }
 }
 
+/** /card's Previous and Next: anyone in the channel, within PAGING_MS of the reply; later clicks change nothing. */
+async function cardPageButton(interaction: ButtonInteraction<"cached">, cardId: string, index: number): Promise<void> {
+  try {
+    const card = catalogue.cards.find((c) => c.id === cardId);
+    const printings = catalogue.printings.filter((p) => p.card_id === cardId);
+    if (!card || index >= printings.length || Date.now() - interaction.message.createdTimestamp > PAGING_MS) {
+      await interaction.deferUpdate();
+      return;
+    }
+    await interaction.update(cardMessage(card, printings, icons, emojis, config.siteUrl, index));
+  } catch (err) {
+    log("error", "command_failed", { command: CARD_COMMAND.name, error: err });
+  }
+}
+
 /** /collection add and /collection lending: the caller's own rows, replies only they see. */
 async function collectionCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
   try {
@@ -1207,6 +1222,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (answer !== null) await tracked("command", loanAnswerButton(interaction, answer));
     const copied = parseCopyButtonId(interaction.customId);
     if (copied !== null) await tracked("command", deckCopyButton(interaction, copied));
+    const cardPage = parsePageButtonId(interaction.customId);
+    if (cardPage !== null) await tracked("command", cardPageButton(interaction, cardPage.cardId, cardPage.index));
     return;
   }
   if (interaction.isModalSubmit() && interaction.inCachedGuild()) {
