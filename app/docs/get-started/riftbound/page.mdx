@@ -29,7 +29,9 @@ Look up cards, keep your collection, and lend cards to the people you play with.
 
 On the Cards page, press **Edit my collection**, then count copies with the steppers on each card. **What the steppers count** switches between **Owned**, **For trade** and **To lend**; condition and language apply to the copies you add. Changes save as you go: "All changes saved".
 
-From Discord, `/collection add card:Ahri count:2` adds copies too, in the language you last used unless you pick one.
+From Discord, `/collection add card:Ahri count:2` adds copies too, in the language you last used unless you pick one. The reply shows the card and your new count.
+
+<ReplyExample name="collection-add" />
 
 **My collection**, under **Riftbound**, shows the cards you own with the same steppers, and sums them up per set, rarity and language. Others see those totals on your profile's **Collection** tab; who sees it follows your [profile visibility](/docs/get-started/link-accounts#your-profile).
 
@@ -45,6 +47,8 @@ Lending is off until you turn it on, per person:
 Members of your servers then see your copies to lend under **Who has it?** on a card's page. Your profile must not be private for that.
 
 To record a loan: `/lend member:@Chloé cards:2 Jinx; Ahri`, with an optional `due` date. The borrower gets **Confirm** and **Dispute** buttons in the channel. When the cards are back, either of you runs `/return member:@Chloé`. Lost cards: the owner runs `/return` with `lost:True`.
+
+<ReplyExample name="lend" />
 
 To lend a whole deck as one loan, with one due date and one confirmation: `/lend member:@Chloé deck:Ahri control`, or **Lend deck** under **Lending** on the deck's page. A loan made on the site is confirmed on the borrower's **My loans** page. Tick **Not for lending** on a deck you keep built: its cards are then never offered to lend, whatever your per-card counts say.
 

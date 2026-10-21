@@ -1,9 +1,13 @@
 import { readFileSync } from "node:fs";
+import { ComponentType, MessageFlags } from "discord.js";
 import { describe, expect, it, vi } from "vitest";
 import { addToCollection, setLending, type CollectionWriter } from "./collection.js";
 import type { Catalogue } from "./riftbound.js";
 
 const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue;
+const none = new Map<string, string>();
+// The reply as Discord gets it, to look for its text.
+const shown = (reply: unknown) => JSON.stringify(reply);
 
 function writer(overrides: Partial<CollectionWriter> = {}): CollectionWriter {
   return {
@@ -14,37 +18,47 @@ function writer(overrides: Partial<CollectionWriter> = {}): CollectionWriter {
 }
 
 describe("/collection add", () => {
-  it("adds copies of the card's printing in the chosen language and says the new count", async () => {
+  it("adds copies of the card's printing in the chosen language, with its picture, rarity and the new count", async () => {
     const w = writer();
-    const reply = await addToCollection(w, catalogue, "u", "ahri-alluring", 2, "fr");
+    const reply = await addToCollection(w, catalogue, new Map([["rb_rare", "7"]]), "u", "ahri-alluring", 2, "fr");
     expect(w.add).toHaveBeenCalledWith("u", "ogn-066-298", 2, "fr");
-    expect(reply).toContain("now have 3 normal NM in French");
+    expect(reply).toMatchObject({
+      flags: MessageFlags.IsComponentsV2,
+      components: [
+        {
+          type: ComponentType.Section,
+          components: [{ content: "Added 2× **Ahri, Alluring** in French · you now have 3\n-# <:rb_rare:7> Rare · OGN-066/298" }],
+          accessory: { type: ComponentType.Thumbnail, description: "Ahri, Alluring" },
+        },
+      ],
+    });
   });
 
-  it("leaves the language to the last-used one and names it", async () => {
+  it("leaves the language to the last-used one and names it, and the rarity in words without its emoji", async () => {
     const w = writer();
-    const reply = await addToCollection(w, catalogue, "u", "Ahri", 1, null);
+    const reply = await addToCollection(w, catalogue, none, "u", "ahri-alluring", 1, null);
     expect(w.add).toHaveBeenCalledWith("u", expect.any(String), 1, null);
-    expect(reply).toContain("in Chinese (Simplified)");
+    expect(shown(reply)).toContain("in Chinese (Simplified)");
+    expect(shown(reply)).toContain("-# Rare · OGN-066/298");
   });
 
   it("finds a typed collector code and keeps the count within 1 to 99", async () => {
     const w = writer();
-    await addToCollection(w, catalogue, "u", "ogn 255", 500, null);
+    await addToCollection(w, catalogue, none, "u", "ogn 255", 500, null);
     expect(w.add).toHaveBeenCalledWith("u", "ogn-255-298", 99, null);
   });
 
   it("writes nothing for an unknown card", async () => {
     const w = writer();
-    expect(await addToCollection(w, catalogue, "u", "nope", 1, null)).toContain("No card");
+    expect(await addToCollection(w, catalogue, none, "u", "nope", 1, null)).toContain("No card");
     expect(w.add).not.toHaveBeenCalled();
   });
 
   it("says so for a forgotten user or a failed write", async () => {
-    expect(await addToCollection(writer({ add: async () => null }), catalogue, "u", "Ahri", 1, null)).toContain("/show-me");
+    expect(await addToCollection(writer({ add: async () => null }), catalogue, none, "u", "Ahri", 1, null)).toContain("/show-me");
     const failing = writer({ add: async () => { throw new Error("down"); } });
     vi.spyOn(console, "error").mockImplementation(() => {});
-    expect(await addToCollection(failing, catalogue, "u", "Ahri", 1, null)).toContain("nothing was changed");
+    expect(await addToCollection(failing, catalogue, none, "u", "Ahri", 1, null)).toContain("nothing was changed");
   });
 });
 
@@ -62,7 +76,8 @@ describe("/collection lending", () => {
     expect(w.setLending).toHaveBeenCalledWith("u", true, null);
     expect(reply).toContain("nothing is lendable");
     expect(reply).toContain("`default`");
-    expect(reply).toContain("https://x/u/u/collection");
+    expect(reply).toContain("https://x/collection");
+    expect(reply).not.toContain("/u/");
   });
 
   it("warns that a private profile is never listed", async () => {

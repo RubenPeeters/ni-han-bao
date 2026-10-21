@@ -14,8 +14,11 @@ import {
   type APISeparatorComponent,
   type APITextDisplayComponent,
 } from "discord.js";
-import { byPrinting, cardImageUrl, plainText, textParts, type Card, type CardToken, type Printing } from "./card-match.js";
+import { byPrinting, cardImageUrl, plainText, textParts, type Card, type CardToken, type Catalogue, type Printing } from "./card-match.js";
 import { emoji, type Emojis } from "./emojis.js";
+
+/** A message in Discord's components. */
+export type V2 = { components: APIMessageTopLevelComponent[]; flags: MessageFlags.IsComponentsV2 };
 
 // Per message: every component counts, nested ones too, and all of their text together.
 export const MAX_COMPONENTS = 40;
@@ -64,6 +67,22 @@ export function cardSection(card: Card, printing: Printing | null, emojis: Emoji
     components: [text],
     accessory: { type: ComponentType.Thumbnail, media: { url: cardImageUrl(printing.image_url, width) }, description: card.name },
   };
+}
+
+/** The card's image at `width` pixels: the given printing's, else its first printing's with one. */
+export function imageOf(catalogue: Pick<Catalogue, "printings">, card: Card, width: number, printingId: string | null = null): string | null {
+  const url = catalogue.printings
+    .filter((p) => p.card_id === card.id && p.image_url)
+    .sort((a, b) => Number(b.id === printingId) - Number(a.id === printingId) || byPrinting(a, b))[0]?.image_url;
+  return url ? cardImageUrl(url, card.type === "Battlefield" ? Math.round(width * 1.4) : width) : null;
+}
+
+/** Text with a picture beside it, or the text alone without one. */
+export function withThumbnail(content: string, image: string | null, description: string): APISectionComponent | APITextDisplayComponent {
+  const text: APITextDisplayComponent = { type: ComponentType.TextDisplay, content };
+  return image
+    ? { type: ComponentType.Section, components: [text], accessory: { type: ComponentType.Thumbnail, media: { url: image }, description } }
+    : text;
 }
 
 /** The card's colour: its (first) domain's, from Riot's feed. */

@@ -1,5 +1,8 @@
+import { readFileSync } from "node:fs";
+import { ComponentType } from "discord.js";
 import { describe, expect, it } from "vitest";
-import { newMatches, placeText, tradeDm, type Candidate, type Place } from "./trades.js";
+import type { Catalogue } from "./riftbound.js";
+import { DM_MATCHES, newMatches, placeText, tradeDm, type Candidate, type Place } from "./trades.js";
 import type { Wanted } from "./wishlist.js";
 
 const nowhere: Place = { place_kind: null, event_name: null, starts_at: null, store_name: null, store_city: null };
@@ -31,6 +34,11 @@ describe("newMatches", () => {
       () => wanted,
     );
     expect(out.get("anna")?.map((m) => `${m.card_id}:${m.copies}`)).toEqual(["ahri:1"]);
+  });
+
+  it("says how many of the card the wanter still wants", () => {
+    const out = newMatches([candidate({})], () => [want({ wanted: 2 }), want({ language: "fr", wanted: 1 }), want({ card_id: "jinx", wanted: 4 })]);
+    expect(out.get("anna")?.[0].wanted).toBe(3);
   });
 
   it("adds up a trader's fitting copies and keeps the server with the best place to meet", () => {
@@ -65,24 +73,39 @@ describe("placeText", () => {
 });
 
 describe("tradeDm", () => {
-  const match = { guild_id: "g1", trader_id: "bram", card_id: "ahri", copies: 2, ...regulars };
+  const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue;
+  const match = { guild_id: "g1", trader_id: "bram", card_id: "ahri-alluring", copies: 2, wanted: 3, ...regulars };
 
-  it("introduces the trader, says where to meet and that no money goes through the bot", () => {
-    const { content: text } = tradeDm([match], () => "Ahri", () => "UTC", "https://example.com");
-    expect(text).toContain("You want **Ahri**: <@bram> has 2 for trade. Meet up: you are both regulars at The Card Corner (Leuven).");
+  it("shows the card's picture, introduces the trader, says where to meet and that no money goes through the bot", () => {
+    const { message, shown } = tradeDm([match], catalogue, () => "UTC", "https://example.com");
+    const [container] = message.components as { components: { type: number; components?: { content: string }[]; accessory?: unknown }[] }[];
+    expect(container.components[1]).toMatchObject({
+      type: ComponentType.Section,
+      components: [
+        { content: "**Ahri, Alluring**\nYou want 3, <@bram> has 2 for trade.\nMeet up: you are both regulars at The Card Corner (Leuven)." },
+      ],
+      accessory: { type: ComponentType.Thumbnail, description: "Ahri, Alluring" },
+    });
+    const text = JSON.stringify(message);
     expect(text).toContain("no prices or payments go through the bot");
     expect(text).toContain("<https://example.com/s/g1/trades>");
     expect(text).not.toMatch(/€|\$|price:/i);
+    expect(shown).toEqual([match]);
   });
 
-  it("names only the matches that fit in Discord's 2000 characters, and keeps the link", () => {
-    const many = Array.from({ length: 100 }, (_, i) => ({ ...match, card_id: `c${i}` }));
-    const { content, shown } = tradeDm(many, () => "A card with a long name", () => "UTC", "https://example.com");
-    expect(content.length).toBeLessThanOrEqual(2000);
-    expect(shown.length).toBeGreaterThan(0);
-    expect(shown.length).toBeLessThan(100);
-    expect(content.match(/^- You want/gm)).toHaveLength(shown.length);
-    expect(content).toContain("More in your next DM.");
-    expect(content).toContain("<https://example.com/s/g1/trades>");
+  it("shows the first five and links the rest to the Trades page", () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({ ...match, card_id: `c${i}` }));
+    const { message, shown } = tradeDm(many, catalogue, () => "UTC", "https://example.com");
+    const text = JSON.stringify(message);
+    expect(text.match(/You want 3/g)).toHaveLength(DM_MATCHES);
+    expect(text).toContain("And 3 more on the Trades page: <https://example.com/s/g1/trades>");
+    expect(shown).toHaveLength(8);
+  });
+
+  it("keeps the rest for the next DM without the site to link to", () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({ ...match, card_id: `c${i}` }));
+    const { message, shown } = tradeDm(many, catalogue, () => "UTC", null);
+    expect(JSON.stringify(message)).toContain("And 3 more in your next DM.");
+    expect(shown).toEqual(many.slice(0, DM_MATCHES));
   });
 });
