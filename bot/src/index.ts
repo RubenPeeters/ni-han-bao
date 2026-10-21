@@ -118,7 +118,9 @@ import {
   type CopyRow,
   type Wanted,
 } from "./lending.js";
-import { CARD_COMMAND, cardChoices, cardEmbed, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
+import { CARD_COMMAND, cardChoices, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
+import { cardMessage } from "./riftbound-reply.js";
+import { emojiImage, emojiPlan, wantedEmojis, type Emojis } from "./emojis.js";
 import { feedItems, fetchFeed, transformFeed, type FeedCard, type FeedIcon, type FeedPrinting } from "./riftbound-feed.js";
 import {
   brokenText,
@@ -723,6 +725,9 @@ async function statsReply(interaction: ChatInputCommandInteraction<"cached">) {
 
 // The catalogue in the database (#206), read on start and after an Accept: empty until then.
 let catalogue: Catalogue = { cards: [], printings: [] };
+let icons: FeedIcon[] = [];
+// The bot's emojis of Riot's icons (#224), by name: empty until synced, and replies then use words.
+let emojis: Emojis = new Map();
 
 /** /card: one card from the catalogue, for everyone in the channel. */
 async function cardCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
@@ -731,7 +736,7 @@ async function cardCommand(interaction: ChatInputCommandInteraction<"cached">): 
   try {
     if (found && "card" in found) {
       const printings = catalogue.printings.filter((p) => p.card_id === found.card.id);
-      await interaction.reply({ embeds: [cardEmbed(found.card, printings, config.siteUrl)] });
+      await interaction.reply(cardMessage(found.card, printings, icons, emojis, config.siteUrl));
     } else {
       await interaction.reply({ content: cardMiss(typed, found?.ambiguous ?? null), flags: MessageFlags.Ephemeral });
     }
@@ -2354,8 +2359,48 @@ async function startServer(guild: Guild): Promise<void> {
 /** The catalogue the commands read, from the database: Accept (#204) is the only thing that changes it. */
 async function loadCatalogue(): Promise<void> {
   // A null type (Riot's tokens) is only shown, never compared with a type.
-  catalogue = (await storedCatalogue()) as Catalogue;
+  const stored = await storedCatalogue();
+  catalogue = stored as Catalogue;
+  icons = stored.icons;
   log("info", "riftbound_catalogue_loaded", { cards: catalogue.cards.length });
+  await syncEmojis();
+}
+
+/**
+ * Riot's icons as the application's emojis (#224), with the bot's own token: a missing one is
+ * uploaded, one whose icon URL changed is replaced, any other emoji is left alone. A failure
+ * (rate limit, no permission) is logged once and the replies keep to words.
+ */
+async function syncEmojis(): Promise<void> {
+  const manager = client.application!.emojis;
+  let ids: Map<string, string> | null = null;
+  try {
+    const existing = await manager.fetch();
+    const { data: stored, error } = await db.from("riftbound_emojis").select("name, emoji_id, source_url");
+    if (error) throw new Error(`riftbound_emojis select: ${error.message}`);
+    const plan = emojiPlan(wantedEmojis(icons), existing.map((e) => ({ id: e.id, name: e.name })), stored);
+    const kept = plan.keep.size;
+    ids = plan.keep;
+    for (const wanted of [...plan.create, ...plan.replace]) {
+      const res = await fetch(wanted.url);
+      if (!res.ok) throw new Error(`${wanted.url}: HTTP ${res.status}`);
+      // Made before the old one is deleted, so a bad file leaves it standing.
+      const attachment = await emojiImage(Buffer.from(await res.arrayBuffer()));
+      if (wanted.old) await manager.delete(wanted.old);
+      const made = await manager.create({ attachment, name: wanted.name });
+      ids.set(wanted.name, made.id);
+      const saved = await db
+        .from("riftbound_emojis")
+        .upsert({ name: wanted.name, emoji_id: made.id, source_url: wanted.url, updated_at: new Date().toISOString() });
+      if (saved.error) throw new Error(`riftbound_emojis upsert: ${saved.error.message}`);
+    }
+    log("info", "riftbound_emojis_synced", { kept, created: plan.create.length, replaced: plan.replace.length });
+  } catch (err) {
+    log("error", "riftbound_emojis_sync_failed", { error: err });
+  } finally {
+    // What was synced before a failure is used; the rest is written as words.
+    if (ids) emojis = ids;
+  }
 }
 
 /** The application's owner as Discord reports it: the team owner if the app belongs to a team. */

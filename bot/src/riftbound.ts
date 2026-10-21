@@ -1,8 +1,8 @@
 // The Riftbound card catalogue (#148), Riot's real cards since #206, and the replies about
 // cards. Rows have the columns of riftbound_cards and riftbound_printings.
 
-import { ApplicationCommandOptionType, type APIEmbed } from "discord.js";
-import { cardImageUrl, codeRanks, normal, plainText, resolveCard, tokenWords, type Card, type Catalogue, type Printing, type Resolved } from "./card-match.js";
+import { ApplicationCommandOptionType } from "discord.js";
+import { codeRanks, normal, resolveCard, type Card, type Catalogue, type Printing, type Resolved } from "./card-match.js";
 
 export { resolveCard, type Card, type Catalogue, type Printing, type Resolved };
 
@@ -50,25 +50,6 @@ export function cardChoices({ cards, printings }: Catalogue, typed: string): { n
 export function lookupCard(catalogue: Catalogue, value: string): Resolved {
   const picked = catalogue.cards.find((c) => c.id === value);
   return picked ? { card: picked } : resolveCard(catalogue, value);
-}
-
-export function cardEmbed(card: Card, printings: Printing[], siteUrl: string | null): APIEmbed {
-  const image = printings.find((p) => p.image_url)?.image_url;
-  const dash = (n: number | null) => (n === null ? "-" : String(n));
-  const footer = printings.map((p) => p.collector_code).join(" · ");
-  return {
-    title: card.name,
-    url: siteUrl ? `${siteUrl.replace(/\/$/, "")}/cards/${card.id}` : undefined,
-    description: card.rules_text ? tokenWords(plainText(card.rules_text)) : undefined,
-    fields: [
-      { name: "Type", value: [...card.supertypes, card.type].join(" ").trim() || "-", inline: true },
-      { name: "Cost", value: dash(card.energy), inline: true },
-      { name: "Might", value: dash(card.might), inline: true },
-      { name: "Domains", value: card.domains.join(", ") || "-", inline: true },
-    ],
-    image: image ? { url: cardImageUrl(image, 400) } : undefined,
-    footer: footer ? { text: footer } : undefined,
-  };
 }
 
 /** The reply to a name or code that is not exactly one card. */

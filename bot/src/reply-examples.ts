@@ -8,7 +8,10 @@ import { FORGET_PROMPT } from "./forget.js";
 import { challengeText } from "./lol.js";
 import { recapMessage } from "./recap.js";
 import { reportEmbed } from "./report.js";
-import { cardEmbed, type Catalogue } from "./riftbound.js";
+import { type Catalogue } from "./riftbound.js";
+import { cardMessage } from "./riftbound-reply.js";
+import type { FeedIcon } from "./riftbound-feed.js";
+import { wantedEmojis } from "./emojis.js";
 import { settingsText } from "./setup.js";
 import { leaderboardEmbed } from "./stats.js";
 import { welcomeText } from "./welcome.js";
@@ -20,7 +23,9 @@ export interface ReplyExample {
   ephemeral: boolean;
   /** Names for the channel mentions (<#id>) in the reply. */
   channels: Record<string, string>;
-  message: { content?: string; embeds?: APIEmbed[]; components?: unknown[] };
+  /** The icon each application emoji (<:rb_fury:id>) in the reply was made from. */
+  emojis: Record<string, string>;
+  message: { content?: string; embeds?: APIEmbed[]; components?: unknown[]; flags?: number };
 }
 
 const SITE = "https://ni-han-bao.example";
@@ -29,12 +34,15 @@ const GUILD = "900000000000000001";
 const REPORT_CHANNEL = "900000000000000201";
 const SATURDAY = "2026-10-17T17:00:00Z";
 const reply = (command: string | null, message: ReplyExample["message"], more: Partial<ReplyExample> = {}): ReplyExample =>
-  ({ command, ephemeral: false, channels: {}, message, ...more });
+  ({ command, ephemeral: false, channels: {}, emojis: {}, message, ...more });
 
 export function replyExamples(): Record<string, ReplyExample> {
   // Riot's Ahri Legend, the tutorial's deck (#206).
-  const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue;
+  const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue & { icons: FeedIcon[] };
   const card = catalogue.cards.find((c) => c.id === "nine-tailed-fox")!;
+  // Demo ids: the real ones are the bot's own, made on start.
+  const emojis = wantedEmojis(catalogue.icons);
+  const emojiIds = new Map(emojis.map((e, i) => [e.name, `9000000000000003${String(i).padStart(2, "0")}`]));
   const { files: _image, ...recap } = recapMessage("2026-09-01", Buffer.alloc(0), `${SITE}/recap`);
   const going = goingMessage(1, { game: "Riftbound", name: "The Card Corner", city: "Leuven" }, SATURDAY, ZONE, null);
   const rows = [
@@ -69,7 +77,11 @@ export function replyExamples(): Record<string, ReplyExample> {
       ],
     }),
     recap: reply("/recap", recap),
-    card: reply("/card", { embeds: [cardEmbed(card, catalogue.printings.filter((p) => p.card_id === card.id), SITE)] }),
+    card: reply(
+      "/card",
+      cardMessage(card, catalogue.printings.filter((p) => p.card_id === card.id), catalogue.icons, emojiIds, SITE),
+      { emojis: Object.fromEntries(emojis.map((e) => [e.name, e.url])) },
+    ),
     going: reply("/event going", going),
     "lol-link": reply(
       "/lol link",

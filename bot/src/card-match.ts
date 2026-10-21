@@ -154,10 +154,6 @@ export function cardToken(name: string): CardToken {
 export const textParts = (text: string): (string | CardToken)[] =>
   text.split(TOKEN).map((part, i) => (i % 2 ? cardToken(part) : part));
 
-/** Tokens as words, where no icon can show (Discord): ":rb_energy_1::rb_rune_fury:" is "1 energy Fury rune". */
-export const tokenWords = (text: string) =>
-  text.replace(/(:rb_[a-z0-9_]+:)(?=:rb_)/g, "$1 ").replace(TOKEN, (_, name: string) => cardToken(name).label);
-
 /** A card image at `width` pixels, from Riot's CDN: the originals are about 800 kB. Referenced, never rehosted. */
 export function cardImageUrl(url: string, width: number): string {
   // Only Riot's CDN takes these parameters.
