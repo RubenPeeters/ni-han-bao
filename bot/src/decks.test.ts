@@ -2,7 +2,7 @@ import { type APIActionRowComponent, type APIButtonComponent, type APIContainerC
 import { describe, expect, it } from "vitest";
 import type { Card } from "./card-match.js";
 import { missingCards } from "./deck-match.js";
-import { deckMessage, parseCopyButtonId, privatePrompt } from "./decks.js";
+import { canSeeDeck, deckMessage, parseCopyButtonId, privatePrompt } from "./decks.js";
 
 describe("missingCards", () => {
   it("pinned entries take their printing first, a copy counts once, languages filter", () => {
@@ -121,5 +121,22 @@ describe("deckMessage", () => {
     expect(prompt.components[0]).toMatchObject({ type: ComponentType.Section, accessory: { media: { url: expect.stringContaining("cdn.test/l.png") } } });
     expect(texts(prompt.components[0])).toEqual(["**Foxy** is private, so nobody else could open it. Who may see it?"]);
     expect(privatePrompt("Foxy", null, { printings }).components[0].type).toBe(ComponentType.TextDisplay);
+  });
+});
+
+describe("canSeeDeck", () => {
+  const together = [
+    { guild_id: "g1", user_id: "owner" },
+    { guild_id: "g1", user_id: "viewer" },
+  ];
+  it("the owner and a public deck's viewers always, a private deck's never", () => {
+    expect(canSeeDeck("owner", "private", "owner", [])).toBe(true);
+    expect(canSeeDeck("owner", "public", "viewer", [])).toBe(true);
+    expect(canSeeDeck("owner", "private", "viewer", together)).toBe(false);
+  });
+  it("a servers deck only while they share a server: an old share's button stops after the owner leaves", () => {
+    expect(canSeeDeck("owner", "servers", "viewer", together)).toBe(true);
+    const left = [{ guild_id: "g2", user_id: "owner" }, { guild_id: "g1", user_id: "viewer" }];
+    expect(canSeeDeck("owner", "servers", "viewer", left)).toBe(false);
   });
 });

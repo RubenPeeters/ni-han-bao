@@ -93,7 +93,7 @@ import { rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, typ
 import { RiotApi } from "./riot.js";
 import { addToCollection, COLLECTION_COMMAND, setLending } from "./collection.js";
 import { deckText, missingCards, type DeckEntry, type OwnedCopy } from "./deck-match.js";
-import { DECK_COMMAND, deckMessage, parseCopyButtonId, privatePrompt, SHARE_CANCEL_ID, SHARE_PUBLIC_ID, textMessage, type SharedDeck } from "./decks.js";
+import { canSeeDeck, DECK_COMMAND, deckMessage, parseCopyButtonId, privatePrompt, SHARE_CANCEL_ID, SHARE_PUBLIC_ID, textMessage, type SharedDeck } from "./decks.js";
 import {
   answerId,
   answerReply,
@@ -1049,17 +1049,23 @@ async function deckCommand(interaction: ChatInputCommandInteraction<"cached">): 
   }
 }
 
-/** Copy as text under a shared deck: its "3 Card Name" list, for whoever pressed it, while the deck is not private. */
+/** Copy as text under a shared deck: its "3 Card Name" list, for whoever pressed it, while they may still see the deck on the site. */
 async function deckCopyButton(interaction: ButtonInteraction<"cached">, deckId: string): Promise<void> {
   try {
     const { data, error } = await db
       .from("riftbound_decks")
-      .select("name, legend_id, champion_id, visibility, entries:riftbound_deck_cards(section, card_id, printing_id, quantity)")
+      .select("user_id, name, legend_id, champion_id, visibility, entries:riftbound_deck_cards(section, card_id, printing_id, quantity)")
       .eq("id", deckId)
       .maybeSingle();
     if (error) throw new Error(`riftbound_decks select: ${error.message}`);
-    const deck = data as (Pick<SharedDeck, "name" | "legend_id" | "champion_id" | "visibility"> & { entries: DeckEntry[] }) | null;
-    if (!deck || deck.visibility === "private") {
+    const deck = data as (Pick<SharedDeck, "name" | "legend_id" | "champion_id" | "visibility"> & { user_id: string; entries: DeckEntry[] }) | null;
+    let memberships: { guild_id: string; user_id: string }[] = [];
+    if (deck?.visibility === "servers" && deck.user_id !== interaction.user.id) {
+      const members = await db.from("guild_members").select("guild_id, user_id").in("user_id", [deck.user_id, interaction.user.id]);
+      if (members.error) throw new Error(`guild_members select: ${members.error.message}`);
+      memberships = members.data;
+    }
+    if (!deck || !canSeeDeck(deck.user_id, deck.visibility, interaction.user.id, memberships)) {
       await interaction.reply({ content: "This deck is no longer shared.", flags: MessageFlags.Ephemeral });
       return;
     }

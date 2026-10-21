@@ -96,6 +96,17 @@ const COPY_PREFIX = "deck-copy:";
 export const copyButtonId = (deckId: string) => `${COPY_PREFIX}${deckId}`;
 export const parseCopyButtonId = (id: string) => (id.startsWith(COPY_PREFIX) ? id.slice(COPY_PREFIX.length) : null);
 
+/**
+ * The site's can_see_deck() for the bot's privileged reads: the owner, anyone for a public deck,
+ * and for a servers deck someone sharing a server with the owner now, given both their memberships.
+ */
+export function canSeeDeck(owner: string, visibility: string, viewer: string, memberships: { guild_id: string; user_id: string }[]): boolean {
+  if (viewer === owner || visibility === "public") return true;
+  if (visibility !== "servers") return false;
+  const ownerGuilds = new Set(memberships.filter((m) => m.user_id === owner).map((m) => m.guild_id));
+  return memberships.some((m) => m.user_id === viewer && ownerGuilds.has(m.guild_id));
+}
+
 // Media galleries take up to 10 images.
 const GALLERY_MAX = 10;
 // Riftbound's main deck types in the order a decklist reads, as on the deck page; any other type follows by name.
