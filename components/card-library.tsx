@@ -1,3 +1,4 @@
+import { byPrinting } from "@/bot/src/card-match";
 import { AddToDeck, type MyDeck } from "@/components/add-to-deck";
 import { CardGrid, type LibraryCard } from "@/components/card-grid";
 import { CardThumb } from "@/components/card-thumb";
@@ -37,8 +38,6 @@ interface Card {
 
 // PostgREST's cap on the rows of one response.
 const PAGE = 1000;
-const byNumber = (a: Printing, b: Printing) =>
-  a.collector_number - b.collector_number || a.collector_code.localeCompare(b.collector_code);
 const LOG_IN = "Log in to look through the Riftbound cards.";
 
 /**
@@ -95,13 +94,13 @@ export async function CardLibrary({ owned: ownedOnly = false }: { owned?: boolea
     myDecks(supabase, me.data),
   ]);
   if (lending.error) return <ErrorState title="Could not load the cards">Try again in a minute.</ErrorState>;
-  const cards = (data as Card[]).map((c) => ({ ...c, printings: c.printings.toSorted(byNumber) }));
-  // Collector order, as in a binder; a card without printings goes last.
-  const first = (c: Card) => c.printings[0]?.collector_number ?? Infinity;
+  const cards = (data as Card[]).map((c) => ({ ...c, printings: c.printings.toSorted(byPrinting) }));
+  // Set and collector order, as in a binder; a card without printings goes last.
+  const first = (a: Card, b: Card) => (a.printings[0] && b.printings[0] ? byPrinting(a.printings[0], b.printings[0]) : b.printings.length - a.printings.length);
   const have = new Set(owned.data.flatMap((r) => (r.quantity > 0 ? [r.printing_id] : [])));
   const library: LibraryCard[] = cards
     .filter((c) => !ownedOnly || c.printings.some((p) => have.has(p.id)))
-    .toSorted((a, b) => first(a) - first(b) || a.name.localeCompare(b.name))
+    .toSorted((a, b) => first(a, b) || a.name.localeCompare(b.name))
     .map((c) => ({
       id: c.id,
       name: c.name,
@@ -110,8 +109,7 @@ export async function CardLibrary({ owned: ownedOnly = false }: { owned?: boolea
       energy: c.energy,
       tags: c.tags,
       sets: [...new Set(c.printings.map((p) => p.set_code))],
-      codes: c.printings.map((p) => p.collector_code),
-      printings: c.printings.map(({ id, set_code, collector_code }) => ({ id, set_code, collector_code })),
+      printings: c.printings.map(({ id, set_code, collector_code, collector_number }) => ({ id, set_code, collector_code, collector_number })),
       image_url: c.printings.find((p) => p.image_url)?.image_url ?? null,
     }));
   if (ownedOnly && library.length === 0) {
@@ -154,7 +152,7 @@ export async function CardDetail({ id }: { id: string }) {
   const decks = me.data ? await myDecks(supabase, me.data as string) : null;
   if (error) return <ErrorState title="Could not load this card">Try again in a minute.</ErrorState>;
   if (!data) notFound();
-  const printings = data.printings.toSorted(byNumber);
+  const printings = data.printings.toSorted(byPrinting);
   const dash = (n: number | null) => (n === null ? "-" : String(n));
   const rarities = [...new Set(printings.flatMap((p) => (p.rarity ? [p.rarity] : [])))];
   const listed = (items: ReactNode[]) =>
