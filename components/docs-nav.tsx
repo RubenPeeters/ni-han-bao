@@ -21,7 +21,7 @@ function DocsLinks({ pathname }: { pathname: string | null }) {
                   aria-current={pathname === href ? "page" : undefined}
                   className={cn(
                     "block rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-secondary hover:text-foreground active:bg-secondary/60",
-                    pathname === href ? "bg-secondary text-foreground" : "text-muted-foreground",
+                    pathname === href ? "bg-secondary text-foreground shadow-[inset_2px_0_0_hsl(var(--crystal))]" : "text-muted-foreground",
                   )}
                 >
                   {label}
