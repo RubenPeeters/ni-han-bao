@@ -2,9 +2,21 @@
 // append-only ledger in the database (riftbound_loans). Lending moves possession, never
 // ownership: the lender's collection keeps counting the copies.
 
-import { ApplicationCommandOptionType } from "discord.js";
+import {
+  ApplicationCommandOptionType,
+  ButtonStyle,
+  ComponentType,
+  MessageFlags,
+  type APIActionRowComponent,
+  type APIButtonComponent,
+  type APISectionComponent,
+  type APITextDisplayComponent,
+} from "discord.js";
+import { emoji, type Emojis } from "./emojis.js";
 import { deckWanted, pickCopies, type CopyRow, type LoanCard, type Wanted } from "./lend-copies.js";
-import { cardChoices, cardMiss, choiceLabel, lookupCard, type Catalogue } from "./riftbound.js";
+import { cardChoices, cardMiss, choiceLabel, lookupCard, type Card, type Catalogue } from "./riftbound.js";
+import { fitLines, imageOf, MAX_TEXT, withThumbnail, type V2 } from "./riftbound-reply.js";
+import { escapeMarkdown } from "./stores.js";
 
 export { deckWanted, pickCopies, type CopyRow, type LoanCard, type Wanted };
 
@@ -125,12 +137,6 @@ export function parseDue(text: string | null, today: string): { due: string | nu
   return { due: iso };
 }
 
-export const cardList = (wanted: Wanted[]) => wanted.map((w) => `${w.count} × ${w.card.name}`).join(", ");
-
-/** What a loan lent: a deck by its name and size (its list is long), else the cards. */
-const lentText = (wanted: Wanted[], deck: string | null) =>
-  deck ? `the deck ${deck} (${wanted.reduce((n, w) => n + w.count, 0)} cards)` : cardList(wanted);
-
 /** The /lend options, cards or a deck: exactly one of them. */
 export function lendWhat(cards: string | null, deck: string | null): { cards: string } | { deck: string } | string {
   if (cards?.trim() && deck?.trim()) return "Lend cards or a deck, not both: run /lend once for each.";
@@ -149,38 +155,83 @@ export function deckChoices(decks: { id: string; name: string }[], typed: string
     .map((d) => ({ name: d.name, value: d.id }));
 }
 
-/** The ledger's rows of a loan, named from the catalogue. */
-export function loanCardList(catalogue: Catalogue, rows: { printing_id: string; quantity: number }[]): string {
-  const named = rows.map((r) => {
-    const printing = catalogue.printings.find((p) => p.id === r.printing_id);
-    const card = catalogue.cards.find((c) => c.id === printing?.card_id);
-    return { card: card ?? { name: printing?.collector_code ?? r.printing_id }, count: r.quantity };
-  });
-  return named.map((w) => `${w.count} × ${w.card.name}`).join(", ");
+/** A loan as its replies show it: the ledger's rows, and the deck's name when it was lent whole. */
+export interface LoanView {
+  id: number;
+  lender: string;
+  borrower: string;
+  due: string | null;
+  rows: { printing_id: string; quantity: number }[];
+  deck: string | null;
 }
 
+const text = (content: string): APITextDisplayComponent => ({ type: ComponentType.TextDisplay, content });
+
+/** The loan's cards: one or two with their pictures, more as lines; a whole deck by its name and its Legend's picture. */
+export function loanCards(catalogue: Catalogue, emojis: Emojis, loan: LoanView): (APISectionComponent | APITextDisplayComponent)[] {
+  const cards = new Map<string, { card: Card | undefined; name: string; printing: string; count: number }>();
+  for (const r of loan.rows) {
+    const printing = catalogue.printings.find((p) => p.id === r.printing_id);
+    const card = catalogue.cards.find((c) => c.id === printing?.card_id);
+    const seen = cards.get(card?.id ?? r.printing_id);
+    if (seen) seen.count += r.quantity;
+    else cards.set(card?.id ?? r.printing_id, { card, name: card?.name ?? printing?.collector_code ?? r.printing_id, printing: r.printing_id, count: r.quantity });
+  }
+  const list = [...cards.values()];
+  if (loan.deck !== null) {
+    const legend = list.find((c) => c.card?.type === "Legend")?.card;
+    const total = list.reduce((n, c) => n + c.count, 0);
+    return [withThumbnail(`The deck **${escapeMarkdown(loan.deck)}** · ${total} cards`, legend ? imageOf(catalogue, legend, 160) : null, legend?.name ?? loan.deck)];
+  }
+  const line = (c: (typeof list)[number]) => {
+    const domains = (c.card?.domains ?? []).map((d) => emoji(emojis, `rb_${d.toLowerCase()}`) ?? d).join(" ");
+    return `${c.count}× **${escapeMarkdown(c.name)}**${domains ? ` · ${domains}` : ""}`;
+  };
+  if (list.length > 2) return [text(fitLines(list.map(line), MAX_TEXT / 2, null))];
+  return list.map((c) => withThumbnail(line(c), c.card ? imageOf(catalogue, c.card, 160, c.printing) : null, c.name));
+}
+
+function loanMessage(heading: string, cards: (APISectionComponent | APITextDisplayComponent)[], notes: string[], buttons: APIActionRowComponent<APIButtonComponent>[] = []): V2 {
+  return {
+    components: [{ type: ComponentType.Container, components: [text(heading), ...cards, ...notes.map(text)] }, ...buttons],
+    flags: MessageFlags.IsComponentsV2,
+  };
+}
+
+const due = (loan: LoanView) => (loan.due ? ` · due ${loan.due}` : "");
+
 /** What only the lender sees after /lend. */
-export function lendReceipt(loan: number, wanted: Wanted[], unmarked: number, fixes: number | null, deck: string | null = null): string {
-  return [
-    `Recorded loan #${loan}: ${lentText(wanted, deck)}.`,
-    fixes !== null && `Loan #${fixes} no longer counts.`,
-    unmarked > 0 &&
-      `Heads-up: ${unmarked} of these copies ${unmarked === 1 ? "is" : "are"} not marked to lend, or held by a deck not for lending. Lent anyway; mark what you lend with To lend on the Cards page or /collection lending.`,
-  ]
-    .filter(Boolean)
-    .join(" ");
+export function lendReceipt(catalogue: Catalogue, emojis: Emojis, loan: LoanView, unmarked: number, fixes: number | null): V2 {
+  return loanMessage(
+    `### Loan #${loan.id} recorded\nYou lent <@${loan.borrower}>${due(loan)}`,
+    loanCards(catalogue, emojis, loan),
+    [
+      fixes !== null && `Loan #${fixes} no longer counts.`,
+      unmarked > 0 &&
+        `Heads-up: ${unmarked} of these copies ${unmarked === 1 ? "is" : "are"} not marked to lend, or held by a deck not for lending. Lent anyway; mark what you lend with To lend on the Cards page or /collection lending.`,
+    ].filter((n): n is string => !!n),
+  );
 }
 
 /** The channel message the borrower answers with Confirm or Dispute. */
-export function lendAnnouncement(
-  lender: string,
-  borrower: string,
-  loan: number,
-  wanted: Wanted[],
-  due: string | null,
-  deck: string | null = null,
-): string {
-  return `<@${lender}> lent <@${borrower}> ${lentText(wanted, deck)}${due ? `, due ${due}` : ""} (loan #${loan}). <@${borrower}>, did you get them?`;
+export function lendAnnouncement(catalogue: Catalogue, emojis: Emojis, loan: LoanView): V2 {
+  const button = (kind: "confirm" | "dispute", label: string, style: ButtonStyle.Success | ButtonStyle.Secondary): APIButtonComponent =>
+    ({ type: ComponentType.Button, custom_id: answerId(kind, loan.id, loan.borrower), label, style });
+  return loanMessage(
+    `### Loan #${loan.id}\n<@${loan.lender}> lent <@${loan.borrower}>${due(loan)}`,
+    loanCards(catalogue, emojis, loan),
+    [`<@${loan.borrower}>, did you get them?`],
+    [{ type: ComponentType.ActionRow, components: [button("confirm", "Confirm", ButtonStyle.Success), button("dispute", "Dispute", ButtonStyle.Secondary)] }],
+  );
+}
+
+/** The due-date DM to the borrower. */
+export function nudgeMessage(catalogue: Catalogue, emojis: Emojis, loan: LoanView): V2 {
+  return loanMessage(
+    `### Loan #${loan.id} is due\nFrom <@${loan.lender}>${due(loan)}`,
+    loanCards(catalogue, emojis, loan),
+    ["Give the cards back, then record it with /return."],
+  );
 }
 
 const ANSWER_ID = /^loan-(confirm|dispute):(\d+):(\d+)$/;
@@ -215,7 +266,7 @@ export function returnReply(
   me: string,
   other: string,
   lost: boolean,
-  closed: { loan_id: number }[],
+  closed: { loan_id: number; cards: number }[],
 ): { content: string; announce: boolean } {
   if (closed.length === 0) {
     return {
@@ -225,15 +276,11 @@ export function returnReply(
       announce: false,
     };
   }
-  const loans = `${closed.length === 1 ? "Loan" : "Loans"} ${closed.map((c) => `#${c.loan_id}`).join(", ")}`;
+  const loans = closed.map((c) => `- Loan #${c.loan_id}: ${c.cards} ${c.cards === 1 ? "card" : "cards"}`).join("\n");
   return {
     content: lost
-      ? `<@${me}> wrote off ${loans.toLowerCase()}: the cards <@${other}> borrowed are lost. Remove them from your collection on the Cards page if they are gone for good.`
-      : `${loans} between <@${me}> and <@${other}> ${closed.length === 1 ? "is" : "are"} closed: the cards are back with their owner.`,
+      ? `<@${me}> wrote off what <@${other}> borrowed: the cards are lost. Remove them from your collection on the Cards page if they are gone for good.\n${loans}`
+      : `Closed between <@${me}> and <@${other}>: the cards are back with their owner.\n${loans}`,
     announce: true,
   };
 }
-
-/** The due-date DM to the borrower. */
-export const nudgeText = (loan: number, lender: string, cards: string) =>
-  `Loan #${loan} from <@${lender}> is due: ${cards}. Give the cards back, then record it with /return.`;

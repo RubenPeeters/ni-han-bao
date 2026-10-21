@@ -33,6 +33,7 @@ export interface Reply {
   command: string | null;
   ephemeral: boolean;
   channels: Record<string, string>;
+  users: Record<string, string>;
   /** The official icon each of the bot's emojis (<:rb_fury:id>) shows. */
   emojis: Record<string, string>;
   message: { content?: string; embeds?: Embed[]; components?: Component[]; flags?: number };
@@ -40,6 +41,7 @@ export interface Reply {
 /** What drawing a reply's text needs. */
 interface Names {
   channels: Record<string, string>;
+  users: Record<string, string>;
   emojis: Record<string, string>;
 }
 
@@ -57,7 +59,7 @@ const BUTTON = [
 ];
 const rgb = (color: number) => `rgb(${color >> 16} ${(color >> 8) & 255} ${color & 255})`;
 
-function Markdown({ text, channels, emojis }: { text: string } & Names) {
+function Markdown({ text, channels, users, emojis }: { text: string } & Names) {
   const draw = (tokens: Token[]) =>
     tokens.map((t, i) =>
       t.kind === "bold" ? (
@@ -65,6 +67,10 @@ function Markdown({ text, channels, emojis }: { text: string } & Names) {
       ) : t.kind === "channel" ? (
         <span key={i} className="rounded bg-gold/10 px-0.5 text-gold">
           #{t.name}
+        </span>
+      ) : t.kind === "user" ? (
+        <span key={i} className="rounded bg-gold/10 px-0.5 text-gold">
+          @{t.name}
         </span>
       ) : t.kind === "link" ? (
         <span key={i} className="text-gold">
@@ -91,15 +97,15 @@ function Markdown({ text, channels, emojis }: { text: string } & Names) {
         const subtext = /^-# (.*)$/.exec(line);
         return heading ? (
           <p key={i} className="text-base font-bold">
-            {draw(discordMarkdown(heading[1], channels))}
+            {draw(discordMarkdown(heading[1], channels, users))}
           </p>
         ) : subtext ? (
           <p key={i} className="text-xs text-muted-foreground">
-            {draw(discordMarkdown(subtext[1], channels))}
+            {draw(discordMarkdown(subtext[1], channels, users))}
           </p>
         ) : (
           <Fragment key={i}>
-            {draw(discordMarkdown(line, channels))}
+            {draw(discordMarkdown(line, channels, users))}
             {i < lines.length - 1 && "\n"}
           </Fragment>
         );
@@ -108,20 +114,20 @@ function Markdown({ text, channels, emojis }: { text: string } & Names) {
   );
 }
 
-function EmbedView({ embed, channels, emojis }: { embed: Embed } & Names) {
+function EmbedView({ embed, channels, users, emojis }: { embed: Embed } & Names) {
   const color = embed.color === undefined ? undefined : rgb(embed.color);
   const image = embed.image?.url;
   return (
     <div className="flex max-w-lg flex-col gap-2 rounded-md border-l-4 border-l-muted-foreground bg-secondary p-3" style={{ borderLeftColor: color }}>
       {embed.title && <p className={cn("font-semibold", embed.url && "text-gold")}>{embed.title}</p>}
-      {embed.description && <Markdown text={embed.description} channels={channels} emojis={emojis} />}
+      {embed.description && <Markdown text={embed.description} channels={channels} users={users} emojis={emojis} />}
       {embed.fields && (
         <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {embed.fields.map((f) => (
             <div key={f.name} className={cn(!f.inline && "sm:col-span-3")}>
               <dt className="font-semibold">{f.name}</dt>
               <dd>
-                <Markdown text={f.value} channels={channels} emojis={emojis} />
+                <Markdown text={f.value} channels={channels} users={users} emojis={emojis} />
               </dd>
             </div>
           ))}
@@ -199,8 +205,8 @@ function ComponentView({ c, names }: { c: Component; names: Names }) {
 }
 
 /** A Discord-style drawing of a bot message: not a screenshot, the bot's own reply data. */
-export function DiscordMessage({ command, ephemeral, channels, emojis, message }: Reply) {
-  const names = { channels, emojis };
+export function DiscordMessage({ command, ephemeral, channels, users, emojis, message }: Reply) {
+  const names = { channels, users, emojis };
   return (
     // Always Discord's dark look, whatever the site's theme.
     <div className="dark flex flex-col gap-1 rounded-xl border bg-card p-4 text-sm text-foreground">

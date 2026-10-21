@@ -3,8 +3,10 @@
 // the demo server's people and stores (supabase/seed.sql), so the drawings match the screenshots.
 import type { APIEmbed } from "discord.js";
 import { readFileSync } from "node:fs";
+import { addedMessage } from "./collection.js";
 import { goingMessage } from "./events.js";
 import { FORGET_PROMPT } from "./forget.js";
+import { lendAnnouncement } from "./lending.js";
 import { challengeText } from "./lol.js";
 import { recapMessage } from "./recap.js";
 import { reportEmbed } from "./report.js";
@@ -15,6 +17,7 @@ import type { FeedIcon } from "./riftbound-feed.js";
 import { wantedEmojis } from "./emojis.js";
 import { settingsText } from "./setup.js";
 import { leaderboardEmbed } from "./stats.js";
+import { tradeDm } from "./trades.js";
 import { welcomeText } from "./welcome.js";
 
 export interface ReplyExample {
@@ -24,6 +27,8 @@ export interface ReplyExample {
   ephemeral: boolean;
   /** Names for the channel mentions (<#id>) in the reply. */
   channels: Record<string, string>;
+  /** Names for the user mentions (<@id>) in the reply. */
+  users: Record<string, string>;
   /** The icon each application emoji (<:rb_fury:id>) in the reply was made from. */
   emojis: Record<string, string>;
   message: { content?: string; embeds?: APIEmbed[]; components?: unknown[]; flags?: number };
@@ -35,7 +40,7 @@ const GUILD = "900000000000000001";
 const REPORT_CHANNEL = "900000000000000201";
 const SATURDAY = "2026-10-17T17:00:00Z";
 const reply = (command: string | null, message: ReplyExample["message"], more: Partial<ReplyExample> = {}): ReplyExample =>
-  ({ command, ephemeral: false, channels: {}, emojis: {}, message, ...more });
+  ({ command, ephemeral: false, channels: {}, users: {}, emojis: {}, message, ...more });
 
 export function replyExamples(): Record<string, ReplyExample> {
   // Riot's Ahri Legend, the tutorial's deck (#206).
@@ -64,11 +69,16 @@ export function replyExamples(): Record<string, ReplyExample> {
     id: "00000000-0000-4000-8000-0000000d0001", name: "Ahri control", legend_id: card.id, champion_id: "ahri-alluring",
     visibility: "public", language: "en", allow_other_languages: true,
   };
+  const iconUrls = Object.fromEntries(emojis.map((e) => [e.name, e.url]));
+  const ahri = catalogue.cards.find((c) => c.id === "ahri-alluring")!;
   const rows = [
     { user_id: "1", display_name: "Anna", message_count: 1284 },
     { user_id: "2", display_name: "Bram", message_count: 967 },
     { user_id: "3", display_name: "Chloé", message_count: 412 },
   ];
+  const people = Object.fromEntries(rows.map((r) => [r.user_id, r.display_name]));
+  const nexusNight = { place_kind: "event" as const, event_name: "Riftbound Nexus Night", starts_at: SATURDAY, store_name: "The Card Corner", store_city: "Leuven" };
+  const regulars = { ...nexusNight, place_kind: "regulars" as const, event_name: null, starts_at: null };
   return {
     welcome: reply(null, { content: welcomeText(SITE, GUILD) }),
     leaderboard: reply("/leaderboard", { embeds: [leaderboardEmbed("week", rows, "2026-10-12", SITE, ZONE)] }),
@@ -105,6 +115,40 @@ export function replyExamples(): Record<string, ReplyExample> {
       "/deck share",
       deckMessage(deck, deckEntries, catalogue, catalogue.icons, emojiIds, "Anna", 5, SITE),
       { emojis: Object.fromEntries(emojis.map((e) => [e.name, e.url])) },
+    ),
+    "collection-add": reply(
+      "/collection add",
+      addedMessage(catalogue, ahri, catalogue.printings.find((p) => p.id === "ogn-066-298")!, 2, 4, "fr", emojiIds),
+      { ephemeral: true, emojis: iconUrls },
+    ),
+    lend: reply(
+      "/lend",
+      lendAnnouncement(catalogue, emojiIds, {
+        id: 12,
+        lender: "1",
+        borrower: "3",
+        due: "2026-11-02",
+        rows: [
+          { printing_id: "ogn-066-298", quantity: 1 },
+          { printing_id: "ogn-030-298", quantity: 2 },
+        ],
+        deck: null,
+      }),
+      { users: people, emojis: iconUrls },
+    ),
+    // Anna's DM.
+    "trade-match": reply(
+      null,
+      tradeDm(
+        [
+          { guild_id: GUILD, trader_id: "3", card_id: "jinx-demolitionist", copies: 1, wanted: 3, ...nexusNight },
+          { guild_id: GUILD, trader_id: "2", card_id: "ahri-alluring", copies: 2, wanted: 1, ...regulars },
+        ],
+        catalogue,
+        () => ZONE,
+        SITE,
+      ).message,
+      { users: people },
     ),
     going: reply("/event going", going),
     "lol-link": reply(
