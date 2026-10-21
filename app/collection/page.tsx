@@ -1,4 +1,5 @@
 import { CardLibrary } from "@/components/card-library";
+import { CollectionImport } from "@/components/collection-import";
 import { ProfileCollection } from "@/components/profile-collection";
 import { LogInPrompt } from "@/components/server-picker";
 import { ErrorState, NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
@@ -31,6 +32,7 @@ async function MyCollection() {
   if (!me) return <LogInPrompt text="Log in to see and count your Riftbound cards." />;
   return (
     <>
+      <CollectionImport />
       <CardLibrary owned />
       <Suspense fallback={<StatsSkeleton cards={3} />}>
         <ProfileCollection user={me} own />
