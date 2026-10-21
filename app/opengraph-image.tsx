@@ -8,7 +8,7 @@ import { ImageResponse } from "next/og";
 
 // The link preview for every page: unfurlers fetch it logged out, so it shows the public
 // totals only, never a server, a member or a per-server number (#55).
-export const alt = "ni han bao: totals across every server it counts";
+export const alt = "nexus: totals across every server it counts";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -56,7 +56,7 @@ export default async function Image() {
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ fontSize: 96, color: GOLD }}>ni han bao</div>
+          <div style={{ fontSize: 96, color: GOLD }}>nexus</div>
           <div style={{ fontSize: 36, color: MUTED }}>
             Quietly counting every message, so you can argue about who talks too much.
           </div>

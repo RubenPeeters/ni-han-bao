@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
 export const metadata = {
-  title: "Page not found · ni han bao",
+  title: "Page not found · nexus",
   description: "Nobody has said anything here. Not even once.",
 };
 

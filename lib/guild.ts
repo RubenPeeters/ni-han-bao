@@ -32,11 +32,11 @@ export const guildInfo = cache(async (guildId: string) => {
   return data as { guild_id: string; name: string; icon_url: string | null } | null;
 });
 
-/** generateMetadata for a server page: "Ranked · Demo server · ni han bao", for members only. */
+/** generateMetadata for a server page: "Ranked · Demo server · nexus", for members only. */
 export function serverMetadata(title: string, description: string) {
   return async ({ params }: { params: Promise<{ guildId: string }> }): Promise<Metadata> => {
     const guild = await guildInfo((await params).guildId);
-    return { title: [title, guild?.name, "ni han bao"].filter(Boolean).join(" · "), description };
+    return { title: [title, guild?.name, "nexus"].filter(Boolean).join(" · "), description };
   };
 }
 

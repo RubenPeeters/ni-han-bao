@@ -12,4 +12,4 @@ export const hasEnvVars =
 
 // Riot's Legal Jibber Jabber policy (section 6) requires this exact statement, easy to find.
 export const RIOT_DISCLAIMER =
-  "ni-han-bao was created under Riot Games' \"Legal Jibber Jabber\" policy using assets owned by Riot Games. Riot Games does not endorse or sponsor this project.";
+  "nexus was created under Riot Games' \"Legal Jibber Jabber\" policy using assets owned by Riot Games. Riot Games does not endorse or sponsor this project.";

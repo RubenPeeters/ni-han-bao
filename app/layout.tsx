@@ -16,9 +16,9 @@ const defaultUrl = host ? `https://${host}` : "http://localhost:3000";
 
 export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
-  title: "ni han bao",
+  title: "nexus",
   description: "A Discord bot that counts messages, emoji and voice time, and shows the stats.",
-  openGraph: { siteName: "ni han bao", type: "website" },
+  openGraph: { siteName: "nexus", type: "website" },
   twitter: { card: "summary_large_image" },
 };
 
@@ -64,7 +64,7 @@ export default function RootLayout({
                 href="/"
                 className="whitespace-nowrap rounded-md text-lg font-semibold font-heading transition-colors hover:text-gold active:text-gold/80"
               >
-                ni han bao
+                nexus
               </Link>
               <Suspense fallback={<MainNav pathname={null} />}>
                 <SiteNav />

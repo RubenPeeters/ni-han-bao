@@ -7,7 +7,7 @@ import { Suspense } from "react";
 
 const DESCRIPTION = "The Riftbound cards you still want.";
 
-export const metadata = { title: "My wishlist · ni han bao", description: DESCRIPTION };
+export const metadata = { title: "My wishlist · nexus", description: DESCRIPTION };
 
 export default function MyWishlistPage() {
   return (

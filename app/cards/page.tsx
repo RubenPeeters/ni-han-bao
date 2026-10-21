@@ -5,7 +5,7 @@ import { Suspense } from "react";
 
 const DESCRIPTION = "Every Riftbound card the bot knows, from Riot's own card gallery.";
 
-export const metadata = { title: "Cards · ni han bao", description: DESCRIPTION };
+export const metadata = { title: "Cards · nexus", description: DESCRIPTION };
 
 export default function CardsPage() {
   return (

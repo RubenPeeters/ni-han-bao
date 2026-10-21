@@ -3,7 +3,7 @@ import { RIOT_DISCLAIMER } from "@/lib/utils";
 import type { ReactNode } from "react";
 
 export const metadata = {
-  title: "About & privacy · ni han bao",
+  title: "About & privacy · nexus",
   description: "What the bot counts, who can see it, and how to opt out or delete your data.",
 };
 
@@ -160,7 +160,7 @@ export default function AboutPage() {
       </Section>
       <Section title="Who runs it">
         <p>
-          ni han bao is a hobby project by Ruben. Questions, or a request to delete data?{" "}
+          nexus is a hobby project by Ruben. Questions, or a request to delete data?{" "}
           <a
             href={`${REPO}/issues`}
             className="font-medium underline underline-offset-4 hover:text-gold"

@@ -1,11 +1,11 @@
 import { DiscordShot } from "@/components/discord-shot";
 import { ReplyExample } from "@/components/discord-message";
 
-export const metadata = { title: "Set it up · ni han bao docs" };
+export const metadata = { title: "Set it up · nexus docs" };
 
 # Set it up
 
-ni han bao works without setup. [`/setup`](/docs/commands#setup) changes a few things per server. Only members with **Manage Server** see it, and only you see its answers.
+nexus works without setup. [`/setup`](/docs/commands#setup) changes a few things per server. Only members with **Manage Server** see it, and only you see its answers.
 
 <DiscordShot name="setup-options" alt="/setup with its subcommands listed" />
 
@@ -29,7 +29,7 @@ With a report channel set, the bot posts a report card there every Monday:
 
 ## If you don't
 
-- **No `/setup` in the command list**: you need Manage Server. A server admin can change who sees it under Server Settings, Integrations, ni han bao.
+- **No `/setup` in the command list**: you need Manage Server. A server admin can change who sees it under Server Settings, Integrations, nexus.
 - **"I cannot post in #channel"**: give the bot View Channel and Send Messages in that channel, then run the command again.
 - **"… is not a time zone"**: check the spelling against the IANA list, like `Europe/Brussels`.
 - **No report on Monday**: check `/setup show` for the channel, and that the bot can still post there. Embed Links is needed for the card.

@@ -17,7 +17,7 @@ const WHO: Record<Visibility, string> = {
 
 export const PROFILE_COMMAND = {
   name: "profile",
-  description: "Your ni han bao profile page",
+  description: "Your nexus profile page",
   options: [
     {
       type: ApplicationCommandOptionType.Subcommand,

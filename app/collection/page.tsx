@@ -8,7 +8,7 @@ import { Suspense } from "react";
 
 const DESCRIPTION = "The Riftbound cards you own: count them here, with the totals below.";
 
-export const metadata = { title: "My collection · ni han bao", description: DESCRIPTION };
+export const metadata = { title: "My collection · nexus", description: DESCRIPTION };
 
 export default function MyCollectionPage() {
   return (

@@ -10,7 +10,7 @@ import { WISHLIST_MODES } from "@/lib/wishlist";
 import { Suspense, type ReactNode } from "react";
 
 export const metadata = {
-  title: "Settings · ni han bao",
+  title: "Settings · nexus",
   description: "Your settings for the site and the bot, in one place.",
 };
 

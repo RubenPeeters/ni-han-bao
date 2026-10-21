@@ -222,7 +222,7 @@ export function DiscordMessage({ command, ephemeral, channels, users, emojis, me
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <p className="flex items-center gap-2">
-            <span className="font-semibold">ni han bao</span>
+            <span className="font-semibold">nexus</span>
             <span className="rounded bg-primary px-1 text-xs font-semibold text-primary-foreground">APP</span>
           </p>
           {message.content && <Markdown text={message.content} {...names} />}

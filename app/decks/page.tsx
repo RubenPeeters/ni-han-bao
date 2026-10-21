@@ -5,7 +5,7 @@ import { Suspense } from "react";
 
 const DESCRIPTION = "Your Riftbound decks: search or paste their cards, with the rules as warnings.";
 
-export const metadata = { title: "Decks · ni han bao", description: DESCRIPTION };
+export const metadata = { title: "Decks · nexus", description: DESCRIPTION };
 
 export default function DecksPage() {
   return (

@@ -34,7 +34,7 @@ export interface ReplyExample {
   message: { content?: string; embeds?: APIEmbed[]; components?: unknown[]; flags?: number };
 }
 
-const SITE = "https://ni-han-bao.example";
+const SITE = "https://nexus.example";
 const ZONE = "Europe/Brussels";
 const GUILD = "900000000000000001";
 const REPORT_CHANNEL = "900000000000000201";
