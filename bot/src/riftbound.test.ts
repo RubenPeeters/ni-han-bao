@@ -112,7 +112,7 @@ describe("resolveCard", () => {
     expect(id("ogn-066/298")).toBe("u-ahri");
     expect(id("OGN-06")).toBeNull();
     expect(id("OGN-007a")).toBe("s-2");
-    expect(id("OGN01")).toBeNull();
+    expect(id("OGN01")).toBe("s-1");
     expect(id("OGN")).toBeNull();
   });
 
@@ -141,6 +141,14 @@ describe("/card", () => {
     expect(cardChoices(catalogue, "zzzz")).toEqual([]);
     expect(cardChoices(catalogue, "ogn 255")[0].value).toBe(legend.id);
     expect(cardChoices(catalogue, "OGN")).toEqual([]);
+  });
+
+  it("lists every card a number finds, never picking one", () => {
+    const sets = (typed: string) =>
+      cardChoices(catalogue, typed).map((c) => printings.find((p) => p.card_id === c.value && /-0*34[a-z*]*\//.test(p.collector_code))?.set_code);
+    expect(sets("34").length).toBeGreaterThan(3);
+    expect(sets("34")[0]).toBe("OGN");
+    expect(sets("ogn 34").every((s) => s === "OGN")).toBe(true);
   });
 
   it("takes a picked id, a typed name or a collector code", () => {

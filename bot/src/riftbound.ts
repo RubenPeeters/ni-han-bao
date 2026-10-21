@@ -2,9 +2,9 @@
 // cards. Rows have the columns of riftbound_cards and riftbound_printings.
 
 import { ApplicationCommandOptionType, type APIEmbed } from "discord.js";
-import { cardImageUrl, codeKey, normal, plainText, resolveCard, tokenWords, type Card, type Catalogue, type Printing, type Resolved } from "./card-match.js";
+import { cardImageUrl, codeRanks, normal, plainText, resolveCard, tokenWords, type Card, type Catalogue, type Printing, type Resolved } from "./card-match.js";
 
-export { codeKey, resolveCard, type Card, type Catalogue, type Printing, type Resolved };
+export { resolveCard, type Card, type Catalogue, type Printing, type Resolved };
 
 /** One card per line, so a regenerated catalogue diffs by card. */
 export function catalogueJson({ cards, printings, icons }: { cards: object[]; printings: object[]; icons: object[] }): string {
@@ -31,19 +31,17 @@ export const CARD_COMMAND = {
 export const choiceLabel = (c: Card) => `${c.name} (${c.type === "Legend" ? `${c.tags.join(", ")} legend` : c.type || "Card"})`;
 
 /**
- * Autocomplete: up to Discord's 25, collector codes and then names starting with what was
- * typed first. The value is the card id.
+ * Autocomplete: up to Discord's 25, cards a typed number finds (in set order) and then names
+ * starting with what was typed first. The value is the card id.
  */
 export function cardChoices({ cards, printings }: Catalogue, typed: string): { name: string; value: string }[] {
   const q = normal(typed);
-  const code = codeKey(typed);
-  // A code has a number: "ogn" alone would suggest a whole set.
-  const coded = new Set(/\d/.test(code) ? printings.filter((p) => codeKey(p.collector_code).startsWith(code)).map((p) => p.card_id) : []);
+  const coded = codeRanks(printings, typed);
   const starts = (c: Card) =>
     coded.has(c.id) ? 0 : normal(c.name).startsWith(q) || c.tags.some((t) => normal(t).startsWith(q)) ? 1 : 2;
   return cards
     .filter((c) => coded.has(c.id) || normal(choiceLabel(c)).includes(q))
-    .sort((a, b) => starts(a) - starts(b) || a.name.localeCompare(b.name))
+    .sort((a, b) => starts(a) - starts(b) || (coded.get(a.id) ?? 0) - (coded.get(b.id) ?? 0) || a.name.localeCompare(b.name))
     .slice(0, 25)
     .map((c) => ({ name: choiceLabel(c).slice(0, 100), value: c.id }));
 }

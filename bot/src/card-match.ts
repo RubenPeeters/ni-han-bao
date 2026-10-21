@@ -47,18 +47,57 @@ export const SET_NAMES: Record<string, string> = {
 // A collector code without case, dashes or spaces: "ogn 001" is "OGN-001".
 export const codeKey = (text: string) => text.replace(/[\s-]+/g, "").toLowerCase();
 
+// Set (and Riot's R, T or SP), number, variant and the set's size: "OGN-034a/298", "VEN-R04", "VEN-SP3/006".
+const PRINTED = /^([a-z]+)-([a-z]*)(\d+)([a-z*]*)(?:\/(\d+))?$/;
+const TYPED = /^([a-z]*)(\d+)([a-z*]*)(?:\/(\d+))?$/;
+
 /**
- * The cards printed under a typed collector code or one of its variants ("OGN-007" for
- * "OGN-007a/298" and "OGN-007b/298"), which can be several cards.
+ * Whether a typed number is this collector code, by number, not by text (#223): "34" is the 34
+ * of every set with every variant, "34a" only that variant, "ogn 34" only Origins', "r4"
+ * "VEN-R04". Leading zeros, case, dashes and spaces do not matter; "34" is never 134 or 340.
  */
-function cardsByCode({ cards, printings }: Catalogue, typed: string): Card[] {
-  const q = codeKey(typed);
-  if (!/\d/.test(q)) return [];
-  // The code itself and its suffixed variants together: "OGN-007" and "OGN-007a" may be two cards.
-  // Riot prints the set's size after a slash ("OGN-007/298"), which nobody needs to type.
-  const matched = printings.filter((p) => { const k = codeKey(p.collector_code); return k.startsWith(q) && /^[a-z*]*(\/\d+)?$/.test(k.slice(q.length)); });
-  const ids = new Set(matched.map((p) => p.card_id));
-  return cards.filter((c) => ids.has(c.id));
+export function matchesCode(typed: string, code: string): boolean {
+  const q = TYPED.exec(codeKey(typed));
+  const c = PRINTED.exec(code.toLowerCase());
+  if (!q || !c) return false;
+  const [, letters, number, variant, size] = q;
+  const [, set, prefix] = c;
+  return (
+    (letters === prefix || letters === set + prefix) &&
+    Number(number) === Number(c[3]) &&
+    (!variant || variant === c[4]) &&
+    (!size || !c[5] || Number(size) === Number(c[5]))
+  );
+}
+
+const SETS = Object.keys(SET_NAMES);
+const setRank = (set: string) => (SETS.includes(set) ? SETS.indexOf(set) : SETS.length);
+
+/** Set release order, then collector number: the 34s of every set together, set after set. */
+export const byPrinting = (
+  a: { set_code: string; collector_number: number; collector_code: string },
+  b: { set_code: string; collector_number: number; collector_code: string },
+) => setRank(a.set_code) - setRank(b.set_code) || a.collector_number - b.collector_number || a.collector_code.localeCompare(b.collector_code);
+
+/** The cards a typed number finds, each at its first such printing in set order: Origins' 34 before Spiritforged's. */
+export function codeRanks(printings: Printing[], typed: string): Map<string, number> {
+  const ranks = new Map<string, number>();
+  printings
+    .filter((p) => matchesCode(typed, p.collector_code))
+    .sort(byPrinting)
+    .forEach((p, i) => ranks.has(p.card_id) || ranks.set(p.card_id, i));
+  return ranks;
+}
+
+/** A search box's cards: name or champion containing what was typed, or its number (#223), numbers first in set order. */
+export function findCards({ cards, printings }: Catalogue, typed: string): Card[] {
+  const q = normal(typed);
+  if (!q) return [];
+  const coded = codeRanks(printings, typed);
+  const rank = (c: Card) => coded.get(c.id) ?? coded.size;
+  return cards
+    .filter((c) => coded.has(c.id) || normal(c.name).includes(q) || c.tags.some((t) => normal(t).includes(q)))
+    .sort((a, b) => rank(a) - rank(b));
 }
 
 export type Resolved = { card: Card } | { ambiguous: Card[] } | null;
@@ -70,10 +109,10 @@ export type Resolved = { card: Card } | { ambiguous: Card[] } | null;
 export function resolveCard(catalogue: Catalogue, typed: string): Resolved {
   const q = normal(typed);
   if (!q) return null;
-  const byCode = new Set(cardsByCode(catalogue, typed));
+  const byCode = codeRanks(catalogue.printings, typed);
   const found = catalogue.cards.filter(
     (c) =>
-      byCode.has(c) ||
+      byCode.has(c.id) ||
       normal(c.name) === q ||
       (c.type === "Legend" && c.tags.some((t) => normal(t) === q || normal(`${t}, ${c.name}`) === q)),
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { codeKey, normal, resolveCard, type Card, type Catalogue } from "@/bot/src/card-match";
+import { findCards, normal, resolveCard, type Card, type Catalogue } from "@/bot/src/card-match";
 import { missingCards, type OwnedCopy } from "@/bot/src/deck-match";
 import { CardThumb } from "@/components/card-thumb";
 import { CardFigure, cardImage, EnergyCurve, VisualDecklist } from "@/components/deck-cards";
@@ -132,17 +132,7 @@ export function DeckEditor({
   const current: DeckCards = { legend_id: settings.legend_id, champion_id: settings.champion_id, entries: list };
 
   const q = normal(query);
-  const code = codeKey(query);
-  const found = q
-    ? catalogue.cards
-        .filter(
-          (c) =>
-            normal(c.name).includes(q) ||
-            c.tags.some((t) => normal(t).includes(q)) ||
-            (/\d/.test(code) && (printings.get(c.id) ?? []).some((p) => codeKey(p.collector_code).startsWith(code))),
-        )
-        .slice(0, SEARCH_RESULTS)
-    : [];
+  const found = findCards(catalogue, query).slice(0, SEARCH_RESULTS);
 
   const paste = () => {
     let next = current;
@@ -295,7 +285,7 @@ export function DeckEditor({
       )}
 
       {editing && (
-        <StatCard title="Add cards" description="Search by name, champion or collector code">
+        <StatCard title="Add cards" description="Search by name, champion or number (34, OGN-34)">
           <Input
             type="search"
             aria-label="Search cards to add"

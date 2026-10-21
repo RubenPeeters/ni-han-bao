@@ -1,5 +1,6 @@
 "use client";
 
+import { byPrinting, matchesCode, normal } from "@/bot/src/card-match";
 import { addToDeck, type MyDeck } from "@/components/add-to-deck";
 import { CardThumb } from "@/components/card-thumb";
 import { DomainIcon, EnergyBadge, FacetIcon, TypeIcon, type RiftboundIcon } from "@/components/riftbound-icons";
@@ -38,9 +39,8 @@ export interface LibraryCard {
   energy: number | null;
   tags: string[];
   sets: string[];
-  codes: string[];
-  /** Collector order; the steppers change the first, or the one a typed code finds. */
-  printings: { id: string; set_code: string; collector_code: string }[];
+  /** Set and collector order; the steppers change the first, or the one a typed number finds. */
+  printings: { id: string; set_code: string; collector_code: string; collector_number: number }[];
   image_url: string | null;
 }
 
@@ -62,11 +62,6 @@ const MODES: { value: Mode; label: string }[] = [
   { value: "lendable", label: "To lend" },
 ];
 
-// Case, accents and apostrophes do not matter, as in the bot's resolveCard(): "kaisa" finds "Kai'Sa".
-const normal = (text: string) =>
-  text.normalize("NFD").replace(/\p{M}/gu, "").replace(/['‘’]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
-// A collector code without case, dashes or spaces, as in the bot's codeKey(): "ogn 001" finds "OGN-001".
-const codeKey = (text: string) => text.replace(/[\s-]+/g, "").toLowerCase();
 const sorted = <T,>(values: T[]) => [...new Set(values)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 // Hundreds of tiles at once are a long page and many image loads on a phone.
 const PAGE = 24;
@@ -91,15 +86,24 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
   const [added, setAdded] = useState("");
   const deck = mine.decks.find((d) => d.id === deckId);
   const q = normal(query);
-  const code = codeKey(query);
+  // The printing a typed number finds, per card: "34" is a printing in every set.
+  const hits = new Map(
+    cards.flatMap((c) => {
+      const p = q && c.printings.find((p) => matchesCode(query, p.collector_code));
+      return p ? [[c.id, p] as const] : [];
+    }),
+  );
+  const printingOf = (c: LibraryCard) => hits.get(c.id) ?? c.printings[0];
   const shown = cards.filter(
     (c) =>
-      (!q || normal(c.name).includes(q) || c.tags.some((t) => normal(t).includes(q)) || (code && c.codes.some((k) => codeKey(k).startsWith(code)))) &&
+      (!q || normal(c.name).includes(q) || c.tags.some((t) => normal(t).includes(q)) || hits.has(c.id)) &&
       (!type || c.type === type) &&
       (!domain || c.domains.includes(domain)) &&
       (!cost || String(c.energy) === cost) &&
       (!set || c.sets.includes(set)),
   );
+  // By the printing found, so the 34s of every set come together, set after set.
+  if (hits.size) shown.sort((a, b) => (printingOf(a) && printingOf(b) ? byPrinting(printingOf(a), printingOf(b)) : 0));
   const filters = [
     {
       label: "Type",
@@ -122,8 +126,6 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
   ];
   const sets = filters[3].options;
   const playsetOf = set || (sets.length === 1 ? sets[0] : "");
-  const printingOf = (c: LibraryCard) =>
-    (code && c.printings.find((p) => codeKey(p.collector_code).startsWith(code))) || c.printings[0];
   const tap = (c: LibraryCard, delta: number) => {
     const p = printingOf(c);
     if (p) collection.change(rowKey(p.id, finish, condition, language), (row) => step(row, mode, delta, mine.lendAll));
@@ -134,8 +136,8 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
       <div role="search" className="sticky top-0 z-10 -mx-5 flex flex-col gap-2 border-b bg-background/95 px-5 py-3 backdrop-blur">
         <Input
           type="search"
-          aria-label="Search cards by name, champion or collector code"
-          placeholder="Search by name, champion or code"
+          aria-label="Search cards by name, champion or collector number"
+          placeholder="Name, champion or number: 34, OGN-34"
           enterKeyHint="search"
           autoComplete="off"
           value={query}

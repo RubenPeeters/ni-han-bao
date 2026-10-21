@@ -1,6 +1,6 @@
 "use client";
 
-import { codeKey, normal, type Card, type Catalogue } from "@/bot/src/card-match";
+import { findCards, normal, type Card, type Catalogue } from "@/bot/src/card-match";
 import { EmptyState, StatCard } from "@/components/stat-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,17 +35,7 @@ export function WishlistEditor({ wishes, catalogue }: { wishes: Wish[]; catalogu
   const codes = useMemo(() => new Map(catalogue.printings.map((p) => [p.id, p.collector_code])), [catalogue]);
 
   const q = normal(query);
-  const code = codeKey(query);
-  const found = q
-    ? catalogue.cards
-        .filter(
-          (c) =>
-            normal(c.name).includes(q) ||
-            c.tags.some((t) => normal(t).includes(q)) ||
-            (/\d/.test(code) && (printings.get(c.id) ?? []).some((p) => codeKey(p.collector_code).startsWith(code))),
-        )
-        .slice(0, SEARCH_RESULTS)
-    : [];
+  const found = findCards(catalogue, query).slice(0, SEARCH_RESULTS);
 
   // An absolute count, so a retried tap cannot count twice; 0 removes the entry.
   const save = async (wish: Wish) => {
@@ -65,7 +55,7 @@ export function WishlistEditor({ wishes, catalogue }: { wishes: Wish[]; catalogu
 
   return (
     <>
-      <StatCard title="Add a card" description="Search by name, champion or collector code">
+      <StatCard title="Add a card" description="Search by name, champion or number (34, OGN-34)">
         <Input
           type="search"
           aria-label="Search cards to add to your wishlist"
