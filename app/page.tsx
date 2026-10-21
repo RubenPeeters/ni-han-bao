@@ -92,7 +92,7 @@ function Landing() {
           <BotAvatar url={null} />
         )}
         <div className="flex flex-col items-center gap-3 sm:items-start">
-          <h1 className="text-4xl font-semibold">ni han bao</h1>
+          <h1 className="text-4xl font-semibold">nexus</h1>
           <p className="text-lg text-muted-foreground">
             A Discord bot that counts messages, reactions and voice time, and shows who talks the
             most.
@@ -165,11 +165,11 @@ function Landing() {
         </Faq>
         <p className="text-sm text-muted-foreground">
           More in the{" "}
-          <Link href="/docs" className="font-medium underline underline-offset-4 hover:text-gold">
+          <Link href="/docs" className="font-medium text-crystal underline underline-offset-4 hover:text-crystal/80">
             docs
           </Link>{" "}
           and in{" "}
-          <Link href="/about" className="font-medium underline underline-offset-4 hover:text-gold">
+          <Link href="/about" className="font-medium text-crystal underline underline-offset-4 hover:text-crystal/80">
             About &amp; privacy
           </Link>
           .

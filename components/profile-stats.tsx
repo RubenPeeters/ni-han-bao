@@ -215,7 +215,7 @@ export function ProfileHeader({ user, profile, subtitle, manage }: { user: strin
       </div>
       <ProfileNav user={user} />
       {manage && profile.mine && (
-        <Link href={manage} className="flex min-h-11 w-fit items-center rounded-md text-sm font-medium underline underline-offset-4">
+        <Link href={manage} className="flex min-h-11 w-fit items-center rounded-md text-sm font-medium text-crystal underline underline-offset-4 hover:text-crystal/80">
           Manage in Riftbound
         </Link>
       )}
@@ -228,7 +228,7 @@ export function SettingsLink({ href, children }: { href: string; children: React
   return (
     <p className="text-sm text-muted-foreground">
       {children}{" "}
-      <Link href={href} className="font-medium text-foreground underline underline-offset-4">
+      <Link href={href} className="font-medium text-crystal underline underline-offset-4 hover:text-crystal/80">
         Change it in Settings
       </Link>
     </p>

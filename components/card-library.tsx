@@ -115,7 +115,7 @@ export async function CardLibrary({ owned: ownedOnly = false }: { owned?: boolea
   if (ownedOnly && library.length === 0) {
     return (
       <EmptyState>
-        No cards yet. Add them on the <Link href="/cards" className="underline underline-offset-4">Cards</Link> page with Edit
+        No cards yet. Add them on the <Link href="/cards" className="text-crystal underline underline-offset-4 hover:text-crystal/80">Cards</Link> page with Edit
         my collection, or with /collection add in Discord.
       </EmptyState>
     );

@@ -2,8 +2,8 @@ import { CurrentDocsNav, DocsNav } from "@/components/docs-nav";
 import { Suspense, type ReactNode } from "react";
 
 export const metadata = {
-  title: "Docs · ni han bao",
-  description: "How to add ni han bao to your server, use it, and every command it has.",
+  title: "Docs · nexus",
+  description: "How to add nexus to your server, use it, and every command it has.",
 };
 
 export default function DocsLayout({ children }: { children: ReactNode }) {

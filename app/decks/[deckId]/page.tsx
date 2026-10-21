@@ -4,7 +4,7 @@ import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
 export const metadata = {
-  title: "Deck · ni han bao",
+  title: "Deck · nexus",
   description: "A Riftbound deck.",
 };
 

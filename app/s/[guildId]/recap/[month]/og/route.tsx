@@ -47,7 +47,7 @@ function recapImage(month: string, data: RecapData) {
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ fontSize: 28, color: MUTED, ...ellipsis }}>{data.server ?? "ni han bao"}</div>
+          <div style={{ fontSize: 28, color: MUTED, ...ellipsis }}>{data.server ?? "nexus"}</div>
           <div style={{ fontSize: 64, color: GOLD }}>{`Monthly recap: ${monthLabel(month)}`}</div>
         </div>
         <div style={{ flex: 1, display: "flex", gap: 24 }}>

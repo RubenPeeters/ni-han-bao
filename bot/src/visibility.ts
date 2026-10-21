@@ -2,8 +2,8 @@ import type { MemberRow } from "./activity.js";
 
 /** Slash commands registered for our guild; plain data so it can be sent as-is to Discord. */
 export const VISIBILITY_COMMANDS = [
-  { name: "hide-me", description: "Hide yourself from the public ni han bao website" },
-  { name: "show-me", description: "Show yourself on the public ni han bao website again" },
+  { name: "hide-me", description: "Hide yourself from the public nexus website" },
+  { name: "show-me", description: "Show yourself on the public nexus website again" },
 ] as const;
 
 /** The hidden flag a command sets, or null if it is not one of ours. */
