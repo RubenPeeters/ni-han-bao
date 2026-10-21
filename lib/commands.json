@@ -1,43 +1,43 @@
 [
   {
     "name": "hide-me",
-    "description": "Hide yourself from the public ni han bao website",
+    "description": "Hide yourself from the public nexus website",
     "admin": false,
     "usages": [
       {
         "name": "hide-me",
-        "description": "Hide yourself from the public ni han bao website",
+        "description": "Hide yourself from the public nexus website",
         "options": []
       }
     ]
   },
   {
     "name": "show-me",
-    "description": "Show yourself on the public ni han bao website again",
+    "description": "Show yourself on the public nexus website again",
     "admin": false,
     "usages": [
       {
         "name": "show-me",
-        "description": "Show yourself on the public ni han bao website again",
+        "description": "Show yourself on the public nexus website again",
         "options": []
       }
     ]
   },
   {
     "name": "forget-me",
-    "description": "Delete everything ni han bao has stored about you, in every server",
+    "description": "Delete everything nexus has stored about you, in every server",
     "admin": false,
     "usages": [
       {
         "name": "forget-me",
-        "description": "Delete everything ni han bao has stored about you, in every server",
+        "description": "Delete everything nexus has stored about you, in every server",
         "options": []
       }
     ]
   },
   {
     "name": "profile",
-    "description": "Your ni han bao profile page",
+    "description": "Your nexus profile page",
     "admin": false,
     "usages": [
       {
@@ -164,7 +164,7 @@
   },
   {
     "name": "setup",
-    "description": "Configure ni han bao for this server",
+    "description": "Configure nexus for this server",
     "admin": true,
     "usages": [
       {

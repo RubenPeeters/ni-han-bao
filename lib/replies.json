@@ -6,7 +6,7 @@
     "users": {},
     "emojis": {},
     "message": {
-      "content": "Hi, I'm ni han bao! I count messages, reactions and voice time in this server: counts and timestamps only, never what anyone writes.\nSee the stats (members only, log in with Discord): https://ni-han-bao.example/s/900000000000000001/leaderboard\nRather not appear in the lists and charts? Use /hide-me, and /show-me to come back."
+      "content": "Hi, I'm nexus! I count messages, reactions and voice time in this server: counts and timestamps only, never what anyone writes.\nSee the stats (members only, log in with Discord): https://nexus.example/s/900000000000000001/leaderboard\nRather not appear in the lists and charts? Use /hide-me, and /show-me to come back."
     }
   },
   "leaderboard": {
@@ -19,7 +19,7 @@
       "embeds": [
         {
           "title": "Leaderboard: this week",
-          "url": "https://ni-han-bao.example/leaderboard",
+          "url": "https://nexus.example/leaderboard",
           "description": "**1.** Anna: 1,284\n**2.** Bram: 967\n**3.** Chloé: 412",
           "footer": {
             "text": "Since Monday 2026-10-12 (Europe/Brussels)"
@@ -50,7 +50,7 @@
       "embeds": [
         {
           "title": "Weekly report card: week of 2026-10-12",
-          "url": "https://ni-han-bao.example",
+          "url": "https://nexus.example",
           "description": "Report card's in. Sit down, we need to talk.",
           "fields": [
             {
@@ -97,7 +97,7 @@
       "embeds": [
         {
           "title": "Monthly recap: September 2026",
-          "url": "https://ni-han-bao.example/recap",
+          "url": "https://nexus.example/recap",
           "image": {
             "url": "attachment://recap-2026-09.png"
           }
@@ -180,7 +180,7 @@
               "type": 2,
               "style": 5,
               "label": "Card page",
-              "url": "https://ni-han-bao.example/cards/nine-tailed-fox"
+              "url": "https://nexus.example/cards/nine-tailed-fox"
             }
           ]
         }
@@ -287,7 +287,7 @@
               "type": 2,
               "style": 5,
               "label": "Open deck",
-              "url": "https://ni-han-bao.example/decks/00000000-0000-4000-8000-0000000d0001"
+              "url": "https://nexus.example/decks/00000000-0000-4000-8000-0000000d0001"
             },
             {
               "type": 2,
@@ -502,7 +502,7 @@
             },
             {
               "type": 10,
-              "content": "-# Say hi and trade at the table: no prices or payments go through the bot. All your matches: <https://ni-han-bao.example/s/900000000000000001/trades>"
+              "content": "-# Say hi and trade at the table: no prices or payments go through the bot. All your matches: <https://nexus.example/s/900000000000000001/trades>"
             }
           ]
         }
@@ -560,7 +560,7 @@
     "users": {},
     "emojis": {},
     "message": {
-      "content": "This deletes everything ni han bao has stored about you, in every server: your message, reaction, voice and game time counts, your name and avatar, your membership, your regular stores, the events you are going to, your linked League account with its ranks and games, your Riftbound collection, decks, wishlist, trade matches and lending setting, your card loans (gone for the other member too), your profile visibility and your /hide-me setting. It cannot be undone. The bot stops counting you until you use /show-me. You also lose access to the servers' pages on the website until then.",
+      "content": "This deletes everything nexus has stored about you, in every server: your message, reaction, voice and game time counts, your name and avatar, your membership, your regular stores, the events you are going to, your linked League account with its ranks and games, your Riftbound collection, decks, wishlist, trade matches and lending setting, your card loans (gone for the other member too), your profile visibility and your /hide-me setting. It cannot be undone. The bot stops counting you until you use /show-me. You also lose access to the servers' pages on the website until then.",
       "components": [
         {
           "components": [

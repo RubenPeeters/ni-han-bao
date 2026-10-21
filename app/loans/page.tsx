@@ -7,7 +7,7 @@ import { Suspense } from "react";
 
 const DESCRIPTION = "Riftbound cards you lent and borrowed.";
 
-export const metadata = { title: "My loans · ni han bao", description: DESCRIPTION };
+export const metadata = { title: "My loans · nexus", description: DESCRIPTION };
 
 export default function MyLoansPage() {
   return (

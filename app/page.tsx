@@ -92,7 +92,7 @@ function Landing() {
           <BotAvatar url={null} />
         )}
         <div className="flex flex-col items-center gap-3 sm:items-start">
-          <h1 className="text-4xl font-semibold">ni han bao</h1>
+          <h1 className="text-4xl font-semibold">nexus</h1>
           <p className="text-lg text-muted-foreground">
             A Discord bot that counts messages, reactions and voice time, and shows who talks the
             most.

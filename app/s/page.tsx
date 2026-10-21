@@ -4,7 +4,7 @@ import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
 export const metadata = {
-  title: "Your servers · ni han bao",
+  title: "Your servers · nexus",
   description: "Pick one of your servers. Stats are only shown to members of each server.",
 };
 

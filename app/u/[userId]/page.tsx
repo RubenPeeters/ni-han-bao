@@ -4,7 +4,7 @@ import { hasEnvVars } from "@/lib/utils";
 import { Suspense } from "react";
 
 export const metadata = {
-  title: "Profile · ni han bao",
+  title: "Profile · nexus",
   description: "Their activity in the servers you share.",
 };
 

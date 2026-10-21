@@ -2075,7 +2075,7 @@ async function clearRankRoles(userId: string, guilds: Iterable<Guild>): Promise<
     const member = guild.members.cache.get(userId);
     if (!member || !settingsFor(guild.id).rank_roles) continue;
     const { remove } = roleChanges(new Set(member.roles.cache.keys()), null, rankRolesOf(guild).map(({ role }) => role.id));
-    if (remove.length) await member.roles.remove(remove, "ni han bao rank roles");
+    if (remove.length) await member.roles.remove(remove, "nexus rank roles");
   }
 }
 
@@ -2111,7 +2111,7 @@ async function syncRankRoles(guild: Guild): Promise<void> {
   const byTier = new Map(rankRolesOf(guild).map(({ role, tier }) => [tier, role.id]));
   for (const tier of TIERS) {
     if (byTier.has(tier)) continue;
-    const role = await guild.roles.create({ name: tierName(tier), permissions: [], reason: "ni han bao rank roles (/setup rank-roles)" });
+    const role = await guild.roles.create({ name: tierName(tier), permissions: [], reason: "nexus rank roles (/setup rank-roles)" });
     byTier.set(tier, role.id);
   }
   // Read in full before any change: a missing row would take a member's role away.
@@ -2142,8 +2142,8 @@ async function syncRankRoles(guild: Guild): Promise<void> {
     const { add, remove } = roleChanges(new Set(member.roles.cache.keys()), tier && byTier.get(tier)!, rankIds);
     // Per member: one Discord refuses (the owner, say) must not stop the rest.
     try {
-      if (add.length) await member.roles.add(add, "ni han bao rank roles");
-      if (remove.length) await member.roles.remove(remove, "ni han bao rank roles");
+      if (add.length) await member.roles.add(add, "nexus rank roles");
+      if (remove.length) await member.roles.remove(remove, "nexus rank roles");
     } catch (err) {
       failed++;
       log("warn", "rank_role_failed", { guild: guild.id, member: member.id, error: err });

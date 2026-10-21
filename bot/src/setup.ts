@@ -14,7 +14,7 @@ export const DEFAULT_SETTINGS: GuildSettings = { report_channel_id: null, timezo
 
 export const SETUP_COMMAND = {
   name: "setup",
-  description: "Configure ni han bao for this server",
+  description: "Configure nexus for this server",
   // Discord hides the command from members without Manage Server (unless the server's
   // admins change that in the integration settings).
   default_member_permissions: PermissionFlagsBits.ManageGuild.toString(),

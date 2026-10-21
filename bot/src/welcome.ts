@@ -2,7 +2,7 @@
 export function welcomeText(siteUrl: string | null, guildId: string): string {
   const link = siteUrl ? `${siteUrl.replace(/\/+$/, "")}/s/${guildId}/leaderboard` : null;
   return [
-    "Hi, I'm ni han bao! I count messages, reactions and voice time in this server: " +
+    "Hi, I'm nexus! I count messages, reactions and voice time in this server: " +
       "counts and timestamps only, never what anyone writes.",
     ...(link ? [`See the stats (members only, log in with Discord): ${link}`] : []),
     "Rather not appear in the lists and charts? Use /hide-me, and /show-me to come back.",

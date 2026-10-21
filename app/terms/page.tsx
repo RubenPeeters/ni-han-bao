@@ -3,8 +3,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 export const metadata = {
-  title: "Terms of service · ni han bao",
-  description: "The rules for using the ni han bao bot and website.",
+  title: "Terms of service · nexus",
+  description: "The rules for using the nexus bot and website.",
 };
 
 const REPO = "https://github.com/RubenPeeters/ni-han-bao";
@@ -23,11 +23,11 @@ export default function TermsPage() {
     <>
       <PageHeader
         title="Terms of service"
-        description="The rules for using the ni han bao bot and website, in plain language."
+        description="The rules for using the nexus bot and website, in plain language."
       />
       <Section title="The service">
         <p>
-          ni han bao is a free hobby project. By adding the bot to a server or using this website,
+          nexus is a free hobby project. By adding the bot to a server or using this website,
           you agree to these terms. What the bot collects and who can see it is on{" "}
           <Link
             href="/about"
