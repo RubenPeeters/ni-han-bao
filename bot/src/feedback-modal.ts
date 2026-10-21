@@ -48,7 +48,7 @@ export function feedbackModal(customId: string): APIModalInteractionResponseCall
       {
         type: ComponentType.Label,
         label: "Description",
-        description: "What happened, or what you would like. Only the bot's makers read it.",
+        description: "What happened, or what you would like. It becomes a public GitHub issue with your Discord name.",
         component: { type: ComponentType.TextInput, custom_id: "description", style: TextInputStyle.Paragraph, max_length: DESCRIPTION_MAX, required: true },
       },
     ],
@@ -68,5 +68,7 @@ export function withFeedback(message: V2, command: string, id: string | null = n
 
 /** The context a form from a Feedback button carries: the reply's command, its card or deck, and its message. */
 export function feedbackContext(from: { command: string | null; id: string | null }, messageUrl: string | null): Record<string, string | null> {
-  return { command: from.command, [from.command === "deck" ? "deck" : "card"]: from.id, message: messageUrl };
+  // Only /card and /collection carry a card; /deck and a whole-deck /lend carry a deck.
+  const key = from.command === "card" || from.command === "collection" ? "card" : "deck";
+  return { command: from.command, [key]: from.id, message: messageUrl };
 }

@@ -40,6 +40,8 @@ describe("feedbackContext", () => {
   it("names the id after the command", () => {
     expect(feedbackContext({ command: "deck", id: "d1" }, "https://discord.com/channels/1/2/3")).toEqual({ command: "deck", deck: "d1", message: "https://discord.com/channels/1/2/3" });
     expect(feedbackContext({ command: "card", id: "c1" }, null)).toEqual({ command: "card", card: "c1", message: null });
+    expect(feedbackContext({ command: "lend", id: "d1" }, null)).toEqual({ command: "lend", deck: "d1", message: null });
+    expect(feedbackContext({ command: "collection", id: "c1" }, null)).toEqual({ command: "collection", card: "c1", message: null });
   });
 });
 

@@ -933,7 +933,7 @@ async function lendCommand(interaction: ChatInputCommandInteraction<"cached">): 
     return;
   }
   await interaction.editReply({ ...lendReceipt(catalogue, emojis, loan, unmarked, fixes), allowedMentions: { parse: [] } });
-  await interaction.followUp({ ...feedback(lendAnnouncement(catalogue, emojis, loan), "lend"), allowedMentions: { users: [borrower.id] } });
+  await interaction.followUp({ ...feedback(lendAnnouncement(catalogue, emojis, loan), "lend", deck?.id), allowedMentions: { users: [borrower.id] } });
 }
 
 /** /lend deck: the lender's own deck with its cards, by the id autocomplete gives or a typed name. */
@@ -1028,7 +1028,10 @@ async function returnCommand(interaction: ChatInputCommandInteraction<"cached">)
     return;
   }
   await interaction.editReply({ content: reply.announce ? "Done." : reply.content, allowedMentions: { parse: [] } });
-  if (reply.announce) await interaction.followUp({ content: reply.content, allowedMentions: { users: [other] } });
+  if (reply.announce) {
+    const announce: V2 = { components: [{ type: ComponentType.TextDisplay, content: reply.content }], flags: MessageFlags.IsComponentsV2 };
+    await interaction.followUp({ ...feedback(announce, "return"), allowedMentions: { users: [other] } });
+  }
 }
 
 const SHARE_PROMPT_MS = 60_000;
