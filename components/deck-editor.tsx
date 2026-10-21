@@ -1,7 +1,7 @@
 "use client";
 
 import { findCards, normal, resolveCard, type Card, type Catalogue } from "@/bot/src/card-match";
-import { missingCards, type OwnedCopy } from "@/bot/src/deck-match";
+import { championOf, deckText, deckWarnings, missingCards, type OwnedCopy } from "@/bot/src/deck-match";
 import { CardThumb } from "@/components/card-thumb";
 import { CardFigure, cardImage, EnergyCurve, VisualDecklist } from "@/components/deck-cards";
 import { DomainIcon, EnergyBadge, TypeIcon, type RiftboundIcon } from "@/components/riftbound-icons";
@@ -14,10 +14,7 @@ import { LANGUAGES, languageName } from "@/lib/collection";
 import { formatExact } from "@/lib/time";
 import {
   addCard,
-  championOf,
   changeEntry,
-  deckText,
-  deckWarnings,
   parseDeckList,
   replaceEntry,
   SECTIONS,

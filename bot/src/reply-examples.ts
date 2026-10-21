@@ -10,6 +10,7 @@ import { recapMessage } from "./recap.js";
 import { reportEmbed } from "./report.js";
 import { type Catalogue } from "./riftbound.js";
 import { cardMessage } from "./riftbound-reply.js";
+import { deckMessage } from "./decks.js";
 import type { FeedIcon } from "./riftbound-feed.js";
 import { wantedEmojis } from "./emojis.js";
 import { settingsText } from "./setup.js";
@@ -45,6 +46,24 @@ export function replyExamples(): Record<string, ReplyExample> {
   const emojiIds = new Map(emojis.map((e, i) => [e.name, `9000000000000003${String(i).padStart(2, "0")}`]));
   const { files: _image, ...recap } = recapMessage("2026-09-01", Buffer.alloc(0), `${SITE}/recap`);
   const going = goingMessage(1, { game: "Riftbound", name: "The Card Corner", city: "Leuven" }, SATURDAY, ZONE, null);
+  // Anna's "Ahri control" (supabase/seed.sql): its main deck's 13 cards without a champion or
+  // signature, in the Legend's domains, by id; runes and battlefields as seeded.
+  const main = catalogue.cards
+    .filter((c) => ["Unit", "Spell", "Gear"].includes(c.type) && !c.supertypes.length && c.domains.every((d) => card.domains.includes(d)))
+    .map((c) => c.id)
+    .sort()
+    .slice(0, 13);
+  const deckEntries = [
+    { section: "main", card_id: "ahri-alluring", printing_id: "ogn-066-298", quantity: 1 },
+    ...main.map((id) => ({ section: "main", card_id: id, printing_id: null, quantity: 3 })),
+    { section: "runes", card_id: "calm-rune", printing_id: null, quantity: 6 },
+    { section: "runes", card_id: "mind-rune", printing_id: null, quantity: 6 },
+    ...["abandoned-hall", "altar-to-unity", "aspirants-climb"].map((id) => ({ section: "battlefields", card_id: id, printing_id: null, quantity: 1 })),
+  ];
+  const deck = {
+    id: "00000000-0000-4000-8000-0000000d0001", name: "Ahri control", legend_id: card.id, champion_id: "ahri-alluring",
+    visibility: "public", language: "en", allow_other_languages: true,
+  };
   const rows = [
     { user_id: "1", display_name: "Anna", message_count: 1284 },
     { user_id: "2", display_name: "Bram", message_count: 967 },
@@ -80,6 +99,11 @@ export function replyExamples(): Record<string, ReplyExample> {
     card: reply(
       "/card",
       cardMessage(card, catalogue.printings.filter((p) => p.card_id === card.id), catalogue.icons, emojiIds, SITE),
+      { emojis: Object.fromEntries(emojis.map((e) => [e.name, e.url])) },
+    ),
+    "deck-share": reply(
+      "/deck share",
+      deckMessage(deck, deckEntries, catalogue, catalogue.icons, emojiIds, "Anna", 5, SITE),
       { emojis: Object.fromEntries(emojis.map((e) => [e.name, e.url])) },
     ),
     going: reply("/event going", going),
