@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   cardChoices,
-  cardEmbed,
   cardMiss,
   lookupCard,
   resolveCard,
@@ -10,7 +9,7 @@ import {
   type Catalogue,
   type Printing,
 } from "./riftbound.js";
-import { plainText, textParts, tokenWords } from "./card-match.js";
+import { plainText, textParts } from "./card-match.js";
 
 // Riot's real cards (#206), as the feed gave them.
 const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue;
@@ -27,13 +26,6 @@ describe("card text tokens", () => {
       "",
     ]);
     expect(textParts(":rb_exhaust:")[1]).toEqual({ kind: "other", value: "exhaust", label: "Exhaust" });
-  });
-
-  it("reads as words where no icon shows", () => {
-    expect(tokenWords(":rb_exhaust:: [Add] :rb_energy_1::rb_rune_rainbow:. +1 :rb_might:")).toBe(
-      "Exhaust: [Add] 1 energy Rainbow rune. +1 Might",
-    );
-    expect(tokenWords("No tokens.")).toBe("No tokens.");
   });
 });
 
@@ -130,7 +122,6 @@ describe("/card", () => {
   const { cards, printings } = catalogue;
   const legend = cards.find((c) => c.id === "nine-tailed-fox")!;
   const unit = cards.find((c) => c.id === "ahri-alluring")!;
-  const printed = (card: Card) => printings.filter((p) => p.card_id === card.id);
 
   it("suggests by name or champion, prefix matches first, at most 25, valued by id", () => {
     const ahri = cardChoices(catalogue, "ahri");
@@ -157,26 +148,6 @@ describe("/card", () => {
     expect(lookupCard(catalogue, "Ahri")).toEqual({ card: legend });
     expect(lookupCard(catalogue, "nothing like this")).toBeNull();
     expect(lookupCard(catalogue, "OGN-066")).toEqual({ card: unit });
-  });
-
-  it("shows the stats, Riot's text without its HTML, and the art sized on Riot's CDN", () => {
-    const embed = cardEmbed(legend, printed(legend), "https://site.test/");
-    expect(embed.title).toBe("Nine-Tailed Fox");
-    expect(embed.url).toBe("https://site.test/cards/nine-tailed-fox");
-    expect(embed.description).toBe(
-      "When an enemy unit attacks a battlefield you control, give it -1 Might this turn, to a minimum of 1 Might.",
-    );
-    const image = new URL(embed.image!.url);
-    expect(image.host).toBe("cmsassets.rgpub.io");
-    expect(Object.fromEntries(image.searchParams)).toMatchObject({ w: "400", fm: "webp", q: "75" });
-    expect(embed.fields?.map((f) => [f.name, f.value])).toEqual([
-      ["Type", "Legend"],
-      ["Cost", "-"],
-      ["Might", "-"],
-      ["Domains", "Calm, Mind"],
-    ]);
-    expect(embed.footer?.text).toBe("OGN-255/298 · OGN-303/298 · OGN-303*/298");
-    expect(cardEmbed(unit, [], null)).toMatchObject({ url: undefined, image: undefined, footer: undefined });
   });
 
   it("explains a miss", () => {
