@@ -6,18 +6,20 @@ import {
   diffCatalogue,
   parseProposalButtonId,
   proposalButtonId,
-  proposalText,
+  proposalMessage,
   proposalCounts,
 } from "./catalogue-check.js";
+import { ComponentType } from "discord.js";
+import { MAX_COMPONENTS, MAX_TEXT } from "./riftbound-reply.js";
 import { feedItems, transformFeed, type FeedCard } from "./riftbound-feed.js";
 
 const feed = transformFeed(feedItems(JSON.parse(readFileSync(new URL("riftbound-feed.fixture.json", import.meta.url), "utf8"))));
 // What the database returns: the same columns, from an earlier copy of the feed.
-const stored = () => structuredClone({ cards: feed.cards, printings: feed.printings });
+const stored = () => structuredClone({ cards: feed.cards, printings: feed.printings, icons: feed.icons });
 
 describe("diffCatalogue", () => {
   it("finds nothing when the database has the feed", () => {
-    expect(diffCatalogue(feed, stored())).toEqual({ sets: [], cards: [], printings: [] });
+    expect(diffCatalogue(feed, stored())).toEqual({ sets: [], cards: [], printings: [], icons: [] });
   });
 
   it("ignores placeholders, and a null the database leaves out", () => {
@@ -52,8 +54,18 @@ describe("diffCatalogue", () => {
     expect(diff.printings.map((p) => p.id)).toEqual(["ven-r04", "ven-sp2-006"]);
   });
 
+  it("upserts new and changed icons, and names them in the DM", () => {
+    const db = stored();
+    db.icons = db.icons.filter((i) => i.value !== "fury");
+    db.icons.find((i) => i.value === "unit")!.icon_url = "https://cmsassets.rgpub.io/old.png";
+    const diff = diffCatalogue(feed, db);
+    expect(diff.sets).toEqual([]);
+    expect(diff.icons.map((i) => i.label)).toEqual(["Fury", "Unit"]);
+    expect(JSON.stringify(proposalMessage("b", diff, 1))).toContain("2 new or changed icons (Fury, Unit)");
+  });
+
   it("puts sets in release order", () => {
-    const diff = diffCatalogue(feed, { cards: [], printings: [] });
+    const diff = diffCatalogue(feed, { cards: [], printings: [], icons: [] });
     const order = ["OGN", "OGS", "SFD", "UNL", "VEN", "RAD"];
     expect(diff.sets.map((s) => order.indexOf(s.set))).toEqual(diff.sets.map((s) => order.indexOf(s.set)).sort());
     expect(proposalCounts(diff).added).toBe(feed.cards.length);
@@ -69,26 +81,47 @@ describe("checksum", () => {
   });
 });
 
-describe("proposalText", () => {
-  it("gives the build id, the counts per set and the first names", () => {
-    const text = proposalText("abc123", {
+describe("proposalMessage", () => {
+  // The text of a message's components, in order.
+  const texts = (components: unknown[]): string[] =>
+    (components as { content?: string; components?: unknown[] }[]).flatMap((c) => [...(c.content ? [c.content] : []), ...texts(c.components ?? [])]);
+
+  it("gives the build id, the counts per set and the first names, and keeps Accept and Reject", () => {
+    const message = proposalMessage("abc123", {
       sets: [
         { set: "VEN", added: ["A", "B", "C", "D"], changed: [], gone: [] },
         { set: "RAD", added: [], changed: ["E"], gone: ["F", "G"] },
       ],
       cards: [],
       printings: [],
+      icons: [],
+    }, 9);
+    expect(texts(message.components)).toEqual([
+      "Riot's Riftbound card feed (build `abc123`) differs from the catalogue.",
+      "**VEN**: 4 new (A, B, C, …), 0 changed, 0 no longer in the feed",
+      "**RAD**: 0 new, 1 changed (E), 2 no longer in the feed (F, G)",
+      "Accept writes the new and changed cards. Cards no longer in the feed stay: collections, decks and loans point at them.",
+    ]);
+    expect(message.components[1]).toMatchObject({
+      type: ComponentType.ActionRow,
+      components: [{ custom_id: proposalButtonId("accept", 9) }, { custom_id: proposalButtonId("reject", 9) }],
     });
-    expect(text).toBe(
-      "Riot's Riftbound card feed (build `abc123`) differs from the catalogue.\n" +
-        "**VEN**: 4 new (A, B, C, …), 0 changed, 0 no longer in the feed\n" +
-        "**RAD**: 0 new, 1 changed (E), 2 no longer in the feed (F, G)\n" +
-        "Accept writes the new and changed cards. Cards no longer in the feed stay: collections, decks and loans point at them.",
-    );
   });
 
-  it("stays within Discord's limit", () => {
-    expect(proposalText("x", diffCatalogue(feed, { cards: [], printings: [] })).length).toBeLessThanOrEqual(2000);
+  it("shows up to ten new cards per set under its counts, within Discord's limits", () => {
+    const diff = diffCatalogue(feed, { cards: [], printings: [], icons: [] });
+    const message = proposalMessage("x", diff, 1);
+    const inside = (message.components[0] as { components: { type: number; items?: { description: string }[] }[] }).components;
+    const galleries = inside.filter((c) => c.type === ComponentType.MediaGallery);
+    expect(galleries.length).toBeGreaterThan(0);
+    for (const g of galleries) expect(g.items!.length).toBeLessThanOrEqual(10);
+    const first = inside.findIndex((c) => c.type === ComponentType.MediaGallery);
+    expect(diff.sets[0].added).toContain(galleries[0].items![0].description);
+    expect(inside[first - 1].type).toBe(ComponentType.TextDisplay);
+    const json = JSON.stringify(message);
+    const descriptions = galleries.flatMap((g) => g.items!.map((i) => i.description));
+    expect([...texts(message.components), ...descriptions].join("").length).toBeLessThanOrEqual(MAX_TEXT);
+    expect(json.match(/"type":/g)!.length).toBeLessThanOrEqual(MAX_COMPONENTS);
   });
 });
 

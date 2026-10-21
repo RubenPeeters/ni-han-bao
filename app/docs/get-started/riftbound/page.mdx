@@ -29,11 +29,13 @@ Look up cards, keep your collection, and lend cards to the people you play with.
 
 On the Cards page, press **Edit my collection**, then count copies with the steppers on each card. **What the steppers count** switches between **Owned**, **For trade** and **To lend**; condition and language apply to the copies you add. Changes save as you go: "All changes saved".
 
-From Discord, `/collection add card:Ahri count:2` adds copies too, in the language you last used unless you pick one.
+From Discord, `/collection add card:Ahri count:2` adds copies too, in the language you last used unless you pick one. The reply shows the card and your new count.
 
-Your profile's **Collection** tab sums it up per set, rarity and language. Who sees it follows your [profile visibility](/docs/get-started/link-accounts#your-profile).
+<ReplyExample name="collection-add" />
 
-![A collection](/docs/shots/collection.png)
+**My collection**, under **Riftbound**, shows the cards you own with the same steppers, and sums them up per set, rarity and language. Others see those totals on your profile's **Collection** tab; who sees it follows your [profile visibility](/docs/get-started/link-accounts#your-profile).
+
+![My collection](/docs/shots/collection.png)
 
 ## Lending
 
@@ -46,18 +48,22 @@ Members of your servers then see your copies to lend under **Who has it?** on a 
 
 To record a loan: `/lend member:@Chloé cards:2 Jinx; Ahri`, with an optional `due` date. The borrower gets **Confirm** and **Dispute** buttons in the channel. When the cards are back, either of you runs `/return member:@Chloé`. Lost cards: the owner runs `/return` with `lost:True`.
 
-To lend a whole deck as one loan, with one due date and one confirmation: `/lend member:@Chloé deck:Ahri control`, or **Lend deck** under **Lending** on the deck's page. A loan made on the site is confirmed on the borrower's **Loans** tab. Tick **Not for lending** on a deck you keep built: its cards are then never offered to lend, whatever your per-card counts say.
+<ReplyExample name="lend" />
+
+To lend a whole deck as one loan, with one due date and one confirmation: `/lend member:@Chloé deck:Ahri control`, or **Lend deck** under **Lending** on the deck's page. A loan made on the site is confirmed on the borrower's **My loans** page. Tick **Not for lending** on a deck you keep built: its cards are then never offered to lend, whatever your per-card counts say.
 
 A deck's page lists, under **Who has my missing cards?**, the members of your servers with copies to lend of each card you are missing.
 
-The **Loans** tab of your profile shows who has your cards, what you owe, and what is overdue, unconfirmed or disputed.
+**My loans**, under **Riftbound**, shows who has your cards, what you owe, and what is overdue, unconfirmed or disputed.
 
-![The Loans tab](/docs/shots/loans.png)
+![My loans](/docs/shots/loans.png)
 
 **If you don't** see a member's cards to lend: they have not turned lending on, their profile is private, or they are not in a server with you.
 
 ## Sharing a deck
 
-`/deck share deck:Ahri control` posts one of your decks in the channel: its Legend, Chosen Champion, every card with its count, how many cards you are missing, and a link to its page. A private deck asks first whether your servers' members or anyone logged in may see it.
+`/deck share deck:Ahri control` posts one of your decks in the channel: pictures of its Legend, Chosen Champion and battlefields, every card by type with its count, domains and energy, how many cards you are missing, whether it passes the rules check, and a link to its page. **Copy as text** under it sends anyone who presses it the deck as `3 Card Name` lines, only for them. A private deck asks first whether your servers' members or anyone logged in may see it.
+
+<ReplyExample name="deck-share" />
 
 A public deck's link shows its Legend and Chosen Champion to anyone; the full list is for whoever logs in with Discord. **Copy as text** on a deck's page copies it as `3 Card Name` lines, which **Or paste a list** reads back into any deck.

@@ -1,7 +1,10 @@
 // Riftbound trade matching (#178): a member's wishlist against other members' cards for
 // trade, within a server they share. The bot only introduces people: no prices, payments or
 // escrow (Riot's monetization and middle-man rules); the trade happens at the table.
+import { ComponentType, MessageFlags, type APITextDisplayComponent } from "discord.js";
 import { eventLabel } from "./events.js";
+import { type Catalogue } from "./riftbound.js";
+import { imageOf, withThumbnail, type V2 } from "./riftbound-reply.js";
 import { escapeMarkdown } from "./stores.js";
 import { fits, type Wanted } from "./wishlist.js";
 
@@ -31,6 +34,8 @@ export interface Match extends Place {
   trader_id: string;
   card_id: string;
   copies: number;
+  /** How many of the card the wanter still wants. */
+  wanted: number;
 }
 
 const RANK = { event: 0, regulars: 1, city: 2 } as const;
@@ -53,7 +58,8 @@ export function newMatches(candidates: Candidate[], wantedOf: (user: string) => 
     if (inGuild) inGuild.copies += c.copies;
     else {
       const { printing_id: _p, language: _l, ...match } = c;
-      perGuild.set(`${key}|${c.guild_id}`, match);
+      const want = wanted.get(c.user_id)!.reduce((n, w) => n + (w.card_id === c.card_id ? w.wanted : 0), 0);
+      perGuild.set(`${key}|${c.guild_id}`, { ...match, wanted: want });
     }
     const m = perGuild.get(`${key}|${c.guild_id}`)!;
     const was = best.get(key);
@@ -78,33 +84,50 @@ export function placeText(place: Place, timeZone: string): string | null {
   return null;
 }
 
+// Matches shown with their pictures; the rest are on the Trades page.
+export const DM_MATCHES = 5;
+
 /**
  * The one DM a member gets for the matches found since the last one, and the matches it
- * names: as many as fit Discord's 2000 characters, the rest wait for the next DM.
+ * covers: the first five with their pictures, the rest by a link to the Trades page. Without
+ * the site to link to, the rest wait for the next DM.
  */
 export function tradeDm(
   matches: Match[],
-  cardName: (card: string) => string,
+  catalogue: Catalogue,
   timeZone: (guild: string) => string,
   siteUrl: string | null,
-): { content: string; shown: Match[] } {
-  const line = (m: Match) => {
+): { message: V2; shown: Match[] } {
+  const text = (content: string): APITextDisplayComponent => ({ type: ComponentType.TextDisplay, content });
+  const section = (m: Match) => {
+    const card = catalogue.cards.find((c) => c.id === m.card_id);
     const place = placeText(m, timeZone(m.guild_id));
-    return `- You want **${escapeMarkdown(cardName(m.card_id))}**: <@${m.trader_id}> has ${m.copies} for trade.${place ? ` Meet up: ${place}.` : ""}`;
+    const content = [
+      `**${escapeMarkdown(card?.name ?? m.card_id)}**`,
+      `You want ${m.wanted}, <@${m.trader_id}> has ${m.copies} for trade.`,
+      place && `Meet up: ${place}.`,
+    ];
+    return withThumbnail(content.filter(Boolean).join("\n"), card ? imageOf(catalogue, card, 160) : null, card?.name ?? m.card_id);
   };
-  const guilds = [...new Set(matches.map((m) => m.guild_id))];
-  const page = siteUrl ? `\nAll your matches: ${guilds.map((g) => `<${siteUrl}/s/${g}/trades>`).join(" ")}` : "";
-  const head = `${matches.length === 1 ? "A new trade match" : "New trade matches"} in your servers:\n`;
-  const tail = `Say hi and trade at the table: no prices or payments go through the bot.${page}`;
-  const more = "- More in your next DM.\n";
-  const lines: string[] = [];
-  let length = head.length + tail.length + more.length;
-  for (const m of matches) {
-    const text = `${line(m)}\n`;
-    if (length + text.length > 2000) break;
-    lines.push(text);
-    length += text.length;
-  }
-  const rest = lines.length < matches.length ? more : "";
-  return { content: `${head}${lines.join("")}${rest}${tail}`, shown: matches.slice(0, lines.length) };
+  const rest = matches.length - DM_MATCHES;
+  const pages = [...new Set(matches.map((m) => m.guild_id))].map((g) => `<${siteUrl}/s/${g}/trades>`).join(" ");
+  const more = rest > 0 && (siteUrl ? `And ${rest} more on the Trades page: ${pages}` : `And ${rest} more in your next DM.`);
+  const footer = `-# Say hi and trade at the table: no prices or payments go through the bot.${siteUrl && rest <= 0 ? ` All your matches: ${pages}` : ""}`;
+  return {
+    message: {
+      components: [
+        {
+          type: ComponentType.Container,
+          components: [
+            text(`### ${matches.length === 1 ? "A new trade match" : "New trade matches"} in your servers`),
+            ...matches.slice(0, DM_MATCHES).map(section),
+            ...(more ? [text(more)] : []),
+            text(footer),
+          ],
+        },
+      ],
+      flags: MessageFlags.IsComponentsV2,
+    },
+    shown: siteUrl ? matches : matches.slice(0, DM_MATCHES),
+  };
 }

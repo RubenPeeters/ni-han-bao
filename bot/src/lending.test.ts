@@ -9,7 +9,8 @@ import {
   lendChoices,
   lendReceipt,
   lendWhat,
-  loanCardList,
+  loanCards,
+  nudgeMessage,
   parseAnswerId,
   parseCards,
   parseDisputeFormId,
@@ -18,13 +19,17 @@ import {
   pickCopies,
   returnReply,
   type CopyRow,
+  type LoanView,
   type Wanted,
 } from "./lending.js";
+import { ComponentType } from "discord.js";
 import { choiceLabel, type Catalogue } from "./riftbound.js";
 
 const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue;
 const unit = catalogue.cards.find((c) => c.id === "ahri-alluring")!;
 const legend = catalogue.cards.find((c) => c.id === "nine-tailed-fox")!;
+const none = new Map<string, string>();
+const loan: LoanView = { id: 7, lender: "a", borrower: "b", due: "2026-11-02", rows: [{ printing_id: "ogn-255-298", quantity: 2 }], deck: null };
 
 describe("parseCards", () => {
   it("reads counts before or after a name, and adds up a card named twice", () => {
@@ -149,24 +154,52 @@ describe("lending a deck", () => {
     expect(deckChoices(decks, "JINX")).toEqual([{ name: "Jinx aggro", value: "b" }]);
   });
 
-  it("names the deck instead of its card list", () => {
-    const wanted = [{ card: unit, count: 3 }, { card: legend, count: 1 }];
-    expect(lendReceipt(7, wanted, 0, null, "Ahri control")).toBe("Recorded loan #7: the deck Ahri control (4 cards).");
-    expect(lendAnnouncement("a", "b", 7, wanted, null, "Ahri control")).toContain("lent <@b> the deck Ahri control (4 cards)");
+  it("names the deck instead of its card list, with its Legend's picture", () => {
+    const deck: LoanView = { ...loan, rows: [{ printing_id: "ogn-066-298", quantity: 3 }, { printing_id: "ogn-255-298", quantity: 1 }], deck: "Ahri control" };
+    expect(loanCards(catalogue, none, deck)).toMatchObject([
+      { type: ComponentType.Section, components: [{ content: "The deck **Ahri control** · 4 cards" }], accessory: { description: legend.name } },
+    ]);
   });
 });
 
 describe("replies", () => {
-  it("names the cards of a loan from the catalogue", () => {
-    expect(loanCardList(catalogue, [{ printing_id: "ogn-255-298", quantity: 2 }])).toBe(`2 × ${legend.name}`);
+  it("shows one or two cards with their pictures and domains, as words without the emojis", () => {
+    const cards = loanCards(catalogue, new Map([["rb_calm", "5"]]), loan);
+    expect(cards).toMatchObject([
+      { type: ComponentType.Section, components: [{ content: `2× **${legend.name}** · <:rb_calm:5> ${legend.domains[1]}` }], accessory: { type: ComponentType.Thumbnail } },
+    ]);
+    // Two rows of one card are one line.
+    const twice = loanCards(catalogue, none, { ...loan, rows: [{ printing_id: "ogn-066-298", quantity: 1 }, { printing_id: "ogn-066a-298", quantity: 1 }] });
+    expect(twice).toHaveLength(1);
+    expect(JSON.stringify(twice)).toContain(`2× **${unit.name}**`);
+  });
+
+  it("lists three or more cards as lines, without pictures", () => {
+    const rows = ["ogn-066-298", "ogn-255-298", "ogn-030-298"].map((printing_id) => ({ printing_id, quantity: 1 }));
+    const cards = loanCards(catalogue, none, { ...loan, rows });
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ type: ComponentType.TextDisplay });
+    expect((cards[0] as { content: string }).content.split("\n")).toHaveLength(3);
+  });
+
+  it("names the lender, borrower and due date, and keeps Confirm and Dispute for the borrower", () => {
+    const message = lendAnnouncement(catalogue, none, loan);
+    const text = JSON.stringify(message);
+    expect(text).toContain("### Loan #7\\n<@a> lent <@b> · due 2026-11-02");
+    expect(text).toContain("<@b>, did you get them?");
+    expect(message.components[1]).toMatchObject({
+      type: ComponentType.ActionRow,
+      components: [{ custom_id: answerId("confirm", 7, "b"), label: "Confirm" }, { custom_id: answerId("dispute", 7, "b"), label: "Dispute" }],
+    });
+    expect(JSON.stringify(nudgeMessage(catalogue, none, loan))).toContain("Loan #7 is due");
   });
 
   it("warns the lender about copies not marked to lend, and names a corrected loan", () => {
-    const receipt = lendReceipt(7, [{ card: legend, count: 1 }], 1, 3);
-    expect(receipt).toContain("loan #7");
+    const receipt = JSON.stringify(lendReceipt(catalogue, none, loan, 1, 3));
+    expect(receipt).toContain("Loan #7 recorded");
     expect(receipt).toContain("#3 no longer counts");
     expect(receipt).toContain("1 of these copies is not marked");
-    expect(lendReceipt(7, [{ card: legend, count: 1 }], 0, null)).not.toContain("Heads-up");
+    expect(JSON.stringify(lendReceipt(catalogue, none, loan, 0, null))).not.toContain("Heads-up");
   });
 
   it("round-trips button and form ids", () => {
@@ -182,11 +215,11 @@ describe("replies", () => {
   });
 
   it("announces closed loans and keeps a miss private", () => {
-    expect(returnReply("a", "b", false, [{ loan_id: 1 }, { loan_id: 2 }])).toEqual({
-      content: "Loans #1, #2 between <@a> and <@b> are closed: the cards are back with their owner.",
+    expect(returnReply("a", "b", false, [{ loan_id: 1, cards: 1 }, { loan_id: 2, cards: 40 }])).toEqual({
+      content: "Closed between <@a> and <@b>: the cards are back with their owner.\n- Loan #1: 1 card\n- Loan #2: 40 cards",
       announce: true,
     });
     expect(returnReply("a", "b", true, [])).toMatchObject({ announce: false });
-    expect(returnReply("a", "b", true, [{ loan_id: 1 }]).content).toContain("wrote off loan #1");
+    expect(returnReply("a", "b", true, [{ loan_id: 1, cards: 2 }]).content).toContain("wrote off what <@b> borrowed: the cards are lost");
   });
 });

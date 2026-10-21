@@ -1,7 +1,11 @@
 import { createDeck } from "@/app/decks/actions";
+import { riftboundIcons } from "@/components/card-library";
+import { CardThumb } from "@/components/card-thumb";
+import { cardImage } from "@/components/deck-cards";
 import { DeckEditor, RestoreVersion, type Deck, type VersionListed } from "@/components/deck-editor";
 import { DeckLending } from "@/components/deck-lending";
 import { WishlistModeQuestion } from "@/components/profile-wishlist";
+import { DomainIcon } from "@/components/riftbound-icons";
 import { LogInPrompt } from "@/components/server-picker";
 import { EmptyState, ErrorState, MemberRankRow, RankList, RankRow, StatCard } from "@/components/stat-ui";
 import { Button } from "@/components/ui/button";
@@ -13,10 +17,13 @@ import { languageName } from "@/lib/collection";
 import { allPages, deckChanges, SECTIONS, VISIBILITIES, type Entry, type Pin } from "@/lib/decks";
 import { formatExact } from "@/lib/time";
 import { createClient } from "@/lib/supabase/server";
+import { cn } from "@/lib/utils";
+import { Globe, Lock, Users } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 const LOG_IN = "Log in to build Riftbound decks.";
+const VISIBILITY_ICONS = { private: Lock, servers: Users, public: Globe };
 // The columns of a Printing: not the printing's own text, which the editors do not show.
 const PRINTING = "id, card_id, set_code, collector_code, collector_number, rarity, illustrator, image_url";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -38,8 +45,14 @@ async function ownedCopies(supabase: Awaited<ReturnType<typeof createClient>>) {
   return { data: rows.map(({ printing, ...c }): OwnedCopy => ({ ...c, card_id: printing.card_id })), error: null };
 }
 
-const DECK =
-  "id, user_id, name, visibility, not_for_lending, legend_id, language, allow_other_languages, updated_at, legend:riftbound_cards!legend_id(name, tags), cards:riftbound_deck_cards(section, card_id, printing_id, quantity)";
+// A card's printings for its thumbnail, as on the deck page: the first by collector number with an image.
+const THUMB = "printings:riftbound_printings(image_url, collector_number)";
+const DECK = `id, user_id, name, visibility, not_for_lending, legend_id, language, allow_other_languages, updated_at,
+  legend:riftbound_cards!legend_id(name, tags, domains, ${THUMB}), champion:riftbound_cards!champion_id(name, ${THUMB}),
+  cards:riftbound_deck_cards(section, card_id, printing_id, quantity)`;
+type Thumbed = { printings: { image_url: string | null; collector_number: number }[] };
+const thumbOf = (card: Thumbed | null) =>
+  card?.printings.toSorted((a, b) => a.collector_number - b.collector_number).find((p) => p.image_url)?.image_url ?? null;
 type ListedDeck = {
   id: string;
   user_id: string;
@@ -50,9 +63,21 @@ type ListedDeck = {
   language: string;
   allow_other_languages: boolean;
   updated_at: string;
-  legend: { name: string; tags: string[] } | null;
+  legend: ({ name: string; tags: string[]; domains: string[] } & Thumbed) | null;
+  champion: ({ name: string } & Thumbed) | null;
   cards: Entry[];
 };
+
+const legendName = (d: ListedDeck) => (d.legend ? `${d.legend.tags.join(", ")}, ${d.legend.name}` : "No Legend yet");
+
+/** A deck's Legend, cropped to its art; an empty frame without one. */
+function LegendArt({ deck, className }: { deck: ListedDeck; className: string }) {
+  return (
+    <span className={cn("shrink-0", className)}>
+      <CardThumb url={thumbOf(deck.legend)} name="" width={160} art />
+    </span>
+  );
+}
 
 /**
  * The visitor's own decks, and every deck they could build against their collection: their
@@ -66,7 +91,7 @@ export async function DeckList() {
   const me = await supabase.rpc("current_discord_id");
   if (me.error) return <ErrorState title="Could not load your decks">Try again in a minute.</ErrorState>;
   if (!me.data) return <LogInPrompt text={LOG_IN} />;
-  const [mine, opened, owned, asked] = await Promise.all([
+  const [mine, opened, owned, asked, icons] = await Promise.all([
     allPages((from, to) =>
       supabase
         .from("riftbound_decks")
@@ -79,6 +104,7 @@ export async function DeckList() {
     allPages((from, to) => supabase.from("riftbound_deck_opens").select(`deck:riftbound_decks(${DECK})`).order("deck_id").range(from, to)),
     ownedCopies(supabase),
     supabase.from("profiles").select("wishlist_mode").eq("user_id", me.data).maybeSingle(),
+    riftboundIcons(supabase),
   ]);
   if (mine.error || opened.error || owned.error || asked.error) return <ErrorState title="Could not load your decks">Try again in a minute.</ErrorState>;
   const byId = new Map<string, ListedDeck>();
@@ -87,7 +113,10 @@ export async function DeckList() {
   }
   const all = [...byId.values()]
     .toSorted((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
-    .map((d) => ({ ...d, missing: missingCards(d, d.cards, owned.data).missing }));
+    .map((d) => {
+      const { rows, missing } = missingCards(d, d.cards, owned.data);
+      return { ...d, missing, needed: rows.reduce((n, r) => n + r.quantity, 0) };
+    });
   const decks = all.filter((d) => d.user_id === me.data);
   const buildable = all.toSorted((a, b) => a.missing - b.missing || a.name.localeCompare(b.name));
   return (
@@ -109,23 +138,35 @@ export async function DeckList() {
           <ul className="flex flex-col divide-y">
             {decks.map((d) => {
               const main = d.cards.filter((c) => c.section === "main").reduce((n, c) => n + c.quantity, 0);
+              const Visibility = VISIBILITY_ICONS[d.visibility as keyof typeof VISIBILITY_ICONS] ?? Lock;
               return (
                 <li key={d.id}>
                   <Link
                     href={`/decks/${d.id}`}
-                    className="flex min-w-0 flex-col gap-1 rounded-md py-3 hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="flex min-w-0 items-center gap-3 rounded-md py-3 hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
-                    <span className="truncate font-medium">{d.name}</span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {[
-                        d.legend ? `${d.legend.tags.join(", ")}, ${d.legend.name}` : "No Legend yet",
-                        `${main} main deck cards`,
-                        VISIBILITIES.find((v) => v.value === d.visibility)?.label.split(":")[0],
-                        d.not_for_lending && "Not for lending",
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
+                    <LegendArt deck={d} className="w-20 sm:w-28" />
+                    <span className="flex min-w-0 flex-1 flex-col gap-1">
+                      <span className="truncate font-medium">{d.name}</span>
+                      <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                        {d.legend?.domains.map((dom) => <DomainIcon key={dom} icons={icons} domain={dom} />)}
+                        <span className="truncate">{legendName(d)}</span>
+                      </span>
+                      <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <span className="tabular-nums">{main} main deck cards</span>
+                        <span className="inline-flex items-center gap-1">
+                          <Visibility aria-hidden className="size-3.5" />
+                          {VISIBILITIES.find((v) => v.value === d.visibility)?.label.split(":")[0]}
+                        </span>
+                        {d.not_for_lending && <span>Not for lending</span>}
+                      </span>
                     </span>
+                    {d.champion && (
+                      <span className="w-10 shrink-0 sm:w-12" title={`Chosen Champion: ${d.champion.name}`}>
+                        <CardThumb url={thumbOf(d.champion)} name={d.champion.name} width={96} />
+                        <span className="sr-only">Chosen Champion: {d.champion.name}</span>
+                      </span>
+                    )}
                   </Link>
                 </li>
               );
@@ -142,11 +183,24 @@ export async function DeckList() {
               <RankRow key={d.id} rank={i + 1} value={d.missing ? `${d.missing} missing` : "Complete"}>
                 <Link
                   href={`/decks/${d.id}`}
-                  className="flex min-w-0 flex-1 flex-col rounded-md hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex min-w-0 flex-1 items-center gap-3 rounded-md hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <span className="truncate font-medium">{d.name}</span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    {[d.legend ? `${d.legend.tags.join(", ")}, ${d.legend.name}` : "No Legend yet", d.user_id === me.data ? "Yours" : "Shared"].join(" · ")}
+                  <LegendArt deck={d} className="w-14" />
+                  <span className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="truncate font-medium">{d.name}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {[legendName(d), d.user_id === me.data ? "Yours" : "Shared"].join(" · ")}
+                    </span>
+                    {d.needed > 0 && (
+                      <span
+                        role="img"
+                        aria-label={`You own ${d.needed - d.missing} of ${d.needed} cards`}
+                        title={`You own ${d.needed - d.missing} of ${d.needed} cards`}
+                        className="h-1.5 rounded-full bg-muted"
+                      >
+                        <span className="block h-full rounded-full bg-chart-2" style={{ width: `${((d.needed - d.missing) / d.needed) * 100}%` }} />
+                      </span>
+                    )}
                   </span>
                 </Link>
               </RankRow>
@@ -165,7 +219,7 @@ export async function DeckDetail({ id }: { id: string }) {
   if (!claims) return <DeckTeaser id={id} />;
   // Not a uuid is no deck, rather than a database error.
   if (!UUID.test(id)) notFound();
-  const [deck, entries, cards, printings, me, owned, versions] = await Promise.all([
+  const [deck, entries, cards, printings, me, owned, versions, icons] = await Promise.all([
     supabase
       .from("riftbound_decks")
       .select("id, user_id, name, legend_id, champion_id, notes, visibility, language, allow_other_languages, wishlist_mode, not_for_lending")
@@ -177,6 +231,7 @@ export async function DeckDetail({ id }: { id: string }) {
     supabase.rpc("current_discord_id"),
     ownedCopies(supabase),
     versionList(supabase, id),
+    riftboundIcons(supabase),
   ]);
   if (deck.error || entries.error || cards.error || printings.error || me.error || owned.error) {
     return <ErrorState title="Could not load this deck">Try again in a minute.</ErrorState>;
@@ -212,12 +267,19 @@ export async function DeckDetail({ id }: { id: string }) {
   if (members.error) console.error("members failed:", members.error.message);
   const names = new Map((cards.data as Card[]).map((c) => [c.id, c.name]));
   const codes = new Map((printings.data as Printing[]).map((p) => [p.id, p.collector_code]));
+  const image = cardImage(printings.data as Printing[]);
   // Per card, and per pinned printing: a lender's other printings do not fill a pin.
-  const short = new Map<string, { card_id: string; printing_id: string | null; name: string; missing: number }>();
+  const short = new Map<string, MissingCard>();
   for (const r of missing) {
     const key = `${r.card_id} ${r.printing_id ?? ""}`;
     const name = (names.get(r.card_id) ?? r.card_id) + (r.printing_id ? ` (${codes.get(r.printing_id) ?? r.printing_id})` : "");
-    short.set(key, { card_id: r.card_id, printing_id: r.printing_id, name, missing: (short.get(key)?.missing ?? 0) + r.quantity - r.owned });
+    short.set(key, {
+      card_id: r.card_id,
+      printing_id: r.printing_id,
+      name,
+      image: image(r.card_id, r.printing_id),
+      missing: (short.get(key)?.missing ?? 0) + r.quantity - r.owned,
+    });
   }
   const borrowers = [...new Map((members.data ?? []).map((m) => [m.user_id, m])).values()].toSorted((a, b) =>
     a.display_name.localeCompare(b.display_name),
@@ -228,6 +290,7 @@ export async function DeckDetail({ id }: { id: string }) {
       entries={entries.data as Entry[]}
       catalogue={{ cards: cards.data as Card[], printings: printings.data as Printing[] }}
       owned={owned.data}
+      icons={icons}
       mine={mine}
       versions={versions.data}
       lending={
@@ -300,6 +363,14 @@ interface CardLender {
   languages: string[] | null;
 }
 
+interface MissingCard {
+  card_id: string;
+  printing_id: string | null;
+  name: string;
+  image: string | null;
+  missing: number;
+}
+
 /**
  * Who has my missing cards?: for each card the visitor is short of, who in their servers has
  * copies to lend, of the pinned printing and in the deck's language if it takes no other.
@@ -309,7 +380,7 @@ function WhoHasMissing({
   missing,
   lenders,
 }: {
-  missing: { card_id: string; printing_id: string | null; name: string; missing: number }[];
+  missing: MissingCard[];
   lenders: CardLender[] | null;
 }) {
   if (missing.length === 0) return null;
@@ -324,9 +395,12 @@ function WhoHasMissing({
             const who = [...new Map(lenders.filter((l) => l.card_id === m.card_id && l.printing_id === m.printing_id).map((l) => [l.user_id, l])).values()];
             return (
               <li key={`${m.card_id} ${m.printing_id ?? ""}`} className="flex flex-col gap-2 py-3 text-sm first:pt-0 last:pb-0">
-                <span className="flex min-w-0 items-baseline justify-between gap-3">
-                  <Link href={`/cards/${m.card_id}`} className="truncate font-medium hover:underline">
-                    {m.name}
+                <span className="flex min-w-0 items-center justify-between gap-3">
+                  <Link href={`/cards/${m.card_id}`} className="flex min-w-0 items-center gap-3 font-medium hover:underline">
+                    <span className="w-10 shrink-0">
+                      <CardThumb url={m.image} name="" width={80} />
+                    </span>
+                    <span className="truncate">{m.name}</span>
                   </Link>
                   <span className="shrink-0 tabular-nums text-muted-foreground">{m.missing} missing</span>
                 </span>
@@ -379,13 +453,14 @@ export async function DeckVersionDetail({ id, version, from }: { id: string; ver
   if (!claims) return <LogInPrompt text="Log in to see this deck." />;
   const n = Number(version);
   if (!UUID.test(id) || !Number.isInteger(n) || n < 1) notFound();
-  const [deck, versions, cards, printings, me, owned] = await Promise.all([
+  const [deck, versions, cards, printings, me, owned, icons] = await Promise.all([
     supabase.from("riftbound_decks").select("user_id, visibility, wishlist_mode").eq("id", id).maybeSingle(),
     versionList(supabase, id),
     allPages((from, to) => supabase.from("riftbound_cards").select("*").order("name").order("id").range(from, to)),
     allPages((from, to) => supabase.from("riftbound_printings").select(PRINTING).order("collector_number").order("id").range(from, to)),
     supabase.rpc("current_discord_id"),
     ownedCopies(supabase),
+    riftboundIcons(supabase),
   ]);
   if (deck.error || versions.error || cards.error || printings.error || me.error || owned.error) {
     return <ErrorState title="Could not load this version">Try again in a minute.</ErrorState>;
@@ -415,6 +490,7 @@ export async function DeckVersionDetail({ id, version, from }: { id: string; ver
       entries={entries}
       catalogue={{ cards: cards.data as Card[], printings: printings.data as Printing[] }}
       owned={owned.data}
+      icons={icons}
       mine={false}
     >
       <StatCard

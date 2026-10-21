@@ -190,8 +190,8 @@ export async function ProfileStats({ user }: { user: string }) {
   );
 }
 
-/** Name, avatar and the profile's tabs, on every tab of a profile. */
-export function ProfileHeader({ user, profile, subtitle }: { user: string; profile: Profile; subtitle: string }) {
+/** Name, avatar and the profile's tabs, on every tab of a profile; `manage` is your own page of the tab. */
+export function ProfileHeader({ user, profile, subtitle, manage }: { user: string; profile: Profile; subtitle: string; manage?: string }) {
   const name = profile.display_name ?? "You";
   return (
     <>
@@ -214,6 +214,11 @@ export function ProfileHeader({ user, profile, subtitle }: { user: string; profi
         </div>
       </div>
       <ProfileNav user={user} />
+      {manage && profile.mine && (
+        <Link href={manage} className="flex min-h-11 w-fit items-center rounded-md text-sm font-medium underline underline-offset-4">
+          Manage in Riftbound
+        </Link>
+      )}
     </>
   );
 }

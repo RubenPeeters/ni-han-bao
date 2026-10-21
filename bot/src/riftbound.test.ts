@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   cardChoices,
-  cardEmbed,
   cardMiss,
   lookupCard,
   resolveCard,
@@ -10,10 +9,25 @@ import {
   type Catalogue,
   type Printing,
 } from "./riftbound.js";
-import { plainText } from "./card-match.js";
+import { plainText, textParts } from "./card-match.js";
 
 // Riot's real cards (#206), as the feed gave them.
 const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue;
+
+describe("card text tokens", () => {
+  it("splits Riot's tokens from the words, each with its name", () => {
+    expect(textParts("+1 :rb_might: and :rb_energy_2::rb_rune_fury:")).toEqual([
+      "+1 ",
+      { kind: "might", value: "might", label: "Might" },
+      " and ",
+      { kind: "energy", value: "2", label: "2 energy" },
+      "",
+      { kind: "rune", value: "fury", label: "Fury rune" },
+      "",
+    ]);
+    expect(textParts(":rb_exhaust:")[1]).toEqual({ kind: "other", value: "exhaust", label: "Exhaust" });
+  });
+});
 
 describe("plainText", () => {
   it("keeps Riot's words and lines, without the HTML", () => {
@@ -90,7 +104,7 @@ describe("resolveCard", () => {
     expect(id("ogn-066/298")).toBe("u-ahri");
     expect(id("OGN-06")).toBeNull();
     expect(id("OGN-007a")).toBe("s-2");
-    expect(id("OGN01")).toBeNull();
+    expect(id("OGN01")).toBe("s-1");
     expect(id("OGN")).toBeNull();
   });
 
@@ -108,7 +122,6 @@ describe("/card", () => {
   const { cards, printings } = catalogue;
   const legend = cards.find((c) => c.id === "nine-tailed-fox")!;
   const unit = cards.find((c) => c.id === "ahri-alluring")!;
-  const printed = (card: Card) => printings.filter((p) => p.card_id === card.id);
 
   it("suggests by name or champion, prefix matches first, at most 25, valued by id", () => {
     const ahri = cardChoices(catalogue, "ahri");
@@ -121,32 +134,20 @@ describe("/card", () => {
     expect(cardChoices(catalogue, "OGN")).toEqual([]);
   });
 
+  it("lists every card a number finds, never picking one", () => {
+    const sets = (typed: string) =>
+      cardChoices(catalogue, typed).map((c) => printings.find((p) => p.card_id === c.value && /-0*34[a-z*]*\//.test(p.collector_code))?.set_code);
+    expect(sets("34").length).toBeGreaterThan(3);
+    expect(sets("34")[0]).toBe("OGN");
+    expect(sets("ogn 34").every((s) => s === "OGN")).toBe(true);
+  });
+
   it("takes a picked id, a typed name or a collector code", () => {
     expect(lookupCard(catalogue, legend.id)).toEqual({ card: legend });
     expect(lookupCard(catalogue, "ahri, alluring")).toEqual({ card: unit });
     expect(lookupCard(catalogue, "Ahri")).toEqual({ card: legend });
     expect(lookupCard(catalogue, "nothing like this")).toBeNull();
     expect(lookupCard(catalogue, "OGN-066")).toEqual({ card: unit });
-  });
-
-  it("shows the stats, Riot's text without its HTML, and the art sized on Riot's CDN", () => {
-    const embed = cardEmbed(legend, printed(legend), "https://site.test/");
-    expect(embed.title).toBe("Nine-Tailed Fox");
-    expect(embed.url).toBe("https://site.test/cards/nine-tailed-fox");
-    expect(embed.description).toBe(
-      "When an enemy unit attacks a battlefield you control, give it -1 :rb_might: this turn, to a minimum of 1 :rb_might:.",
-    );
-    const image = new URL(embed.image!.url);
-    expect(image.host).toBe("cmsassets.rgpub.io");
-    expect(Object.fromEntries(image.searchParams)).toMatchObject({ w: "400", fm: "webp", q: "75" });
-    expect(embed.fields?.map((f) => [f.name, f.value])).toEqual([
-      ["Type", "Legend"],
-      ["Cost", "-"],
-      ["Might", "-"],
-      ["Domains", "Calm, Mind"],
-    ]);
-    expect(embed.footer?.text).toBe("OGN-255/298 · OGN-303/298 · OGN-303*/298");
-    expect(cardEmbed(unit, [], null)).toMatchObject({ url: undefined, image: undefined, footer: undefined });
   });
 
   it("explains a miss", () => {

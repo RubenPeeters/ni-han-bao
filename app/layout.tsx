@@ -66,7 +66,7 @@ export default function RootLayout({
               >
                 ni han bao
               </Link>
-              <Suspense fallback={<MainNav pathname={null} me={null} />}>
+              <Suspense fallback={<MainNav pathname={null} />}>
                 <SiteNav />
               </Suspense>
               <div className="ml-auto flex items-center">

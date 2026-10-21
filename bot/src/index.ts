@@ -8,6 +8,7 @@ import {
   type ChatInputCommandInteraction,
   Client,
   type Collection,
+  ComponentType,
   Events,
   GatewayIntentBits,
   type Guild,
@@ -92,10 +93,9 @@ import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type
 import { rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
 import { addToCollection, COLLECTION_COMMAND, setLending } from "./collection.js";
-import { missingCards, type DeckEntry, type OwnedCopy } from "./deck-match.js";
-import { DECK_COMMAND, deckEmbed, privatePrompt, SHARE_CANCEL_ID, SHARE_PUBLIC_ID, type SharedDeck } from "./decks.js";
+import { deckText, missingCards, type DeckEntry, type OwnedCopy } from "./deck-match.js";
+import { canSeeDeck, DECK_COMMAND, deckMessage, parseCopyButtonId, privatePrompt, SHARE_CANCEL_ID, SHARE_PUBLIC_ID, textMessage, type SharedDeck } from "./decks.js";
 import {
-  answerId,
   answerReply,
   deckChoices,
   deckWanted,
@@ -105,9 +105,8 @@ import {
   lendChoices,
   lendReceipt,
   lendWhat,
-  loanCardList,
   NOT_BORROWER,
-  nudgeText,
+  nudgeMessage,
   parseAnswerId,
   parseCards,
   parseDisputeFormId,
@@ -116,20 +115,23 @@ import {
   RETURN_COMMAND,
   returnReply,
   type CopyRow,
+  type LoanView,
   type Wanted,
 } from "./lending.js";
-import { CARD_COMMAND, cardChoices, cardEmbed, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
-import { feedItems, fetchFeed, transformFeed, type FeedCard, type FeedPrinting } from "./riftbound-feed.js";
+import { CARD_COMMAND, cardChoices, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
+import { cardMessage } from "./riftbound-reply.js";
+import { emojiImage, emojiPlan, wantedEmojis, type Emojis } from "./emojis.js";
+import { feedItems, fetchFeed, transformFeed, type FeedCard, type FeedIcon, type FeedPrinting } from "./riftbound-feed.js";
 import {
   brokenText,
   CARD_COLUMNS,
   checksum,
   diffCatalogue,
+  ICON_COLUMNS,
   parseProposalButtonId,
   PRINTING_COLUMNS,
-  proposalButtonId,
   proposalCounts,
-  proposalText,
+  proposalMessage,
 } from "./catalogue-check.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility } from "./visibility.js";
@@ -722,6 +724,9 @@ async function statsReply(interaction: ChatInputCommandInteraction<"cached">) {
 
 // The catalogue in the database (#206), read on start and after an Accept: empty until then.
 let catalogue: Catalogue = { cards: [], printings: [] };
+let icons: FeedIcon[] = [];
+// The bot's emojis of Riot's icons (#224), by name: empty until synced, and replies then use words.
+let emojis: Emojis = new Map();
 
 /** /card: one card from the catalogue, for everyone in the channel. */
 async function cardCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
@@ -730,7 +735,7 @@ async function cardCommand(interaction: ChatInputCommandInteraction<"cached">): 
   try {
     if (found && "card" in found) {
       const printings = catalogue.printings.filter((p) => p.card_id === found.card.id);
-      await interaction.reply({ embeds: [cardEmbed(found.card, printings, config.siteUrl)] });
+      await interaction.reply(cardMessage(found.card, printings, icons, emojis, config.siteUrl));
     } else {
       await interaction.reply({ content: cardMiss(typed, found?.ambiguous ?? null), flags: MessageFlags.Ephemeral });
     }
@@ -773,6 +778,7 @@ async function collectionCommand(interaction: ChatInputCommandInteraction<"cache
         ? await addToCollection(
             writer,
             catalogue,
+            emojis,
             interaction.user.id,
             interaction.options.getString("card", true),
             interaction.options.getInteger("count") ?? 1,
@@ -812,7 +818,7 @@ async function lendCommand(interaction: ChatInputCommandInteraction<"cached">): 
   }
   let wanted: Wanted[] | string;
   let deck: { id: string; name: string } | null = null;
-  let loan: number;
+  let loan: LoanView;
   let unmarked: number;
   try {
     if ("deck" in what) {
@@ -862,23 +868,15 @@ async function lendCommand(interaction: ChatInputCommandInteraction<"cached">): 
       await interaction.editReply("One of you asked to be forgotten, so nothing was recorded.");
       return;
     }
-    loan = data as number;
+    loan = { id: data as number, lender, borrower: borrower.id, due: due.due, rows: picked.cards, deck: deck?.name ?? null };
     unmarked = picked.unmarked;
   } catch (err) {
     log("error", "command_failed", { command: LEND_COMMAND.name, error: err });
     await interaction.editReply(FAILED);
     return;
   }
-  await interaction.editReply(lendReceipt(loan, wanted, unmarked, fixes, deck?.name ?? null));
-  const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder().setCustomId(answerId("confirm", loan, borrower.id)).setLabel("Confirm").setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(answerId("dispute", loan, borrower.id)).setLabel("Dispute").setStyle(ButtonStyle.Secondary),
-  );
-  await interaction.followUp({
-    content: lendAnnouncement(lender, borrower.id, loan, wanted, due.due, deck?.name ?? null),
-    components: [buttons],
-    allowedMentions: { users: [borrower.id] },
-  });
+  await interaction.editReply({ ...lendReceipt(catalogue, emojis, loan, unmarked, fixes), allowedMentions: { parse: [] } });
+  await interaction.followUp({ ...lendAnnouncement(catalogue, emojis, loan), allowedMentions: { users: [borrower.id] } });
 }
 
 /** /lend deck: the lender's own deck with its cards, by the id autocomplete gives or a typed name. */
@@ -962,7 +960,11 @@ async function returnCommand(interaction: ChatInputCommandInteraction<"cached">)
       p_loan: interaction.options.getInteger("loan"),
     });
     if (error) throw new Error(`close_riftbound_loans: ${error.message}`);
-    reply = returnReply(interaction.user.id, other, lost, data as { loan_id: number }[]);
+    const ids = (data as { loan_id: number }[]).map((c) => c.loan_id);
+    const cards = ids.length ? await db.from("riftbound_loan_cards").select("loan_id, quantity").in("loan_id", ids) : { data: [], error: null };
+    if (cards.error) throw new Error(`riftbound_loan_cards select: ${cards.error.message}`);
+    const count = (id: number) => cards.data.reduce((n, r) => n + (r.loan_id === id ? (r.quantity as number) : 0), 0);
+    reply = returnReply(interaction.user.id, other, lost, ids.map((id) => ({ loan_id: id, cards: count(id) })));
   } catch (err) {
     log("error", "command_failed", { command: RETURN_COMMAND.name, error: err });
     await interaction.editReply(FAILED);
@@ -1008,18 +1010,19 @@ async function deckCommand(interaction: ChatInputCommandInteraction<"cached">): 
     const named = (data as (SharedDeck & { entries: DeckEntry[] })[]).filter((d) => d.id === typed || d.name.toLowerCase() === typed.toLowerCase());
     if (named.length !== 1) {
       await interaction.editReply(
-        named.length ? `You have ${named.length} decks called ${typed}: pick one from the list.` : `You have no deck called ${typed.slice(0, 100)}. Pick one from the list.`,
+        textMessage(named.length ? `You have ${named.length} decks called ${typed}: pick one from the list.` : `You have no deck called ${typed.slice(0, 100)}. Pick one from the list.`),
       );
       return;
     }
     const { entries, ...deck } = named[0];
     if (deck.visibility === "private") {
-      const prompt = await interaction.editReply(privatePrompt(deck.name));
+      const legend = catalogue.cards.find((c) => c.id === deck.legend_id) ?? null;
+      const prompt = await interaction.editReply(privatePrompt(deck.name, legend, catalogue));
       // Timed out: the same as Cancel.
       const click = await prompt.awaitMessageComponent({ filter: (i) => i.user.id === interaction.user.id, time: SHARE_PROMPT_MS }).catch(() => null);
       if (click) await click.deferUpdate();
       if (!click || click.customId === SHARE_CANCEL_ID) {
-        await interaction.editReply({ content: "Not shared: the deck stays private.", components: [] });
+        await interaction.editReply(textMessage("Not shared: the deck stays private."));
         return;
       }
       deck.visibility = click.customId === SHARE_PUBLIC_ID ? "public" : "servers";
@@ -1031,14 +1034,46 @@ async function deckCommand(interaction: ChatInputCommandInteraction<"cached">): 
       if (error) throw new Error(`riftbound_decks update: ${error.message}`);
     }
     const { missing } = missingCards(deck, entries, await ownedCopies(interaction.user.id));
-    await interaction.editReply({ content: `Shared, ${deck.visibility === "public" ? "public" : "for your servers' members"}.`, components: [] });
+    await interaction.editReply(textMessage(`Shared, ${deck.visibility === "public" ? "public" : "for your servers' members"}.`));
     await interaction.followUp({
-      embeds: [deckEmbed(deck, entries, catalogue, interaction.member.displayName, missing, config.siteUrl)],
+      ...deckMessage(deck, entries, catalogue, icons, emojis, interaction.member.displayName, missing, config.siteUrl),
       allowedMentions: { parse: [] },
     });
   } catch (err) {
     log("error", "command_failed", { command: DECK_COMMAND.name, error: err });
-    await interaction.editReply({ content: FAILED, components: [] });
+    await interaction.editReply(textMessage(FAILED));
+  }
+}
+
+/** Copy as text under a shared deck: its "3 Card Name" list, for whoever pressed it, while they may still see the deck on the site. */
+async function deckCopyButton(interaction: ButtonInteraction<"cached">, deckId: string): Promise<void> {
+  try {
+    const { data, error } = await db
+      .from("riftbound_decks")
+      .select("user_id, name, legend_id, champion_id, visibility, entries:riftbound_deck_cards(section, card_id, printing_id, quantity)")
+      .eq("id", deckId)
+      .maybeSingle();
+    if (error) throw new Error(`riftbound_decks select: ${error.message}`);
+    const deck = data as (Pick<SharedDeck, "name" | "legend_id" | "champion_id" | "visibility"> & { user_id: string; entries: DeckEntry[] }) | null;
+    let memberships: { guild_id: string; user_id: string }[] = [];
+    if (deck?.visibility === "servers" && deck.user_id !== interaction.user.id) {
+      const members = await db.from("guild_members").select("guild_id, user_id").in("user_id", [deck.user_id, interaction.user.id]);
+      if (members.error) throw new Error(`guild_members select: ${members.error.message}`);
+      memberships = members.data;
+    }
+    if (!deck || !canSeeDeck(deck.user_id, deck.visibility, interaction.user.id, memberships)) {
+      await interaction.reply({ content: "This deck is no longer shared.", flags: MessageFlags.Ephemeral });
+      return;
+    }
+    const list = deckText(deck, new Map(catalogue.cards.map((c) => [c.id, c])));
+    // A message holds 2000 characters; a longer list comes as a file.
+    await interaction.reply(
+      list.length <= 1900
+        ? { content: `\`\`\`\n${list}\n\`\`\``, flags: MessageFlags.Ephemeral }
+        : { files: [{ attachment: Buffer.from(list), name: `${deck.name.replace(/[^\w-]+/g, "_").slice(0, 60) || "deck"}.txt` }], flags: MessageFlags.Ephemeral },
+    );
+  } catch (err) {
+    log("error", "command_failed", { command: DECK_COMMAND.name, error: err });
   }
 }
 
@@ -1050,9 +1085,12 @@ async function nudgeDueLoans(): Promise<void> {
     for (const loan of data as { loan_id: number; lender_id: string; borrower_id: string }[]) {
       const cards = await db.from("riftbound_loan_cards").select("printing_id, quantity").eq("loan_id", loan.loan_id);
       if (cards.error) throw new Error(`riftbound_loan_cards select: ${cards.error.message}`);
+      const row = await db.from("riftbound_loans").select("due_on, deck_name").eq("id", loan.loan_id).single();
+      if (row.error) throw new Error(`riftbound_loans select: ${row.error.message}`);
+      const view = { id: loan.loan_id, lender: loan.lender_id, borrower: loan.borrower_id, due: row.data.due_on, rows: cards.data, deck: row.data.deck_name };
       // Marked nudged already: a closed DM or a failure is not retried, so it stays one nudge.
       await client.users
-        .send(loan.borrower_id, nudgeText(loan.loan_id, loan.lender_id, loanCardList(catalogue, cards.data)))
+        .send(loan.borrower_id, { ...nudgeMessage(catalogue, emojis, view), allowedMentions: { parse: [] } })
         .catch((err: unknown) => log("info", "loan_nudge_not_sent", { loan: loan.loan_id, error: err }));
     }
   } catch (err) {
@@ -1077,13 +1115,12 @@ async function notifyTradeMatches(): Promise<void> {
       });
       rows.set(user, wishes);
     }
-    const cardName = (id: string) => catalogue.cards.find((c) => c.id === id)?.name ?? id;
     const timeZone = (g: string) => settingsFor(g).timezone;
     for (const [user, matches] of newMatches(candidates, (u) => wishlist(rows.get(u) ?? []))) {
       // Recorded before the DM, and only what this run recorded is sent (a forgotten user's
       // rows are dropped): a closed DM or a failure is not retried, so each match is one DM.
       // Only the matches that fit in the DM: the rest stay new for the next run.
-      const { shown } = tradeDm(matches, cardName, timeZone, config.siteUrl);
+      const { shown } = tradeDm(matches, catalogue, timeZone, config.siteUrl);
       const { data, error } = await db
         .from("riftbound_trade_matches")
         .upsert(
@@ -1095,7 +1132,7 @@ async function notifyTradeMatches(): Promise<void> {
       const fresh = shown.filter((m) => data.some((d) => d.trader_id === m.trader_id && d.card_id === m.card_id));
       if (fresh.length === 0) continue;
       await client.users
-        .send(user, { content: tradeDm(fresh, cardName, timeZone, config.siteUrl).content, allowedMentions: { parse: [] } })
+        .send(user, { ...tradeDm(fresh, catalogue, timeZone, config.siteUrl).message, allowedMentions: { parse: [] } })
         .catch((err: unknown) => log("info", "trade_dm_not_sent", { user, error: err }));
     }
   } catch (err) {
@@ -1168,6 +1205,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (eventId !== null) await tracked("command", goingButton(interaction, eventId));
     const answer = parseAnswerId(interaction.customId);
     if (answer !== null) await tracked("command", loanAnswerButton(interaction, answer));
+    const copied = parseCopyButtonId(interaction.customId);
+    if (copied !== null) await tracked("command", deckCopyButton(interaction, copied));
     return;
   }
   if (interaction.isModalSubmit() && interaction.inCachedGuild()) {
@@ -2353,8 +2392,48 @@ async function startServer(guild: Guild): Promise<void> {
 /** The catalogue the commands read, from the database: Accept (#204) is the only thing that changes it. */
 async function loadCatalogue(): Promise<void> {
   // A null type (Riot's tokens) is only shown, never compared with a type.
-  catalogue = (await storedCatalogue()) as Catalogue;
+  const stored = await storedCatalogue();
+  catalogue = stored as Catalogue;
+  icons = stored.icons;
   log("info", "riftbound_catalogue_loaded", { cards: catalogue.cards.length });
+  await syncEmojis();
+}
+
+/**
+ * Riot's icons as the application's emojis (#224), with the bot's own token: a missing one is
+ * uploaded, one whose icon URL changed is replaced, any other emoji is left alone. A failure
+ * (rate limit, no permission) is logged once and the replies keep to words.
+ */
+async function syncEmojis(): Promise<void> {
+  const manager = client.application!.emojis;
+  let ids: Map<string, string> | null = null;
+  try {
+    const existing = await manager.fetch();
+    const { data: stored, error } = await db.from("riftbound_emojis").select("name, emoji_id, source_url");
+    if (error) throw new Error(`riftbound_emojis select: ${error.message}`);
+    const plan = emojiPlan(wantedEmojis(icons), existing.map((e) => ({ id: e.id, name: e.name })), stored);
+    const kept = plan.keep.size;
+    ids = plan.keep;
+    for (const wanted of [...plan.create, ...plan.replace]) {
+      const res = await fetch(wanted.url);
+      if (!res.ok) throw new Error(`${wanted.url}: HTTP ${res.status}`);
+      // Made before the old one is deleted, so a bad file leaves it standing.
+      const attachment = await emojiImage(Buffer.from(await res.arrayBuffer()));
+      if (wanted.old) await manager.delete(wanted.old);
+      const made = await manager.create({ attachment, name: wanted.name });
+      ids.set(wanted.name, made.id);
+      const saved = await db
+        .from("riftbound_emojis")
+        .upsert({ name: wanted.name, emoji_id: made.id, source_url: wanted.url, updated_at: new Date().toISOString() });
+      if (saved.error) throw new Error(`riftbound_emojis upsert: ${saved.error.message}`);
+    }
+    log("info", "riftbound_emojis_synced", { kept, created: plan.create.length, replaced: plan.replace.length });
+  } catch (err) {
+    log("error", "riftbound_emojis_sync_failed", { error: err });
+  } finally {
+    // What was synced before a failure is used; the rest is written as words.
+    if (ids) emojis = ids;
+  }
 }
 
 /** The application's owner as Discord reports it: the team owner if the app belongs to a team. */
@@ -2369,14 +2448,19 @@ async function readFeedCatalogue() {
   return { buildId, catalogue, checksum: checksum(catalogue) };
 }
 
-async function storedCatalogue(): Promise<{ cards: FeedCard[]; printings: FeedPrinting[] }> {
-  const read = <T>(table: string, columns: string) =>
+async function storedCatalogue(): Promise<{ cards: FeedCard[]; printings: FeedPrinting[]; icons: FeedIcon[] }> {
+  const read = <T>(table: string, columns: string, order = ["id"]) =>
     readAll(async (from, to) => {
-      const { data, error } = await db.from(table).select(columns).order("id").range(from, to);
+      const query = order.reduce((q, column) => q.order(column), db.from(table).select(columns));
+      const { data, error } = await query.range(from, to);
       if (error) throw new Error(`${table} select: ${error.message}`);
       return data as T[];
     });
-  return { cards: await read("riftbound_cards", CARD_COLUMNS), printings: await read("riftbound_printings", PRINTING_COLUMNS) };
+  return {
+    cards: await read("riftbound_cards", CARD_COLUMNS),
+    printings: await read("riftbound_printings", PRINTING_COLUMNS),
+    icons: await read("riftbound_icons", ICON_COLUMNS, ["facet", "value"]),
+  };
 }
 
 /** Riot's card feed against the catalogue (#204): a difference not proposed before goes to the owner. */
@@ -2405,7 +2489,7 @@ async function checkCardFeed(): Promise<void> {
     return;
   }
   const diff = diffCatalogue(fetched.catalogue, await storedCatalogue());
-  if (diff.sets.length === 0) {
+  if (diff.sets.length === 0 && diff.icons.length === 0) {
     log("info", "riftbound_feed_unchanged", { build_id: fetched.buildId });
     return;
   }
@@ -2426,16 +2510,7 @@ async function checkCardFeed(): Promise<void> {
   try {
     const owner = await ownerId();
     if (!owner) throw new Error("the application has no owner");
-    await client.users.send(owner, {
-      content: proposalText(fetched.buildId, diff),
-      allowedMentions: { parse: [] },
-      components: [
-        new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder().setCustomId(proposalButtonId("accept", id)).setLabel("Accept").setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId(proposalButtonId("reject", id)).setLabel("Reject").setStyle(ButtonStyle.Danger),
-        ),
-      ],
-    });
+    await client.users.send(owner, { ...proposalMessage(fetched.buildId, diff, id), allowedMentions: { parse: [] } });
     log("info", "riftbound_feed_proposed", { proposal: id, build_id: fetched.buildId, ...proposalCounts(diff) });
   } catch (err) {
     // Unasked, so the next check asks again.
@@ -2454,7 +2529,18 @@ async function proposalButton(
     return;
   }
   await interaction.deferUpdate();
-  const done = (note: string) => interaction.editReply({ content: `${interaction.message.content}\n\n${note}`, components: [] });
+  // The note replaces the buttons; a DM sent before #226 is plain text.
+  const done = (note: string) =>
+    interaction.editReply(
+      interaction.message.content
+        ? { content: `${interaction.message.content}\n\n${note}`, components: [] }
+        : {
+            components: [
+              ...interaction.message.components.filter((c) => c.type !== ComponentType.ActionRow),
+              { type: ComponentType.TextDisplay, content: note },
+            ],
+          },
+    );
   const { data: proposal, error } = await db
     .from("riftbound_catalogue_proposals")
     .select("checksum, status")
@@ -2480,7 +2566,13 @@ async function proposalButton(
       .from("riftbound_printings")
       .upsert(diff.printings.map((r) => ({ ...r, updated_at })), { onConflict: "id" });
     if (printed.error) throw new Error(`riftbound_printings upsert: ${printed.error.message}`);
-    log("info", "riftbound_feed_accepted", { proposal: decision.proposal, cards: diff.cards.length, printings: diff.printings.length });
+    const iconed = await db
+      .from("riftbound_icons")
+      .upsert(diff.icons.map((r) => ({ ...r, updated_at })), { onConflict: "facet,value" });
+    if (iconed.error) throw new Error(`riftbound_icons upsert: ${iconed.error.message}`);
+    log("info", "riftbound_feed_accepted", {
+      proposal: decision.proposal, cards: diff.cards.length, printings: diff.printings.length, icons: diff.icons.length,
+    });
     void tracked("riftbound_catalogue", loadCatalogue());
   }
   const decided = await db

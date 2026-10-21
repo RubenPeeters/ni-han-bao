@@ -85,10 +85,42 @@ describe("transformFeed", () => {
     expect(cardsJson(transformFeed([...items].reverse()))).toBe(cardsJson(catalogue));
   });
 
+  it("collects Riot's icon per facet value and per glyph, with the domain colours", () => {
+    expect(catalogue.icons.find((i) => i.facet === "domain" && i.value === "fury")).toEqual({
+      facet: "domain",
+      value: "fury",
+      label: "Fury",
+      icon_url: "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/5aeb4bfd203b5d265902f65aa5afae7da1682eaa-64x64.png?accountingTag=RB",
+      color_primary: "#1A0D0E",
+      color_secondary: "#F9DCDE",
+    });
+    expect(catalogue.icons.filter((i) => i.facet === "glyph").map((i) => [i.value, i.icon_url.split("/").pop()])).toEqual([
+      ["illustrator", "artist.svg"], ["might", "might.svg"], ["mightBonus", "might.svg"], ["power", "card_type_rune.svg"],
+    ]);
+    expect(catalogue.icons.find((i) => i.facet === "supertype")).toMatchObject({ value: "champion", label: "Champion", color_primary: null });
+    // Supertypes without an icon (Basic, Signature, Token) have no row.
+    expect(catalogue.icons.map((i) => `${i.facet}:${i.value}`)).not.toContain("supertype:basic");
+  });
+
+  it("takes icons only from Riot's CDN, and one icon per value", () => {
+    const elsewhere = raw("VEN-R04");
+    (elsewhere.domain as { values: { icon: { url: string } }[] }).values[0].icon.url = "https://example.com/body.png";
+    expect(() => transformFeed([elsewhere])).toThrow(/VEN-R04: unexpected domain icon url/);
+    const other = raw("OGN-119/298");
+    (other.domain as { values: { icon: { url: string } }[] }).values[0].icon.url = "https://cmsassets.rgpub.io/other.png";
+    expect(() => transformFeed([raw("OGN-119a/298"), other])).toThrow(/icon domain:mind differs/);
+  });
+
   it("fails on a set missing from the release order", () => {
     const next = raw("VEN-R04");
     next.set = { value: { id: "LEG", label: "Legacy" } };
     expect(() => transformFeed([next])).toThrow(/LEG is not in SET_ORDER/);
+  });
+
+  it("fails on a set the feed names differently", () => {
+    const renamed = raw("VEN-R04");
+    renamed.set = { value: { id: "VEN", label: "Vendettas" } };
+    expect(() => transformFeed([renamed])).toThrow(/VEN-R04: unexpected set VEN label/);
   });
 
   it("fails on a changed shape, never guessing", () => {

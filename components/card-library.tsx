@@ -1,6 +1,8 @@
+import { byPrinting } from "@/bot/src/card-match";
 import { AddToDeck, type MyDeck } from "@/components/add-to-deck";
-import { plainText } from "@/bot/src/card-match";
-import { CardGrid, CardImage, type LibraryCard } from "@/components/card-grid";
+import { CardGrid, type LibraryCard } from "@/components/card-grid";
+import { CardThumb } from "@/components/card-thumb";
+import { DomainIcon, RarityIcon, RulesText, SupertypeIcon, TypeIcon, type RiftboundIcon } from "@/components/riftbound-icons";
 import { LogInPrompt } from "@/components/server-picker";
 import { EmptyState, ErrorState, MemberRankRow, RankList, StatCard } from "@/components/stat-ui";
 import { languageName, type Language, type OwnedRow } from "@/lib/collection";
@@ -9,6 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { ReactNode } from "react";
 
 interface Printing {
   id: string;
@@ -35,8 +38,6 @@ interface Card {
 
 // PostgREST's cap on the rows of one response.
 const PAGE = 1000;
-const byNumber = (a: Printing, b: Printing) =>
-  a.collector_number - b.collector_number || a.collector_code.localeCompare(b.collector_code);
 const LOG_IN = "Log in to look through the Riftbound cards.";
 
 /**
@@ -60,20 +61,30 @@ async function ownedRows(supabase: Awaited<ReturnType<typeof createClient>>) {
   }
 }
 
+/** Riot's icons. Decoration: a failed read, or none yet, shows names instead. */
+export async function riftboundIcons(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const { data } = await supabase.from("riftbound_icons").select("facet, value, label, icon_url").returns<RiftboundIcon[]>();
+  return data ?? [];
+}
+
 /** The visitor's own decks, for Add to deck (RLS also returns others' visible ones). */
 async function myDecks(supabase: Awaited<ReturnType<typeof createClient>>, me: string) {
   return supabase.from("riftbound_decks").select("id, name").eq("user_id", me).order("name").returns<MyDeck[]>();
 }
 
-/** The global Riftbound catalogue: not per server, so no guild filter; RLS lets anyone logged in read it. */
-export async function CardLibrary() {
+/**
+ * The global Riftbound catalogue: not per server, so no guild filter; RLS lets anyone logged in read it.
+ * `owned`: only the cards the visitor owns, for /collection.
+ */
+export async function CardLibrary({ owned: ownedOnly = false }: { owned?: boolean }) {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims) return <LogInPrompt text={LOG_IN} />;
-  const [{ data, error }, me, owned] = await Promise.all([
+  const [{ data, error }, me, owned, icons] = await Promise.all([
     allPages((from, to) => supabase.from("riftbound_cards").select("*, printings:riftbound_printings(*)").order("id").range(from, to)),
     supabase.rpc("current_discord_id"),
     ownedRows(supabase),
+    riftboundIcons(supabase),
   ]);
   if (error || me.error || owned.error) return <ErrorState title="Could not load the cards">Try again in a minute.</ErrorState>;
   // Logged in, but not with Discord: no collection to edit.
@@ -83,11 +94,13 @@ export async function CardLibrary() {
     myDecks(supabase, me.data),
   ]);
   if (lending.error) return <ErrorState title="Could not load the cards">Try again in a minute.</ErrorState>;
-  const cards = (data as Card[]).map((c) => ({ ...c, printings: c.printings.toSorted(byNumber) }));
-  // Collector order, as in a binder; a card without printings goes last.
-  const first = (c: Card) => c.printings[0]?.collector_number ?? Infinity;
+  const cards = (data as Card[]).map((c) => ({ ...c, printings: c.printings.toSorted(byPrinting) }));
+  // Set and collector order, as in a binder; a card without printings goes last.
+  const first = (a: Card, b: Card) => (a.printings[0] && b.printings[0] ? byPrinting(a.printings[0], b.printings[0]) : b.printings.length - a.printings.length);
+  const have = new Set(owned.data.flatMap((r) => (r.quantity > 0 ? [r.printing_id] : [])));
   const library: LibraryCard[] = cards
-    .toSorted((a, b) => first(a) - first(b) || a.name.localeCompare(b.name))
+    .filter((c) => !ownedOnly || c.printings.some((p) => have.has(p.id)))
+    .toSorted((a, b) => first(a, b) || a.name.localeCompare(b.name))
     .map((c) => ({
       id: c.id,
       name: c.name,
@@ -96,13 +109,21 @@ export async function CardLibrary() {
       energy: c.energy,
       tags: c.tags,
       sets: [...new Set(c.printings.map((p) => p.set_code))],
-      codes: c.printings.map((p) => p.collector_code),
-      printings: c.printings.map(({ id, set_code, collector_code }) => ({ id, set_code, collector_code })),
+      printings: c.printings.map(({ id, set_code, collector_code, collector_number }) => ({ id, set_code, collector_code, collector_number })),
       image_url: c.printings.find((p) => p.image_url)?.image_url ?? null,
     }));
+  if (ownedOnly && library.length === 0) {
+    return (
+      <EmptyState>
+        No cards yet. Add them on the <Link href="/cards" className="underline underline-offset-4">Cards</Link> page with Edit
+        my collection, or with /collection add in Discord.
+      </EmptyState>
+    );
+  }
   return (
     <CardGrid
       cards={library}
+      icons={icons}
       mine={{
         userId: me.data as string,
         owned: owned.data,
@@ -121,24 +142,36 @@ export async function CardDetail({ id }: { id: string }) {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims) return <LogInPrompt text={LOG_IN} />;
-  const [{ data, error }, lenders, me] = await Promise.all([
+  const [{ data, error }, lenders, me, icons] = await Promise.all([
     supabase.from("riftbound_cards").select("*, printings:riftbound_printings(*)").eq("id", id).maybeSingle<Card>(),
     supabase.rpc("card_lenders", { p_card: id }),
     supabase.rpc("current_discord_id"),
+    riftboundIcons(supabase),
   ]);
   // Like Who has it?, a failed lookup drops Add to deck, not the card.
   const decks = me.data ? await myDecks(supabase, me.data as string) : null;
   if (error) return <ErrorState title="Could not load this card">Try again in a minute.</ErrorState>;
   if (!data) notFound();
-  const printings = data.printings.toSorted(byNumber);
+  const printings = data.printings.toSorted(byPrinting);
   const dash = (n: number | null) => (n === null ? "-" : String(n));
-  const stats = [
-    ["Type", [...data.supertypes, data.type].join(" ")],
+  const rarities = [...new Set(printings.flatMap((p) => (p.rarity ? [p.rarity] : [])))];
+  const listed = (items: ReactNode[]) =>
+    items.length ? <span className="flex flex-wrap items-center gap-x-3 gap-y-1">{items}</span> : "-";
+  const stats: [string, ReactNode][] = [
+    [
+      "Type",
+      listed([
+        ...data.supertypes.map((s) => <SupertypeIcon key={s} icons={icons} supertype={s} withText />),
+        ...(data.type ? [<TypeIcon key="type" icons={icons} type={data.type} withText />] : []),
+      ]),
+    ],
     ["Cost", dash(data.energy)],
     ["Might", dash(data.might)],
-    ["Domains", data.domains.join(", ") || "-"],
+    ["Domains", listed(data.domains.map((d) => <DomainIcon key={d} icons={icons} domain={d} withText />))],
+    ["Rarity", listed(rarities.map((r) => <RarityIcon key={r} icons={icons} rarity={r} withText />))],
     ["Tags", data.tags.join(", ") || "-"],
   ];
+  const landscape = data.type === "Battlefield";
   return (
     <>
       <Link
@@ -150,13 +183,13 @@ export async function CardDetail({ id }: { id: string }) {
       </Link>
       <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
         <div className="mx-auto w-full max-w-xs shrink-0 sm:mx-0 sm:w-64">
-          <CardImage url={printings.find((p) => p.image_url)?.image_url ?? null} eager />
+          <CardThumb url={printings.find((p) => p.image_url)?.image_url ?? null} name={data.name} landscape={landscape} eager />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="flex flex-col gap-2">
             <h1 className="break-words text-4xl font-semibold">{data.name}</h1>
           </div>
-          {data.rules_text && <p className="whitespace-pre-line text-muted-foreground">{plainText(data.rules_text)}</p>}
+          {data.rules_text && <RulesText html={data.rules_text} icons={icons} className="text-muted-foreground" />}
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
             {stats.map(([label, value]) => (
               <div key={label} className="contents">
@@ -175,9 +208,12 @@ export async function CardDetail({ id }: { id: string }) {
         <ul className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {printings.map((p) => (
             <li key={p.id} className="flex min-w-0 flex-col gap-2">
-              <CardImage url={p.image_url} />
+              <CardThumb url={p.image_url} name={data.name} landscape={landscape} />
               <span className="flex min-w-0 flex-col gap-1">
-                <span className="truncate text-sm font-medium">{p.collector_code}</span>
+                <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
+                  {p.rarity && <RarityIcon icons={icons} rarity={p.rarity} />}
+                  <span className="truncate">{p.collector_code}</span>
+                </span>
                 <span className="truncate text-xs text-muted-foreground">
                   {[p.set_code, p.rarity, p.illustrator].filter(Boolean).join(" · ")}
                 </span>

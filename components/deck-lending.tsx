@@ -119,7 +119,7 @@ export function DeckLending({
                   <Link href={`/u/${loan.borrower}/loans`} className="underline">
                     Recorded loan #{loan.id}
                   </Link>
-                  : they confirm it on their profile&apos;s Loans tab.{" "}
+                  : they confirm it on their My loans page.{" "}
                 </>
               )}
               {status || (loan === null && "The deck as saved: one loan, one due date, one confirmation. Also with /lend deck in Discord.")}
