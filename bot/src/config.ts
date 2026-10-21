@@ -8,6 +8,8 @@ export interface Config {
   siteUrl: string | null;
   /** Riot API key for /lol link; null leaves League linking off. */
   riotApiKey: string | null;
+  /** forge's intake for /feedback and the Feedback button; null answers that feedback is not set up. */
+  forge: { url: string; token: string } | null;
 }
 
 const REQUIRED = {
@@ -28,5 +30,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     guildId: env.DISCORD_GUILD_ID || null,
     siteUrl: env.SITE_URL || null,
     riotApiKey: env.RIOT_API_KEY || null,
+    forge: env.FORGE_URL && env.FORGE_INTAKE_TOKEN ? { url: env.FORGE_URL, token: env.FORGE_INTAKE_TOKEN } : null,
   } as unknown as Config;
 }

@@ -2,6 +2,7 @@ import { ApplicationCommandOptionType } from "discord.js";
 import { COLLECTION_COMMAND } from "./collection.js";
 import { DECK_COMMAND } from "./decks.js";
 import { EVENT_COMMAND } from "./events.js";
+import { FEEDBACK_COMMAND } from "./feedback-modal.js";
 import { FORGET_COMMAND } from "./forget.js";
 import { LEND_COMMAND, RETURN_COMMAND } from "./lending.js";
 import { LOL_COMMAND } from "./lol.js";
@@ -29,6 +30,7 @@ export const COMMANDS = [
   DECK_COMMAND,
   LEND_COMMAND,
   RETURN_COMMAND,
+  FEEDBACK_COMMAND,
 ];
 
 interface OptionDef {

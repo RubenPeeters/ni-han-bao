@@ -122,6 +122,8 @@ export async function CardLibrary({ owned: ownedOnly = false }: { owned?: boolea
   }
   return (
     <CardGrid
+      // A CSV import changes the rows under the steppers: remount, or the next tap saves a stale count over it.
+      key={`${owned.data.length}:${owned.data.reduce((sum, r) => sum + r.quantity, 0)}`}
       cards={library}
       icons={icons}
       mine={{

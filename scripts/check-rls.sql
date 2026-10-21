@@ -415,6 +415,24 @@ begin
         raise exception 'a wishlist entry is pinned to a printing of another card';
     exception when foreign_key_violation then null;
     end;
+    -- CSV import (#242): adds to the caller's 3 copies and wish of 5, skips unknown ids, caps wants at
+    -- 99. Undone by the block's own exception, so the checks below see the rows as they were.
+    begin
+        if (select copies || ':' || wishes from public.import_riftbound_collection(
+                '[{"printing_id":"rls-printing","quantity":2,"want":3},{"printing_id":"rls-printing","quantity":1,"want":0},
+                  {"printing_id":"rls-unknown","quantity":5,"want":5}]')) <> '3:1'
+            or (select sum(quantity) from public.riftbound_collection where printing_id = 'rls-printing') <> 6
+            or (select quantity from public.riftbound_wishlist where printing_id = 'rls-printing') <> 8 then
+            raise exception 'import_riftbound_collection() does not add to what the caller has';
+        end if;
+        perform public.import_riftbound_collection('[{"printing_id":"rls-printing","quantity":0,"want":95}]');
+        if (select quantity from public.riftbound_wishlist where printing_id = 'rls-printing') <> 99 then
+            raise exception 'import_riftbound_collection() wants more than 99';
+        end if;
+        raise exception 'rls-import-done';
+    exception when raise_exception then
+        if sqlerrm <> 'rls-import-done' then raise; end if;
+    end;
     perform public.set_wishlist_mode('dedicated');
     deck := public.save_riftbound_deck(null, 'preset', null, null, null, null, null, null, null);
     if (select wishlist_mode from public.riftbound_decks where id = deck) <> 'dedicated' then
