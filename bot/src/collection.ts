@@ -2,8 +2,12 @@
 // Cards grid is the full editor; this adds normal, NM copies of a card's first printing, in
 // the language asked for or else the one last added in.
 
-import { ApplicationCommandOptionType } from "discord.js";
+import { ApplicationCommandOptionType, ButtonStyle, ComponentType, MessageFlags } from "discord.js";
+import { cardImageUrl, type Card, type Printing } from "./card-match.js";
+import type { Emojis } from "./emojis.js";
 import { cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
+import { labelled, withThumbnail, type V2 } from "./riftbound-reply.js";
+import { escapeMarkdown } from "./stores.js";
 
 /** The database's riftbound_language domain, as the site's lib/collection.ts has it. */
 export const LANGUAGES = [
@@ -86,6 +90,24 @@ export interface CollectionWriter {
 const FORGOTTEN = "You asked to be forgotten, so nothing was saved. Use /show-me first.";
 const FAILED = "Something went wrong, nothing was changed. Please try again later.";
 
+/** /collection add's reply: the printing's picture, its rarity, and the new count. */
+export function addedMessage(card: Card, printing: Printing, n: number, total: number, language: string, emojis: Emojis, siteUrl: string | null): V2 {
+  const lines = [
+    `Added ${n}× **${escapeMarkdown(card.name)}** in ${languageName(language)} · you now have ${total}`,
+    `-# ${[printing.rarity && labelled(emojis, printing.rarity), printing.collector_code, "normal, NM"].filter(Boolean).join(" · ")}`,
+  ];
+  const image = printing.image_url && cardImageUrl(printing.image_url, card.type === "Battlefield" ? 224 : 160);
+  return {
+    components: [
+      withThumbnail(lines.join("\n"), image, card.name),
+      ...(siteUrl
+        ? [{ type: ComponentType.ActionRow as const, components: [{ type: ComponentType.Button as const, style: ButtonStyle.Link as const, label: "My collection", url: `${siteUrl}/collection` }] }]
+        : []),
+    ],
+    flags: MessageFlags.IsComponentsV2,
+  };
+}
+
 /** /collection add: the (ephemeral) reply; `typed` is the card option, a picked id or a typed name. */
 export async function addToCollection(
   writer: CollectionWriter,
@@ -94,7 +116,9 @@ export async function addToCollection(
   typed: string,
   count: number,
   language: string | null,
-): Promise<string> {
+  emojis: Emojis,
+  siteUrl: string | null,
+): Promise<string | V2> {
   const found = lookupCard(catalogue, typed);
   if (!found || !("card" in found)) return cardMiss(typed, found?.ambiguous ?? null);
   const printing = catalogue.printings
@@ -106,8 +130,7 @@ export async function addToCollection(
   try {
     const added = await writer.add(userId, printing.id, n, language);
     if (added === null) return FORGOTTEN;
-    const lang = languageName(added.language);
-    return `Added ${n} × ${found.card.name} (${printing.collector_code}) in ${lang}. You now have ${added.total} normal NM in ${lang}.`;
+    return addedMessage(found.card, printing, n, added.total, added.language, emojis, siteUrl);
   } catch (err) {
     console.error("collection add failed:", err);
     return FAILED;
@@ -134,7 +157,7 @@ export async function setLending(
         : "Lending is on: nothing is lendable until you mark cards with To lend on the Cards page.",
       lendAll === null && `Change that with \`default\` (${saved.lendAll ? "nothing" : "everything"}).`,
       saved.visibility === "private" && "Your profile is private, so nobody sees you yet: /profile visibility.",
-      siteUrl && `${siteUrl}/u/${userId}/collection`,
+      siteUrl && `${siteUrl}/collection`,
     ];
     return reply.filter(Boolean).join(" ");
   } catch (err) {

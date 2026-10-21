@@ -7,7 +7,6 @@ import {
   type APIButtonComponent,
   type APIContainerComponent,
   type APIMediaGalleryItem,
-  type APIMessageTopLevelComponent,
   type APITextDisplayComponent,
   ApplicationCommandOptionType,
   ButtonStyle,
@@ -15,10 +14,10 @@ import {
   MessageFlags,
   SeparatorSpacingSize,
 } from "discord.js";
-import { byPrinting, cardImageUrl, type Card, type Catalogue } from "./card-match.js";
+import { type Card, type Catalogue } from "./card-match.js";
 import { DECK_SECTIONS, deckWarnings, type DeckEntry } from "./deck-match.js";
 import { emoji, type Emojis } from "./emojis.js";
-import { accentColor, labelled, MAX_TEXT } from "./riftbound-reply.js";
+import { accentColor, cardImage, labelled, MAX_TEXT, type V2 } from "./riftbound-reply.js";
 import { escapeMarkdown } from "./stores.js";
 
 export const DECK_COMMAND = {
@@ -57,18 +56,11 @@ export const SHARE_PUBLIC_ID = "deck-share:public";
 export const SHARE_CANCEL_ID = "deck-share:cancel";
 
 type Icons = { facet: string; label: string; color_primary: string | null }[];
-type V2 = { components: APIMessageTopLevelComponent[]; flags: MessageFlags.IsComponentsV2 };
 
 const text = (content: string): APITextDisplayComponent => ({ type: ComponentType.TextDisplay, content });
 
 /** A reply in Discord's components: once a message has them, every edit of it must too. */
 export const textMessage = (content: string): V2 => ({ components: [text(content)], flags: MessageFlags.IsComponentsV2 });
-
-/** The card's first printing with an image, at `width` pixels. */
-function imageOf(catalogue: Pick<Catalogue, "printings">, card: Card, width: number): string | null {
-  const url = catalogue.printings.filter((p) => p.card_id === card.id && p.image_url).sort(byPrinting)[0]?.image_url;
-  return url ? cardImageUrl(url, card.type === "Battlefield" ? Math.round(width * 1.4) : width) : null;
-}
 
 /** A private deck: nobody else could open its link, so who may see it is asked first, by its Legend's picture. */
 export function privatePrompt(name: string, legend: Card | null, catalogue: Pick<Catalogue, "printings">): V2 {
@@ -81,7 +73,7 @@ export function privatePrompt(name: string, legend: Card | null, catalogue: Pick
     ],
   };
   const question = text(`**${escapeMarkdown(name)}** is private, so nobody else could open it. Who may see it?`);
-  const image = legend && imageOf(catalogue, legend, 160);
+  const image = legend && cardImage(catalogue, legend, 160);
   return {
     components: [
       image ? { type: ComponentType.Section, components: [question], accessory: { type: ComponentType.Thumbnail, media: { url: image }, description: legend.name } } : question,
@@ -177,7 +169,7 @@ export function deckMessage(
   const pictures = [legend, champion, ...counts("battlefields").map(([id]) => cards.get(id))]
     .filter((c): c is Card => !!c)
     .flatMap((c): APIMediaGalleryItem[] => {
-      const url = imageOf(catalogue, c, 300);
+      const url = cardImage(catalogue, c, 300);
       return url ? [{ media: { url }, description: c.name }] : [];
     })
     .slice(0, GALLERY_MAX);

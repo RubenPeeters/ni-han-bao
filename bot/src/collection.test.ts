@@ -16,35 +16,40 @@ function writer(overrides: Partial<CollectionWriter> = {}): CollectionWriter {
 describe("/collection add", () => {
   it("adds copies of the card's printing in the chosen language and says the new count", async () => {
     const w = writer();
-    const reply = await addToCollection(w, catalogue, "u", "ahri-alluring", 2, "fr");
+    const reply = await addToCollection(w, catalogue, "u", "ahri-alluring", 2, "fr", new Map([["rb_rare", "1"]]), "https://x");
     expect(w.add).toHaveBeenCalledWith("u", "ogn-066-298", 2, "fr");
-    expect(reply).toContain("now have 3 normal NM in French");
+    const text = JSON.stringify(reply);
+    expect(text).toContain("Added 2× **Ahri, Alluring** in French · you now have 3");
+    expect(text).toContain("<:rb_rare:1> Rare · OGN-066");
+    // The printing's picture, and the site's own collection page.
+    expect(text).toContain('"type":11');
+    expect(text).toContain("https://x/collection");
   });
 
   it("leaves the language to the last-used one and names it", async () => {
     const w = writer();
-    const reply = await addToCollection(w, catalogue, "u", "Ahri", 1, null);
+    const reply = await addToCollection(w, catalogue, "u", "Ahri", 1, null, new Map(), null);
     expect(w.add).toHaveBeenCalledWith("u", expect.any(String), 1, null);
-    expect(reply).toContain("in Chinese (Simplified)");
+    expect(JSON.stringify(reply)).toContain("in Chinese (Simplified)");
   });
 
   it("finds a typed collector code and keeps the count within 1 to 99", async () => {
     const w = writer();
-    await addToCollection(w, catalogue, "u", "ogn 255", 500, null);
+    await addToCollection(w, catalogue, "u", "ogn 255", 500, null, new Map(), null);
     expect(w.add).toHaveBeenCalledWith("u", "ogn-255-298", 99, null);
   });
 
   it("writes nothing for an unknown card", async () => {
     const w = writer();
-    expect(await addToCollection(w, catalogue, "u", "nope", 1, null)).toContain("No card");
+    expect(await addToCollection(w, catalogue, "u", "nope", 1, null, new Map(), null)).toContain("No card");
     expect(w.add).not.toHaveBeenCalled();
   });
 
   it("says so for a forgotten user or a failed write", async () => {
-    expect(await addToCollection(writer({ add: async () => null }), catalogue, "u", "Ahri", 1, null)).toContain("/show-me");
+    expect(await addToCollection(writer({ add: async () => null }), catalogue, "u", "Ahri", 1, null, new Map(), null)).toContain("/show-me");
     const failing = writer({ add: async () => { throw new Error("down"); } });
     vi.spyOn(console, "error").mockImplementation(() => {});
-    expect(await addToCollection(failing, catalogue, "u", "Ahri", 1, null)).toContain("nothing was changed");
+    expect(await addToCollection(failing, catalogue, "u", "Ahri", 1, null, new Map(), null)).toContain("nothing was changed");
   });
 });
 
@@ -62,7 +67,7 @@ describe("/collection lending", () => {
     expect(w.setLending).toHaveBeenCalledWith("u", true, null);
     expect(reply).toContain("nothing is lendable");
     expect(reply).toContain("`default`");
-    expect(reply).toContain("https://x/u/u/collection");
+    expect(reply).toContain("https://x/collection");
   });
 
   it("warns that a private profile is never listed", async () => {

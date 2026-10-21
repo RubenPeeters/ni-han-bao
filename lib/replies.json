@@ -3,6 +3,7 @@
     "command": null,
     "ephemeral": false,
     "channels": {},
+    "users": {},
     "emojis": {},
     "message": {
       "content": "Hi, I'm ni han bao! I count messages, reactions and voice time in this server: counts and timestamps only, never what anyone writes.\nSee the stats (members only, log in with Discord): https://ni-han-bao.example/s/900000000000000001/leaderboard\nRather not appear in the lists and charts? Use /hide-me, and /show-me to come back."
@@ -12,6 +13,7 @@
     "command": "/leaderboard",
     "ephemeral": false,
     "channels": {},
+    "users": {},
     "emojis": {},
     "message": {
       "embeds": [
@@ -32,6 +34,7 @@
     "channels": {
       "900000000000000201": "weekly-report"
     },
+    "users": {},
     "emojis": {},
     "message": {
       "content": "Weekly report card: <#900000000000000201>\nTime zone: Europe/Brussels\nPublic totals: left out\nRank roles: off (existing rank roles stay until you delete them)"
@@ -41,6 +44,7 @@
     "command": null,
     "ephemeral": false,
     "channels": {},
+    "users": {},
     "emojis": {},
     "message": {
       "embeds": [
@@ -87,6 +91,7 @@
     "command": "/recap",
     "ephemeral": false,
     "channels": {},
+    "users": {},
     "emojis": {},
     "message": {
       "embeds": [
@@ -104,6 +109,7 @@
     "command": "/card",
     "ephemeral": false,
     "channels": {},
+    "users": {},
     "emojis": {
       "rb_body": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/7a5533034de5870808347bc4b296f0029bdd8eea-64x64.png?accountingTag=RB",
       "rb_calm": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/b9ef2f5b74841ad11f3629aa381a76ac0187d007-64x64.png?accountingTag=RB",
@@ -186,6 +192,7 @@
     "command": "/deck share",
     "ephemeral": false,
     "channels": {},
+    "users": {},
     "emojis": {
       "rb_body": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/7a5533034de5870808347bc4b296f0029bdd8eea-64x64.png?accountingTag=RB",
       "rb_calm": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/b9ef2f5b74841ad11f3629aa381a76ac0187d007-64x64.png?accountingTag=RB",
@@ -294,10 +301,252 @@
       "flags": 32768
     }
   },
+  "collection-add": {
+    "command": "/collection add",
+    "ephemeral": true,
+    "channels": {},
+    "users": {},
+    "emojis": {
+      "rb_body": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/7a5533034de5870808347bc4b296f0029bdd8eea-64x64.png?accountingTag=RB",
+      "rb_calm": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/b9ef2f5b74841ad11f3629aa381a76ac0187d007-64x64.png?accountingTag=RB",
+      "rb_chaos": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/597ddb82be59e87b467c52bb10204f02c2005d06-64x64.png?accountingTag=RB",
+      "rb_fury": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/5aeb4bfd203b5d265902f65aa5afae7da1682eaa-64x64.png?accountingTag=RB",
+      "rb_mind": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/17ab95a6bd052085b6803d846a287f625f347288-64x64.png?accountingTag=RB",
+      "rb_order": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/8bb1b193a8e1adc26ca28e1a21da8d1e2f5d2f72-64x64.png?accountingTag=RB",
+      "rb_might": "https://assetcdn.rgpub.io/public/live/riot-shared/player-experiences/riot-glyphs/rb/latest/might.svg",
+      "rb_power": "https://assetcdn.rgpub.io/public/live/riot-shared/player-experiences/riot-glyphs/rb/latest/card_type_rune.svg",
+      "rb_common": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/a088ae851d94b5c34aa4900e8ccb4cc103144dce-354x354.png?accountingTag=RB",
+      "rb_epic": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/5e9799d87d0f8baa55f6d9bddb9750669a0f485b-455x419.png?accountingTag=RB",
+      "rb_rare": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/d90078e1ec2ef7cbcbba2be86da1b192c389581a-429x425.png?accountingTag=RB",
+      "rb_showcase": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/a0e92b9edf3291fa62c9b35ffd6363de0d7947c0-376x426.png?accountingTag=RB",
+      "rb_uncommon": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/808205a0f070e479107a7655e622fe15a356275b-480x410.png?accountingTag=RB",
+      "rb_champion": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/c56f1df327f53562a56b493d3d38c3cee5780c5a-64x64.png?accountingTag=RB",
+      "rb_battlefield": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/1f37eb1bed2605bdaab8270a9dc4396cad746522-64x64.png?accountingTag=RB",
+      "rb_gear": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/ee2664a6dfe767b7e8b4b08ed04611e019d2c166-64x64.png?accountingTag=RB",
+      "rb_legend": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/59e98d14f83125c88880af1d61213e3aef941370-64x64.png?accountingTag=RB",
+      "rb_rune": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/fa3d8362379b722a5025995077a7fbd1b4a6ba0e-24x24.png?accountingTag=RB",
+      "rb_spell": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/73c26354435212281d3f1cefe7cdbd7c803fe18f-64x64.png?accountingTag=RB",
+      "rb_unit": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/cb0caf49361546ece0c25d65b7fbf57c0eee57f0-64x64.png?accountingTag=RB"
+    },
+    "message": {
+      "components": [
+        {
+          "type": 9,
+          "components": [
+            {
+              "type": 10,
+              "content": "Added 2× **Ahri, Alluring** in French · you now have 4\n-# <:rb_rare:900000000000000310> Rare · OGN-066/298 · normal, NM"
+            }
+          ],
+          "accessory": {
+            "type": 11,
+            "media": {
+              "url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/fabbcc2f83f397cf07299236a702db05a151053b-744x1039.png?accountingTag=RB&w=160&fm=webp&q=75"
+            },
+            "description": "Ahri, Alluring"
+          }
+        },
+        {
+          "type": 1,
+          "components": [
+            {
+              "type": 2,
+              "style": 5,
+              "label": "My collection",
+              "url": "https://ni-han-bao.example/collection"
+            }
+          ]
+        }
+      ],
+      "flags": 32768
+    }
+  },
+  "lend": {
+    "command": "/lend",
+    "ephemeral": false,
+    "channels": {},
+    "users": {
+      "900000000000000101": "Anna",
+      "900000000000000102": "Bram",
+      "900000000000000103": "Chloé"
+    },
+    "emojis": {
+      "rb_body": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/7a5533034de5870808347bc4b296f0029bdd8eea-64x64.png?accountingTag=RB",
+      "rb_calm": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/b9ef2f5b74841ad11f3629aa381a76ac0187d007-64x64.png?accountingTag=RB",
+      "rb_chaos": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/597ddb82be59e87b467c52bb10204f02c2005d06-64x64.png?accountingTag=RB",
+      "rb_fury": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/5aeb4bfd203b5d265902f65aa5afae7da1682eaa-64x64.png?accountingTag=RB",
+      "rb_mind": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/17ab95a6bd052085b6803d846a287f625f347288-64x64.png?accountingTag=RB",
+      "rb_order": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/8bb1b193a8e1adc26ca28e1a21da8d1e2f5d2f72-64x64.png?accountingTag=RB",
+      "rb_might": "https://assetcdn.rgpub.io/public/live/riot-shared/player-experiences/riot-glyphs/rb/latest/might.svg",
+      "rb_power": "https://assetcdn.rgpub.io/public/live/riot-shared/player-experiences/riot-glyphs/rb/latest/card_type_rune.svg",
+      "rb_common": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/a088ae851d94b5c34aa4900e8ccb4cc103144dce-354x354.png?accountingTag=RB",
+      "rb_epic": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/5e9799d87d0f8baa55f6d9bddb9750669a0f485b-455x419.png?accountingTag=RB",
+      "rb_rare": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/d90078e1ec2ef7cbcbba2be86da1b192c389581a-429x425.png?accountingTag=RB",
+      "rb_showcase": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/a0e92b9edf3291fa62c9b35ffd6363de0d7947c0-376x426.png?accountingTag=RB",
+      "rb_uncommon": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/808205a0f070e479107a7655e622fe15a356275b-480x410.png?accountingTag=RB",
+      "rb_champion": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/c56f1df327f53562a56b493d3d38c3cee5780c5a-64x64.png?accountingTag=RB",
+      "rb_battlefield": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/1f37eb1bed2605bdaab8270a9dc4396cad746522-64x64.png?accountingTag=RB",
+      "rb_gear": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/ee2664a6dfe767b7e8b4b08ed04611e019d2c166-64x64.png?accountingTag=RB",
+      "rb_legend": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/59e98d14f83125c88880af1d61213e3aef941370-64x64.png?accountingTag=RB",
+      "rb_rune": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/fa3d8362379b722a5025995077a7fbd1b4a6ba0e-24x24.png?accountingTag=RB",
+      "rb_spell": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/73c26354435212281d3f1cefe7cdbd7c803fe18f-64x64.png?accountingTag=RB",
+      "rb_unit": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/cb0caf49361546ece0c25d65b7fbf57c0eee57f0-64x64.png?accountingTag=RB"
+    },
+    "message": {
+      "components": [
+        {
+          "type": 17,
+          "components": [
+            {
+              "type": 10,
+              "content": "### Loan #12\n<@900000000000000101> lent <@900000000000000103> 3 cards · due 2026-11-02"
+            },
+            {
+              "type": 9,
+              "components": [
+                {
+                  "type": 10,
+                  "content": "2× Ahri, Alluring <:rb_calm:900000000000000301>"
+                }
+              ],
+              "accessory": {
+                "type": 11,
+                "media": {
+                  "url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/fabbcc2f83f397cf07299236a702db05a151053b-744x1039.png?accountingTag=RB&w=160&fm=webp&q=75"
+                },
+                "description": "Ahri, Alluring"
+              }
+            },
+            {
+              "type": 9,
+              "components": [
+                {
+                  "type": 10,
+                  "content": "1× Nine-Tailed Fox <:rb_calm:900000000000000301> <:rb_mind:900000000000000304>"
+                }
+              ],
+              "accessory": {
+                "type": 11,
+                "media": {
+                  "url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/56457c7986d3f140b7123a988149cc30a83493a7-744x1039.png?accountingTag=RB&w=160&fm=webp&q=75"
+                },
+                "description": "Nine-Tailed Fox"
+              }
+            },
+            {
+              "type": 10,
+              "content": "<@900000000000000103>, did you get them?"
+            }
+          ]
+        },
+        {
+          "type": 1,
+          "components": [
+            {
+              "type": 2,
+              "custom_id": "loan-confirm:12:900000000000000103",
+              "label": "Confirm",
+              "style": 3
+            },
+            {
+              "type": 2,
+              "custom_id": "loan-dispute:12:900000000000000103",
+              "label": "Dispute",
+              "style": 2
+            }
+          ]
+        }
+      ],
+      "flags": 32768
+    }
+  },
+  "trade-match": {
+    "command": null,
+    "ephemeral": false,
+    "channels": {},
+    "users": {
+      "900000000000000101": "Anna",
+      "900000000000000102": "Bram",
+      "900000000000000103": "Chloé"
+    },
+    "emojis": {
+      "rb_body": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/7a5533034de5870808347bc4b296f0029bdd8eea-64x64.png?accountingTag=RB",
+      "rb_calm": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/b9ef2f5b74841ad11f3629aa381a76ac0187d007-64x64.png?accountingTag=RB",
+      "rb_chaos": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/597ddb82be59e87b467c52bb10204f02c2005d06-64x64.png?accountingTag=RB",
+      "rb_fury": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/5aeb4bfd203b5d265902f65aa5afae7da1682eaa-64x64.png?accountingTag=RB",
+      "rb_mind": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/17ab95a6bd052085b6803d846a287f625f347288-64x64.png?accountingTag=RB",
+      "rb_order": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/8bb1b193a8e1adc26ca28e1a21da8d1e2f5d2f72-64x64.png?accountingTag=RB",
+      "rb_might": "https://assetcdn.rgpub.io/public/live/riot-shared/player-experiences/riot-glyphs/rb/latest/might.svg",
+      "rb_power": "https://assetcdn.rgpub.io/public/live/riot-shared/player-experiences/riot-glyphs/rb/latest/card_type_rune.svg",
+      "rb_common": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/a088ae851d94b5c34aa4900e8ccb4cc103144dce-354x354.png?accountingTag=RB",
+      "rb_epic": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/5e9799d87d0f8baa55f6d9bddb9750669a0f485b-455x419.png?accountingTag=RB",
+      "rb_rare": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/d90078e1ec2ef7cbcbba2be86da1b192c389581a-429x425.png?accountingTag=RB",
+      "rb_showcase": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/a0e92b9edf3291fa62c9b35ffd6363de0d7947c0-376x426.png?accountingTag=RB",
+      "rb_uncommon": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/808205a0f070e479107a7655e622fe15a356275b-480x410.png?accountingTag=RB",
+      "rb_champion": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/c56f1df327f53562a56b493d3d38c3cee5780c5a-64x64.png?accountingTag=RB",
+      "rb_battlefield": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/1f37eb1bed2605bdaab8270a9dc4396cad746522-64x64.png?accountingTag=RB",
+      "rb_gear": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/ee2664a6dfe767b7e8b4b08ed04611e019d2c166-64x64.png?accountingTag=RB",
+      "rb_legend": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/59e98d14f83125c88880af1d61213e3aef941370-64x64.png?accountingTag=RB",
+      "rb_rune": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/fa3d8362379b722a5025995077a7fbd1b4a6ba0e-24x24.png?accountingTag=RB",
+      "rb_spell": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/73c26354435212281d3f1cefe7cdbd7c803fe18f-64x64.png?accountingTag=RB",
+      "rb_unit": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/cb0caf49361546ece0c25d65b7fbf57c0eee57f0-64x64.png?accountingTag=RB"
+    },
+    "message": {
+      "components": [
+        {
+          "type": 17,
+          "components": [
+            {
+              "type": 10,
+              "content": "### New trade matches in your servers"
+            },
+            {
+              "type": 9,
+              "components": [
+                {
+                  "type": 10,
+                  "content": "**Ahri, Alluring** <:rb_calm:900000000000000301>\nYou want 3, <@900000000000000102> has 2 for trade.\nMeet up: you are both regulars at The Card Corner (Leuven)."
+                }
+              ],
+              "accessory": {
+                "type": 11,
+                "media": {
+                  "url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/fabbcc2f83f397cf07299236a702db05a151053b-744x1039.png?accountingTag=RB&w=160&fm=webp&q=75"
+                },
+                "description": "Ahri, Alluring"
+              }
+            },
+            {
+              "type": 9,
+              "components": [
+                {
+                  "type": 10,
+                  "content": "**Dark Child, Starter** <:rb_fury:900000000000000303> <:rb_chaos:900000000000000302>\nYou want 1, <@900000000000000103> has 1 for trade.\nMeet up: you are both regulars at The Card Corner (Leuven)."
+                }
+              ],
+              "accessory": {
+                "type": 11,
+                "media": {
+                  "url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/89963e1d1cffd69c620fb5d6b037f50d5c334463-744x1039.png?accountingTag=RB&w=160&fm=webp&q=75"
+                },
+                "description": "Dark Child, Starter"
+              }
+            },
+            {
+              "type": 10,
+              "content": "-# Say hi and trade at the table: no prices or payments go through the bot. All your matches: <https://ni-han-bao.example/s/900000000000000001/trades>"
+            }
+          ]
+        }
+      ],
+      "flags": 32768
+    }
+  },
   "going": {
     "command": "/event going",
     "ephemeral": false,
     "channels": {},
+    "users": {},
     "emojis": {},
     "message": {
       "content": "Someone is going at The Card Corner \\(Leuven\\) on Sat 17 Oct, 19:00.\nComing too? Click Going.",
@@ -320,6 +569,7 @@
     "command": "/lol link",
     "ephemeral": true,
     "channels": {},
+    "users": {},
     "emojis": {},
     "message": {
       "content": "To prove Anna#EUW is yours, set your League profile icon to **Debonair Rose Icon** (icon 7, a starter icon), then press Verify. Search for it by name in the client's icon picker, or pick the icon shown below. It can take up to 5 minutes to show up. You can change it back afterwards.",
@@ -339,6 +589,7 @@
     "command": "/forget-me",
     "ephemeral": true,
     "channels": {},
+    "users": {},
     "emojis": {},
     "message": {
       "content": "This deletes everything ni han bao has stored about you, in every server: your message, reaction, voice and game time counts, your name and avatar, your membership, your regular stores, the events you are going to, your linked League account with its ranks and games, your Riftbound collection, decks, wishlist, trade matches and lending setting, your card loans (gone for the other member too), your profile visibility and your /hide-me setting. It cannot be undone. The bot stops counting you until you use /show-me. You also lose access to the servers' pages on the website until then.",

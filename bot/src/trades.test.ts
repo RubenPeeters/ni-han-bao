@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import type { Catalogue } from "./card-match.js";
 import { newMatches, placeText, tradeDm, type Candidate, type Place } from "./trades.js";
 import type { Wanted } from "./wishlist.js";
 
@@ -30,7 +32,7 @@ describe("newMatches", () => {
       ],
       () => wanted,
     );
-    expect(out.get("anna")?.map((m) => `${m.card_id}:${m.copies}`)).toEqual(["ahri:1"]);
+    expect(out.get("anna")?.map((m) => `${m.card_id}:${m.copies}:${m.wanted}`)).toEqual(["ahri:1:1"]);
   });
 
   it("adds up a trader's fitting copies and keeps the server with the best place to meet", () => {
@@ -65,24 +67,22 @@ describe("placeText", () => {
 });
 
 describe("tradeDm", () => {
-  const match = { guild_id: "g1", trader_id: "bram", card_id: "ahri", copies: 2, ...regulars };
+  const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue;
+  const match = { guild_id: "g1", trader_id: "bram", card_id: "ahri-alluring", copies: 2, wanted: 3, ...regulars };
 
-  it("introduces the trader, says where to meet and that no money goes through the bot", () => {
-    const { content: text } = tradeDm([match], () => "Ahri", () => "UTC", "https://example.com");
-    expect(text).toContain("You want **Ahri**: <@bram> has 2 for trade. Meet up: you are both regulars at The Card Corner (Leuven).");
+  it("pictures the card, introduces the trader, says where to meet and that no money goes through the bot", () => {
+    const text = JSON.stringify(tradeDm([match], catalogue, new Map(), () => "UTC", "https://example.com"));
+    expect(text).toContain("**Ahri, Alluring** Calm\\nYou want 3, <@bram> has 2 for trade.\\nMeet up: you are both regulars at The Card Corner (Leuven).");
+    expect(text.match(/"type":11/g)).toHaveLength(1);
     expect(text).toContain("no prices or payments go through the bot");
     expect(text).toContain("<https://example.com/s/g1/trades>");
     expect(text).not.toMatch(/€|\$|price:/i);
   });
 
-  it("names only the matches that fit in Discord's 2000 characters, and keeps the link", () => {
-    const many = Array.from({ length: 100 }, (_, i) => ({ ...match, card_id: `c${i}` }));
-    const { content, shown } = tradeDm(many, () => "A card with a long name", () => "UTC", "https://example.com");
-    expect(content.length).toBeLessThanOrEqual(2000);
-    expect(shown.length).toBeGreaterThan(0);
-    expect(shown.length).toBeLessThan(100);
-    expect(content.match(/^- You want/gm)).toHaveLength(shown.length);
-    expect(content).toContain("More in your next DM.");
-    expect(content).toContain("<https://example.com/s/g1/trades>");
+  it("shows the first five matches and sends the rest to the Trades page", () => {
+    const many = Array.from({ length: 8 }, (_, i) => ({ ...match, trader_id: `t${i}` }));
+    const text = JSON.stringify(tradeDm(many, catalogue, new Map(), () => "UTC", "https://example.com"));
+    expect(text.match(/You want/g)).toHaveLength(5);
+    expect(text).toContain("And 3 more on the Trades page: <https://example.com/s/g1/trades>");
   });
 });

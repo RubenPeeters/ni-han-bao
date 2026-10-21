@@ -1,6 +1,9 @@
 // The daily check of Riot's card feed (#204): what differs from the catalogue in the database,
 // and the DMs that ask the bot's owner to accept it.
+import { ButtonStyle, ComponentType, MessageFlags, type APIComponentInContainer, type APIMediaGalleryItem } from "discord.js";
 import { createHash } from "node:crypto";
+import { byPrinting, cardImageUrl } from "./card-match.js";
+import type { V2 } from "./riftbound-reply.js";
 import { cardsJson, SET_ORDER, type FeedCard, type FeedCatalogue, type FeedIcon, type FeedPrinting } from "./riftbound-feed.js";
 
 export const CARD_COLUMNS = "id, name, type, supertypes, domains, energy, might, tags, rules_text, placeholder";
@@ -85,20 +88,45 @@ const FIRST_NAMES = 3;
 const some = (count: number, label: string, names: string[]) =>
   `${count} ${label}${names.length ? ` (${names.slice(0, FIRST_NAMES).join(", ")}${names.length > FIRST_NAMES ? ", …" : ""})` : ""}`;
 
-/** The DM that asks the owner to accept a feed; the buttons come with it. */
-export function proposalText(buildId: string, diff: CatalogueDiff): string {
-  const lines = diff.sets.map(
-    (s) =>
-      `**${s.set}**: ${some(s.added.length, "new", s.added)}, ${some(s.changed.length, "changed", s.changed)}, ` +
-      some(s.gone.length, "no longer in the feed", s.gone),
-  );
-  if (diff.icons.length) lines.push(some(diff.icons.length, "new or changed icons", diff.icons.map((i) => i.label)));
-  // Discord's message limit; three names per list keep it far below in practice.
-  return [
-    `Riot's Riftbound card feed (build \`${buildId}\`) differs from the catalogue.`,
-    ...lines,
-    "Accept writes the new and changed cards. Cards no longer in the feed stay: collections, decks and loans point at them.",
-  ].join("\n").slice(0, 2000);
+// Media galleries take up to 10 images.
+const GALLERY_MAX = 10;
+
+/** The DM that asks the owner to accept a feed: the counts per set, each set's new cards pictured, and Accept and Reject. */
+export function proposalMessage(buildId: string, diff: CatalogueDiff, proposal: number): V2 {
+  const text = (content: string) => ({ type: ComponentType.TextDisplay as const, content });
+  const pictures = (s: SetDiff): APIMediaGalleryItem[] =>
+    diff.cards
+      .filter((c) => s.added.includes(c.name))
+      .flatMap((c) => {
+        const url = diff.printings.filter((p) => p.card_id === c.id && p.set_code === s.set && p.image_url).sort(byPrinting)[0]?.image_url;
+        return url ? [{ media: { url: cardImageUrl(url, 300) }, description: c.name }] : [];
+      })
+      .slice(0, GALLERY_MAX);
+  const components: APIComponentInContainer[] = [
+    text(`Riot's Riftbound card feed (build \`${buildId}\`) differs from the catalogue.`),
+    ...diff.sets.flatMap((s): APIComponentInContainer[] => {
+      const items = pictures(s);
+      return [
+        text(`**${s.set}**: ${some(s.added.length, "new", s.added)}, ${some(s.changed.length, "changed", s.changed)}, ${some(s.gone.length, "no longer in the feed", s.gone)}`),
+        ...(items.length ? [{ type: ComponentType.MediaGallery as const, items }] : []),
+      ];
+    }),
+    ...(diff.icons.length ? [text(some(diff.icons.length, "new or changed icons", diff.icons.map((i) => i.label)))] : []),
+    text("-# Accept writes the new and changed cards. Cards no longer in the feed stay: collections, decks and loans point at them."),
+  ];
+  return {
+    components: [
+      { type: ComponentType.Container, components },
+      {
+        type: ComponentType.ActionRow,
+        components: [
+          { type: ComponentType.Button, custom_id: proposalButtonId("accept", proposal), label: "Accept", style: ButtonStyle.Success },
+          { type: ComponentType.Button, custom_id: proposalButtonId("reject", proposal), label: "Reject", style: ButtonStyle.Danger },
+        ],
+      },
+    ],
+    flags: MessageFlags.IsComponentsV2,
+  };
 }
 
 /** The DM when the feed cannot be read; the database is left untouched. */

@@ -11,6 +11,9 @@ import { reportEmbed } from "./report.js";
 import { type Catalogue } from "./riftbound.js";
 import { cardMessage } from "./riftbound-reply.js";
 import { deckMessage } from "./decks.js";
+import { addedMessage } from "./collection.js";
+import { lendAnnouncement } from "./lending.js";
+import { tradeDm } from "./trades.js";
 import type { FeedIcon } from "./riftbound-feed.js";
 import { wantedEmojis } from "./emojis.js";
 import { settingsText } from "./setup.js";
@@ -24,6 +27,8 @@ export interface ReplyExample {
   ephemeral: boolean;
   /** Names for the channel mentions (<#id>) in the reply. */
   channels: Record<string, string>;
+  /** Names for the member mentions (<@id>) in the reply. */
+  users: Record<string, string>;
   /** The icon each application emoji (<:rb_fury:id>) in the reply was made from. */
   emojis: Record<string, string>;
   message: { content?: string; embeds?: APIEmbed[]; components?: unknown[]; flags?: number };
@@ -35,7 +40,10 @@ const GUILD = "900000000000000001";
 const REPORT_CHANNEL = "900000000000000201";
 const SATURDAY = "2026-10-17T17:00:00Z";
 const reply = (command: string | null, message: ReplyExample["message"], more: Partial<ReplyExample> = {}): ReplyExample =>
-  ({ command, ephemeral: false, channels: {}, emojis: {}, message, ...more });
+  ({ command, ephemeral: false, channels: {}, users: {}, emojis: {}, message, ...more });
+// The demo server's first members (supabase/seed.sql).
+const [ANNA, BRAM, CHLOE] = ["900000000000000101", "900000000000000102", "900000000000000103"];
+const USERS = { [ANNA]: "Anna", [BRAM]: "Bram", [CHLOE]: "Chloé" };
 
 export function replyExamples(): Record<string, ReplyExample> {
   // Riot's Ahri Legend, the tutorial's deck (#206).
@@ -64,6 +72,20 @@ export function replyExamples(): Record<string, ReplyExample> {
     id: "00000000-0000-4000-8000-0000000d0001", name: "Ahri control", legend_id: card.id, champion_id: "ahri-alluring",
     visibility: "public", language: "en", allow_other_languages: true,
   };
+  const iconUrls = Object.fromEntries(emojis.map((e) => [e.name, e.url]));
+  const cardOf = (id: string) => catalogue.cards.find((c) => c.id === id)!;
+  // Anna adds two French copies of Ahri, Alluring to the two she had.
+  const ahri = cardOf("ahri-alluring");
+  const added = addedMessage(ahri, catalogue.printings.find((p) => p.id === "ogn-066-298")!, 2, 4, "fr", emojiIds, SITE);
+  // Bram and Chloé have cards on Anna's wishlist for trade, as seeded; they are regulars at The Card Corner.
+  const place = { place_kind: "regulars" as const, event_name: null, starts_at: null, store_name: "The Card Corner", store_city: "Leuven" };
+  const trades = tradeDm(
+    [
+      { guild_id: GUILD, trader_id: BRAM, card_id: "ahri-alluring", copies: 2, wanted: 3, ...place },
+      { guild_id: GUILD, trader_id: CHLOE, card_id: "dark-child-starter", copies: 1, wanted: 1, ...place },
+    ],
+    catalogue, emojiIds, () => ZONE, SITE,
+  );
   const rows = [
     { user_id: "1", display_name: "Anna", message_count: 1284 },
     { user_id: "2", display_name: "Bram", message_count: 967 },
@@ -106,6 +128,17 @@ export function replyExamples(): Record<string, ReplyExample> {
       deckMessage(deck, deckEntries, catalogue, catalogue.icons, emojiIds, "Anna", 5, SITE),
       { emojis: Object.fromEntries(emojis.map((e) => [e.name, e.url])) },
     ),
+    "collection-add": reply("/collection add", added, { ephemeral: true, emojis: iconUrls }),
+    lend: reply(
+      "/lend",
+      lendAnnouncement(
+        { loan: 12, lender: ANNA, borrower: CHLOE, cards: [{ card: ahri, count: 2 }, { card, count: 1 }], due: "2026-11-02", deck: null },
+        catalogue,
+        emojiIds,
+      ),
+      { users: USERS, emojis: iconUrls },
+    ),
+    "trade-match": reply(null, trades, { users: USERS, emojis: iconUrls }),
     going: reply("/event going", going),
     "lol-link": reply(
       "/lol link",
