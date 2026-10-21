@@ -117,6 +117,12 @@ describe("transformFeed", () => {
     expect(() => transformFeed([next])).toThrow(/LEG is not in SET_ORDER/);
   });
 
+  it("fails on a set the feed names differently", () => {
+    const renamed = raw("VEN-R04");
+    renamed.set = { value: { id: "VEN", label: "Vendettas" } };
+    expect(() => transformFeed([renamed])).toThrow(/VEN-R04: unexpected set VEN label/);
+  });
+
   it("fails on a changed shape, never guessing", () => {
     const changed = raw("VEN-R04");
     changed.rarity = "Common";

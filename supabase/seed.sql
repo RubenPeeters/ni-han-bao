@@ -260,13 +260,16 @@ begin
 
     -- Decks and lending (#179): Anna's Annie deck stays built (not for lending), and Bram lent
     -- her his deck as one loan she has not confirmed yet, for the Loans tab's Confirm. Two
-    -- copies again, from his collection, other ones than his first loan's.
+    -- copies again, from his collection, other ones than his first loan's, and the deck's
+    -- Legend, whose art the loan shows (#220).
     update public.riftbound_decks set not_for_lending = true where id = '00000000-0000-4000-8000-0000000d0002';
     perform public.lend_riftbound_cards(users[2], users[1], today + 7, null, (
         select jsonb_agg(jsonb_build_object('printing_id', c.printing_id, 'finish', c.finish,
             'condition', c.condition, 'language', c.language, 'quantity', 1))
-        from (select * from public.riftbound_collection c where c.user_id = users[2]
-              order by c.printing_id, c.language offset 2 limit 2) c),
+        from ((select * from public.riftbound_collection c where c.user_id = users[2]
+               order by c.printing_id, c.language offset 2 limit 2)
+              union all
+              (select * from public.riftbound_collection c where c.user_id = users[2] and c.printing_id = 'ogn-255-298' limit 1)) c),
         '00000000-0000-4000-8000-0000000d0004');
 
     -- Wishlist (#177): Anna answered the question with Shared. Her demo deck stays built, the

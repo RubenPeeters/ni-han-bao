@@ -1,4 +1,7 @@
+import { SET_NAMES } from "@/bot/src/card-match";
+import { riftboundIcons } from "@/components/card-library";
 import { ProfileHeader, SettingsLink, type Profile } from "@/components/profile-stats";
+import { RarityIcon } from "@/components/riftbound-icons";
 import { EmptyState, ErrorState, RankList, RankRow, StatCard, StatGrid } from "@/components/stat-ui";
 import { languageName } from "@/lib/collection";
 import { createClient } from "@/lib/supabase/server";
@@ -20,9 +23,10 @@ interface Total {
  */
 export async function ProfileCollection({ user, own }: { user: string; own?: boolean }) {
   const supabase = await createClient();
-  const [profile, totals] = await Promise.all([
+  const [profile, totals, icons] = await Promise.all([
     supabase.rpc("profile", { u: user }).maybeSingle<Profile>(),
     supabase.rpc("profile_collection", { u: user }),
+    riftboundIcons(supabase),
   ]);
   if (profile.error || totals.error) return <ErrorState title="Could not load this collection">Try again in a minute.</ErrorState>;
   // Private, hidden, forgotten or unknown: the same 404 as the Activity tab.
@@ -56,7 +60,15 @@ export async function ProfileCollection({ user, own }: { user: string; own?: boo
             {sum(key).map(([label, t], i) => (
               <RankRow key={label} rank={i + 1} value={t.copies.toLocaleString("en-US")}>
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate">{label}</span>
+                  <span className="truncate">
+                    {key === "rarity" ? (
+                      <RarityIcon icons={icons} rarity={label} withText />
+                    ) : key === "set_code" && SET_NAMES[label] ? (
+                      `${label} · ${SET_NAMES[label]}`
+                    ) : (
+                      label
+                    )}
+                  </span>
                   <span className="text-xs text-muted-foreground">
                     {t.printings.toLocaleString("en-US")} different {t.printings === 1 ? "card" : "cards"}
                   </span>
