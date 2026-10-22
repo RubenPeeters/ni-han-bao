@@ -73,6 +73,11 @@ export const COLLECTION_COMMAND = {
         },
       ],
     },
+    {
+      type: ApplicationCommandOptionType.Subcommand,
+      name: "share",
+      description: "Post a summary of your collection in this channel",
+    },
   ],
 } as const;
 

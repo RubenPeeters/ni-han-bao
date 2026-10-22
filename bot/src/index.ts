@@ -121,7 +121,7 @@ import {
   type Wanted,
 } from "./lending.js";
 import { CARD_COMMAND, cardChoices, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
-import { cardMessage, PAGING_MS, parsePageButtonId, type V2 } from "./riftbound-reply.js";
+import { callerName, cardMessage, PAGING_MS, parsePageButtonId, type V2 } from "./riftbound-reply.js";
 import { emojiImage, emojiPlan, wantedEmojis, type Emojis } from "./emojis.js";
 import { feedItems, fetchFeed, transformFeed, type FeedCard, type FeedIcon, type FeedPrinting } from "./riftbound-feed.js";
 import {
@@ -137,7 +137,8 @@ import {
 } from "./catalogue-check.js";
 import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSettings } from "./setup.js";
 import { hiddenFor, setVisibility } from "./visibility.js";
-import { COMMANDS } from "./commands.js";
+import { globalCommandsChanged, GLOBAL_COMMANDS, GUILD_COMMANDS } from "./commands.js";
+import { collectionShare, WISHLIST_COMMAND, wishlistShare } from "./profile-share.js";
 import { newMatches, tradeDm, type Candidate } from "./trades.js";
 import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
 import { wishlist, type WishRow } from "./wishlist.js";
@@ -770,7 +771,7 @@ let icons: FeedIcon[] = [];
 let emojis: Emojis = new Map();
 
 /** /card: one card from the catalogue, for everyone in the channel. */
-async function cardCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+async function cardCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   const typed = interaction.options.getString("name", true);
   const found = lookupCard(catalogue, typed);
   try {
@@ -786,7 +787,7 @@ async function cardCommand(interaction: ChatInputCommandInteraction<"cached">): 
 }
 
 /** /card's Previous and Next: anyone in the channel, within PAGING_MS of the reply; later clicks change nothing. */
-async function cardPageButton(interaction: ButtonInteraction<"cached">, cardId: string, index: number): Promise<void> {
+async function cardPageButton(interaction: ButtonInteraction, cardId: string, index: number): Promise<void> {
   try {
     const card = catalogue.cards.find((c) => c.id === cardId);
     const printings = catalogue.printings.filter((p) => p.card_id === cardId);
@@ -801,7 +802,7 @@ async function cardPageButton(interaction: ButtonInteraction<"cached">, cardId: 
 }
 
 /** /collection add and /collection lending: the caller's own rows, replies only they see. */
-async function collectionCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+async function collectionCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   try {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const writer = {
@@ -851,6 +852,45 @@ async function collectionCommand(interaction: ChatInputCommandInteraction<"cache
     await interaction.editReply(typeof reply === "string" ? reply : feedback(reply, "collection", found && "card" in found ? found.card.id : null));
   } catch (err) {
     log("error", "command_failed", { command: COLLECTION_COMMAND.name, error: err });
+  }
+}
+
+/**
+ * /collection share and /wishlist share: the summary for everyone in the channel, or for a
+ * private profile what to change, only for the caller. Through the interaction only, so a DM works.
+ */
+async function shareCommand(interaction: ChatInputCommandInteraction, what: "collection" | "wishlist"): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  try {
+    const userId = interaction.user.id;
+    const profile = await db.from("profiles").select("visibility").eq("user_id", userId).maybeSingle();
+    if (profile.error) throw new Error(`profiles select: ${profile.error.message}`);
+    const sharer = { id: userId, name: callerName(interaction.member, interaction.user), visibility: (profile.data?.visibility as string | undefined) ?? null };
+    const reply =
+      what === "collection"
+        ? collectionShare(sharer, await ownedCopies(userId), catalogue, emojis, config.siteUrl)
+        : wishlistShare(
+            sharer,
+            wishlist(
+              await readAll(async (from, to) => {
+                const { data, error } = await db.rpc("riftbound_wish_rows", { u: userId }).range(from, to);
+                if (error) throw new Error(`riftbound_wish_rows: ${error.message}`);
+                return data as WishRow[];
+              }),
+            ),
+            catalogue,
+            emojis,
+            config.siteUrl,
+          );
+    if (typeof reply === "string") {
+      await interaction.editReply(reply);
+      return;
+    }
+    await interaction.editReply("Shared.");
+    await interaction.followUp({ ...feedback(reply, what), allowedMentions: { parse: [] } });
+  } catch (err) {
+    log("error", "command_failed", { command: what, error: err });
+    await interaction.editReply(FAILED);
   }
 }
 
@@ -1057,7 +1097,7 @@ async function ownedCopies(userId: string): Promise<OwnedCopy[]> {
 }
 
 /** /deck share: one of the caller's decks for everyone in the channel; a private one is made visible first. */
-async function deckCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+async function deckCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   try {
     const typed = interaction.options.getString("deck", true).trim();
@@ -1096,7 +1136,7 @@ async function deckCommand(interaction: ChatInputCommandInteraction<"cached">): 
     const { missing } = missingCards(deck, entries, await ownedCopies(interaction.user.id));
     await interaction.editReply(textMessage(`Shared, ${deck.visibility === "public" ? "public" : "for your servers' members"}.`));
     await interaction.followUp({
-      ...feedback(deckMessage(deck, entries, catalogue, icons, emojis, interaction.member.displayName, missing, config.siteUrl), "deck", deck.id),
+      ...feedback(deckMessage(deck, entries, catalogue, icons, emojis, callerName(interaction.member, interaction.user), missing, config.siteUrl), "deck", deck.id),
       allowedMentions: { parse: [] },
     });
   } catch (err) {
@@ -1106,7 +1146,7 @@ async function deckCommand(interaction: ChatInputCommandInteraction<"cached">): 
 }
 
 /** Copy as text under a shared deck: its "3 Card Name" list, for whoever pressed it, while they may still see the deck on the site. */
-async function deckCopyButton(interaction: ButtonInteraction<"cached">, deckId: string): Promise<void> {
+async function deckCopyButton(interaction: ButtonInteraction, deckId: string): Promise<void> {
   try {
     const { data, error } = await db
       .from("riftbound_decks")
@@ -1269,16 +1309,40 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await tracked("command", proposalButton(interaction, decision));
       return;
     }
+    // Under /card and /deck share, which also work in DMs and servers the bot is not in (#250).
+    const copied = parseCopyButtonId(interaction.customId);
+    if (copied !== null) {
+      await tracked("command", deckCopyButton(interaction, copied));
+      return;
+    }
+    const cardPage = parsePageButtonId(interaction.customId);
+    if (cardPage !== null) {
+      await tracked("command", cardPageButton(interaction, cardPage.cardId, cardPage.index));
+      return;
+    }
+  }
+  // GLOBAL_COMMANDS: also in DMs, where interaction.guild is null, so before the server-only handlers below.
+  if (interaction.isChatInputCommand() && interaction.commandName === CARD_COMMAND.name) {
+    await tracked("command", cardCommand(interaction));
+    return;
+  }
+  if (interaction.isChatInputCommand() && interaction.commandName === COLLECTION_COMMAND.name) {
+    await tracked("command", interaction.options.getSubcommand() === "share" ? shareCommand(interaction, "collection") : collectionCommand(interaction));
+    return;
+  }
+  if (interaction.isChatInputCommand() && interaction.commandName === WISHLIST_COMMAND.name) {
+    await tracked("command", shareCommand(interaction, "wishlist"));
+    return;
+  }
+  if (interaction.isChatInputCommand() && interaction.commandName === DECK_COMMAND.name) {
+    await tracked("command", deckCommand(interaction));
+    return;
   }
   if (interaction.isButton() && interaction.inCachedGuild()) {
     const eventId = goingEventId(interaction.customId);
     if (eventId !== null) await tracked("command", goingButton(interaction, eventId));
     const answer = parseAnswerId(interaction.customId);
     if (answer !== null) await tracked("command", loanAnswerButton(interaction, answer));
-    const copied = parseCopyButtonId(interaction.customId);
-    if (copied !== null) await tracked("command", deckCopyButton(interaction, copied));
-    const cardPage = parsePageButtonId(interaction.customId);
-    if (cardPage !== null) await tracked("command", cardPageButton(interaction, cardPage.cardId, cardPage.index));
     return;
   }
   if (interaction.isModalSubmit() && interaction.inCachedGuild()) {
@@ -1329,18 +1393,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
   if (interaction.commandName === EVENT_COMMAND.name) {
     await tracked("command", eventCommand(interaction));
-    return;
-  }
-  if (interaction.commandName === CARD_COMMAND.name) {
-    await tracked("command", cardCommand(interaction));
-    return;
-  }
-  if (interaction.commandName === COLLECTION_COMMAND.name) {
-    await tracked("command", collectionCommand(interaction));
-    return;
-  }
-  if (interaction.commandName === DECK_COMMAND.name) {
-    await tracked("command", deckCommand(interaction));
     return;
   }
   if (interaction.commandName === LEND_COMMAND.name) {
@@ -2418,9 +2470,9 @@ async function backfillServer(guildId: string): Promise<void> {
  * for one it joins, so a new server needs no restart. Then queues its history backfill.
  */
 async function startServer(guild: Guild): Promise<void> {
-  // Guild commands, not global ones: they apply instantly.
+  // Guild commands, not global ones: they apply instantly. The global ones are registered on ready.
   try {
-    await guild.commands.set(COMMANDS);
+    await guild.commands.set(GUILD_COMMANDS);
   } catch (err) {
     log("error", "command_registration_failed", { guild: guild.id, error: err });
   }
@@ -2459,6 +2511,19 @@ async function startServer(guild: Guild): Promise<void> {
   // After the member sync: goers' names and the backfill's authors come from the member cache.
   void tracked("scheduled_events_sync", syncScheduledEvents(guild));
   queueBackfill(guild.id);
+}
+
+/** The commands that work in DMs too (#250), for the whole application: rewritten only when their definitions changed. */
+async function registerGlobalCommands(): Promise<void> {
+  try {
+    const manager = client.application!.commands;
+    if (globalCommandsChanged([...(await manager.fetch()).values()], GLOBAL_COMMANDS)) {
+      await manager.set(GLOBAL_COMMANDS);
+      log("info", "global_commands_registered", { commands: GLOBAL_COMMANDS.map((c) => c.name) });
+    }
+  } catch (err) {
+    log("error", "command_registration_failed", { guild: null, error: err });
+  }
 }
 
 /** The catalogue the commands read, from the database: Accept (#204) is the only thing that changes it. */
@@ -2680,6 +2745,7 @@ client.once(Events.ClientReady, async (c) => {
     weeklyReports();
     setInterval(weeklyReports, REPORT_CHECK_MS);
   });
+  await registerGlobalCommands();
   for (const guild of c.guilds.cache.values()) await startServer(guild);
   // After startServer: the role sync needs every server's members cached.
   void refreshRanks();

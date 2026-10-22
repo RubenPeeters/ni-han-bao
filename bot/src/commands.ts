@@ -1,4 +1,4 @@
-import { ApplicationCommandOptionType } from "discord.js";
+import { ApplicationCommandOptionType, ApplicationIntegrationType, InteractionContextType } from "discord.js";
 import { COLLECTION_COMMAND } from "./collection.js";
 import { DECK_COMMAND } from "./decks.js";
 import { EVENT_COMMAND } from "./events.js";
@@ -13,8 +13,9 @@ import { SETUP_COMMAND } from "./setup.js";
 import { STATS_COMMANDS } from "./stats.js";
 import { STORE_COMMAND } from "./stores.js";
 import { VISIBILITY_COMMANDS } from "./visibility.js";
+import { WISHLIST_COMMAND } from "./profile-share.js";
 
-/** Every slash command the bot registers in a server, in the order the docs list them. */
+/** Every slash command the bot registers, in the order the docs list them. */
 export const COMMANDS = [
   ...VISIBILITY_COMMANDS,
   FORGET_COMMAND,
@@ -27,11 +28,30 @@ export const COMMANDS = [
   EVENT_COMMAND,
   CARD_COMMAND,
   COLLECTION_COMMAND,
+  WISHLIST_COMMAND,
   DECK_COMMAND,
   LEND_COMMAND,
   RETURN_COMMAND,
   FEEDBACK_COMMAND,
 ];
+
+/** Commands that also work in DMs once a member adds the app to their account (#250). */
+const EVERYWHERE = new Set<string>([CARD_COMMAND.name, DECK_COMMAND.name, COLLECTION_COMMAND.name, WISHLIST_COMMAND.name]);
+
+/** Registered once for the whole application, for servers and for members' own accounts, in servers, the bot's DMs and other DMs. */
+export const GLOBAL_COMMANDS = COMMANDS.filter((c) => EVERYWHERE.has(c.name)).map((c) => ({
+  ...c,
+  integration_types: [ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall],
+  contexts: [InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel],
+}));
+
+/** Registered per server: the rest, so a global command does not show up twice there. */
+export const GUILD_COMMANDS = COMMANDS.filter((c) => !EVERYWHERE.has(c.name));
+
+/** Whether the registered global commands differ from the wanted ones, with discord.js's ApplicationCommand#equals. */
+export function globalCommandsChanged<T>(registered: readonly { name: string; equals(command: T, enforceOptionOrder: boolean): boolean }[], wanted: readonly (T & { name: string })[]): boolean {
+  return registered.length !== wanted.length || !wanted.every((w) => registered.some((r) => r.name === w.name && r.equals(w, true)));
+}
 
 interface OptionDef {
   type: ApplicationCommandOptionType;

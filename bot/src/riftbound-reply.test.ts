@@ -3,7 +3,7 @@ import { ComponentType, MessageFlags } from "discord.js";
 import { describe, expect, it } from "vitest";
 import type { FeedIcon } from "./riftbound-feed.js";
 import type { Catalogue } from "./riftbound.js";
-import { MAX_COMPONENTS, MAX_TEXT, accentColor, cardHeading, cardMessage, cardSection, discordRules, fitLines, pageButtonId, parsePageButtonId } from "./riftbound-reply.js";
+import { MAX_COMPONENTS, MAX_TEXT, accentColor, callerName, cardHeading, cardMessage, cardSection, discordRules, fitLines, pageButtonId, parsePageButtonId } from "./riftbound-reply.js";
 
 const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue & { icons: FeedIcon[] };
 const card = (id: string) => catalogue.cards.find((c) => c.id === id)!;
@@ -142,5 +142,17 @@ describe("/card", () => {
       expect(n.components).toBeLessThanOrEqual(MAX_COMPONENTS);
       expect(n.text).toBeLessThanOrEqual(MAX_TEXT);
     }
+  });
+});
+
+describe("the caller's name (#250)", () => {
+  const user = { displayName: "anna" };
+  it("is their server nickname, from a cached member or the raw one of a server the bot is not in", () => {
+    expect(callerName({ displayName: "Anna" }, user)).toBe("Anna");
+    expect(callerName({ nick: "Anna" }, user)).toBe("Anna");
+  });
+  it("is their Discord name in a DM, or without a nickname", () => {
+    expect(callerName(null, user)).toBe("anna");
+    expect(callerName({ nick: null }, user)).toBe("anna");
   });
 });
