@@ -89,6 +89,22 @@ function Markdown({ text, channels, users, emojis }: { text: string } & Names) {
         t.text
       ),
     );
+  // Discord's code blocks (```), drawn in a fixed-width font so text bars line up.
+  const blocks = text.split(/\n?```\n?/);
+  if (blocks.length > 2)
+    return (
+      <div className="flex flex-col gap-1">
+        {blocks.map((block, i) =>
+          i % 2 ? (
+            <pre key={i} className="overflow-x-auto rounded-md border bg-background p-2 font-mono text-xs">
+              {block}
+            </pre>
+          ) : (
+            block && <Markdown key={i} text={block} channels={channels} users={users} emojis={emojis} />
+          ),
+        )}
+      </div>
+    );
   const lines = text.split("\n");
   return (
     <div className="whitespace-pre-line break-words">

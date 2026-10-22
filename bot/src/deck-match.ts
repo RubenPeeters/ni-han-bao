@@ -143,3 +143,15 @@ export function deckWarnings(
   }
   return warnings;
 }
+
+export const CURVE_TOP = 7;
+
+/** The main deck's copies per energy cost, 0 to 7+; cards without a cost are left out. The deck page's chart and /deck share's bars. */
+export function energyCurve(entries: DeckEntry[], cards: Map<string, { energy: number | null }>): { energy: string; count: number }[] {
+  const counts = Array<number>(CURVE_TOP + 1).fill(0);
+  for (const e of entries) {
+    const energy = cards.get(e.card_id)?.energy;
+    if (e.section === "main" && energy != null) counts[Math.min(energy, CURVE_TOP)] += e.quantity;
+  }
+  return counts.map((count, i) => ({ energy: i === CURVE_TOP ? `${CURVE_TOP}+` : String(i), count }));
+}

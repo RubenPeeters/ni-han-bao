@@ -188,15 +188,3 @@ export function byType<E extends Entry>(entries: E[], cards: Map<string, Sortabl
     .toSorted(([a], [b]) => typeRank(a) - typeRank(b) || a.localeCompare(b))
     .map(([type, es]) => ({ type, entries: es.toSorted((a, b) => energy(a) - energy(b) || name(a).localeCompare(name(b))) }));
 }
-
-export const CURVE_TOP = 7;
-
-/** The main deck's copies per energy cost, 0 to 7+; cards without a cost are left out. */
-export function energyCurve(entries: Entry[], cards: Map<string, Sortable>): { energy: string; count: number }[] {
-  const counts = Array<number>(CURVE_TOP + 1).fill(0);
-  for (const e of entries) {
-    const energy = cards.get(e.card_id)?.energy;
-    if (e.section === "main" && energy != null) counts[Math.min(energy, CURVE_TOP)] += e.quantity;
-  }
-  return counts.map((count, i) => ({ energy: i === CURVE_TOP ? `${CURVE_TOP}+` : String(i), count }));
-}
