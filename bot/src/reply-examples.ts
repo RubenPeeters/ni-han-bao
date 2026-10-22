@@ -116,7 +116,7 @@ export function replyExamples(): Record<string, ReplyExample> {
     ),
     "deck-share": reply(
       "/deck share",
-      deckMessage(deck, deckEntries, catalogue, catalogue.icons, emojiIds, "Anna", 5, SITE),
+      deckMessage(deck, deckEntries, catalogue, catalogue.icons, emojiIds, "Anna", SITE),
       { emojis: Object.fromEntries(emojis.map((e) => [e.name, e.url])) },
     ),
     "collection-add": reply(

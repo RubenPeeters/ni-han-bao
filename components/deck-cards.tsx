@@ -3,7 +3,8 @@
 import type { Card, Printing } from "@/bot/src/card-match";
 import { CardThumb } from "@/components/card-thumb";
 import { TypeIcon, type RiftboundIcon } from "@/components/riftbound-icons";
-import { byType, energyCurve, SECTIONS, type Entry } from "@/lib/decks";
+import { energyCurve } from "@/bot/src/deck-match";
+import { byType, SECTIONS, type Entry } from "@/lib/decks";
 import Link from "next/link";
 
 export type CardImage = (card_id: string, printing_id: string | null) => string | null;

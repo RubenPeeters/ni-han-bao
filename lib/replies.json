@@ -235,24 +235,6 @@
                     "url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/fabbcc2f83f397cf07299236a702db05a151053b-744x1039.png?accountingTag=RB&w=300&fm=webp&q=75"
                   },
                   "description": "Ahri, Alluring"
-                },
-                {
-                  "media": {
-                    "url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/7447b04d1e78192509e89e5ff3556368ea5c471a-1039x744.png?accountingTag=RB&w=420&fm=webp&q=75"
-                  },
-                  "description": "Abandoned Hall"
-                },
-                {
-                  "media": {
-                    "url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/2392529560dc9af72596c6fc65b4c0356bbc44d1-1038x744.png?accountingTag=RB&w=420&fm=webp&q=75"
-                  },
-                  "description": "Altar to Unity"
-                },
-                {
-                  "media": {
-                    "url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/9301593f3800e68427469d38181b578a672473c3-1038x744.png?accountingTag=RB&w=420&fm=webp&q=75"
-                  },
-                  "description": "Aspirant's Climb"
                 }
               ]
             },
@@ -263,7 +245,7 @@
             },
             {
               "type": 10,
-              "content": "**<:rb_unit:900000000000000319> Unit** (31)\n3× Apprentice Smith <:rb_calm:900000000000000301> · **2**\n3× Affectionate Poro <:rb_calm:900000000000000301> · **3**\n3× Allay, Eager Admirer <:rb_calm:900000000000000301> · **3**\n3× Apprentice Mage <:rb_mind:900000000000000304> · **3**\n3× Aspiring Engineer <:rb_mind:900000000000000304> · **3**\n3× Adaptatron <:rb_calm:900000000000000301> · **4**\n3× Applied Researchers <:rb_mind:900000000000000304> · **4**\n1× Ahri, Alluring <:rb_calm:900000000000000301> · **5**\n3× Ava Achiever <:rb_mind:900000000000000304> · **5**\n3× Alpha Wildclaw <:rb_calm:900000000000000301> · **6**\n3× Astral Heron <:rb_calm:900000000000000301> · **7**\n**<:rb_spell:900000000000000318> Spell** (9)\n3× Bellows Breath <:rb_mind:900000000000000304> · **1**\n3× Battle Preparations <:rb_calm:900000000000000301> · **2**\n3× Back Off <:rb_calm:900000000000000301> · **3**\n**<:rb_rune:900000000000000317> Runes** (12)\n6× Calm Rune <:rb_calm:900000000000000301>\n6× Mind Rune <:rb_mind:900000000000000304>\n**<:rb_battlefield:900000000000000314> Battlefields** (3)\n1× Abandoned Hall\n1× Altar to Unity\n1× Aspirant's Climb"
+              "content": "**Energy curve**\n```\n0  ▏ 0\n1  ███ 3\n2  ██████ 6\n3  ████████████████ 15\n4  ██████ 6\n5  ████ 4\n6  ███ 3\n7+ ███ 3\n```"
             },
             {
               "type": 14,
@@ -272,7 +254,7 @@
             },
             {
               "type": 10,
-              "content": "-# Anna is missing 5 cards · Rules check passed"
+              "content": "-# 40 cards in the main deck"
             }
           ]
         },

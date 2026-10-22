@@ -1,6 +1,6 @@
 // /deck share (#175): one of a member's Riftbound decks posted in the channel, with a link to its
 // page. Decks are built on the site; a private one is made visible first. In Discord's
-// components since #225: card images, the list by type, Riot's icons as emojis.
+// components since #225: card images, Riot's icons as emojis; a teaser with the energy curve since #251.
 
 import {
   type APIActionRowComponent,
@@ -16,9 +16,9 @@ import {
   SeparatorSpacingSize,
 } from "discord.js";
 import { type Card, type Catalogue } from "./card-match.js";
-import { DECK_SECTIONS, deckWarnings, type DeckEntry } from "./deck-match.js";
-import { emoji, type Emojis } from "./emojis.js";
-import { accentColor, imageOf, labelled, MAX_TEXT } from "./riftbound-reply.js";
+import { energyCurve, type DeckEntry } from "./deck-match.js";
+import { type Emojis } from "./emojis.js";
+import { accentColor, imageOf, labelled } from "./riftbound-reply.js";
 import { escapeMarkdown } from "./stores.js";
 
 export const DECK_COMMAND = {
@@ -103,16 +103,22 @@ export function canSeeDeck(owner: string, visibility: string, viewer: string, me
   return memberships.some((m) => m.user_id === viewer && ownerGuilds.has(m.guild_id));
 }
 
-// Media galleries take up to 10 images.
-const GALLERY_MAX = 10;
-// Riftbound's main deck types in the order a decklist reads, as on the deck page; any other type follows by name.
-const TYPE_ORDER = ["Unit", "Spell", "Gear"];
-const typeRank = (type: string) => (TYPE_ORDER.includes(type) ? TYPE_ORDER.indexOf(type) : TYPE_ORDER.length);
+// The longest bar's blocks: the code block still fits a phone's width.
+const BAR_WIDTH = 16;
+
+/** The energy curve as text bars, one row per bucket, the longest bar BAR_WIDTH blocks; an empty bucket is a sliver. */
+export function curveBars(curve: { energy: string; count: number }[]): string {
+  const top = Math.max(0, ...curve.map((b) => b.count));
+  const label = Math.max(0, ...curve.map((b) => b.energy.length)) + 1;
+  return curve
+    .map((b) => `${b.energy.padEnd(label)}${b.count ? "█".repeat(Math.max(1, Math.round((b.count / top) * BAR_WIDTH))) : "▏"} ${b.count}`)
+    .join("\n");
+}
 
 /**
- * The shared deck: the Legend's colour and domains, the Legend, Chosen Champion and battlefields
- * as pictures, the main deck by type then runes, battlefields and sideboard, "3× Card Name" by
- * energy, the sharer's missing count, the rules check, and buttons to open or copy the deck.
+ * The shared deck as a teaser, the full list being on its page: the Legend's colour and domains,
+ * the Legend and Chosen Champion as pictures, the main deck's energy curve and card count, and
+ * buttons to open or copy the deck.
  */
 export function deckMessage(
   deck: SharedDeck,
@@ -121,76 +127,28 @@ export function deckMessage(
   icons: Icons,
   emojis: Emojis,
   sharer: string,
-  missing: number,
   siteUrl: string | null,
 ): V2 {
   const cards = new Map(catalogue.cards.map((c) => [c.id, c]));
-  const name = (id: string) => escapeMarkdown(cards.get(id)?.name ?? id);
   const legend = deck.legend_id ? cards.get(deck.legend_id) : undefined;
   const champion = deck.champion_id ? cards.get(deck.champion_id) : undefined;
   const page = siteUrl ? `${siteUrl.replace(/\/$/, "")}/decks/${deck.id}` : null;
   const legendCode = catalogue.printings.find((p) => p.id === deck.legend_printing_id)?.collector_code;
 
-  // Pinned printings of a card are one line: the reply counts cards, the page shows the pins.
-  const counts = (section: string) => {
-    const n = new Map<string, number>();
-    for (const e of entries) if (e.section === section) n.set(e.card_id, (n.get(e.card_id) ?? 0) + e.quantity);
-    return [...n];
-  };
-  const groups: { heading: string; cards: [string, number][] }[] = [];
-  const typeOf = (id: string) => cards.get(id)?.type || "Other";
-  const types = [...new Set(counts("main").map(([id]) => typeOf(id)))].sort((a, b) => typeRank(a) - typeRank(b) || a.localeCompare(b));
-  for (const type of types) groups.push({ heading: labelled(emojis, type), cards: counts("main").filter(([id]) => typeOf(id) === type) });
-  for (const { value, label } of DECK_SECTIONS.slice(1)) {
-    const icon = value === "runes" ? emoji(emojis, "rb_rune") : value === "battlefields" ? emoji(emojis, "rb_battlefield") : null;
-    groups.push({ heading: icon ? `${icon} ${label}` : label, cards: counts(value) });
-  }
-  const energy = (id: string) => cards.get(id)?.energy ?? Infinity;
-  const lines: { text: string; cards: number }[] = groups
-    .filter((g) => g.cards.length)
-    .flatMap((g) => [
-      { text: `**${g.heading}** (${g.cards.reduce((n, [, q]) => n + q, 0)})`, cards: 0 },
-      ...g.cards
-        .sort(([a], [b]) => energy(a) - energy(b) || name(a).localeCompare(name(b)))
-        .map(([id, n]) => {
-          const card = cards.get(id);
-          const domains = (card?.domains ?? []).map((d) => emoji(emojis, `rb_${d.toLowerCase()}`)).filter(Boolean).join("");
-          const cost = card?.energy == null ? "" : ` · **${card.energy}**`;
-          return { text: `${n}× ${name(id)}${domains ? ` ${domains}` : ""}${cost}`, cards: n };
-        }),
-    ]);
-
   const header = [
     `### ${escapeMarkdown(deck.name)}`,
     [`Shared by ${escapeMarkdown(sharer)}`, legend?.domains.map((d) => labelled(emojis, d)).join(" ")].filter(Boolean).join(" · "),
-    `Legend: ${legend ? escapeMarkdown([...legend.tags.slice(0, 1), legend.name].join(", ")) + (legendCode ? ` (${escapeMarkdown(legendCode)})` : "") : "none yet"} · Chosen Champion: ${champion ? name(champion.id) : "none yet"}`,
+    `Legend: ${legend ? escapeMarkdown([...legend.tags.slice(0, 1), legend.name].join(", ")) + (legendCode ? ` (${escapeMarkdown(legendCode)})` : "") : "none yet"} · Chosen Champion: ${champion ? escapeMarkdown(champion.name) : "none yet"}`,
   ].join("\n");
-  const warnings = deckWarnings(deck, entries, cards).length;
-  const footer = [
-    missing ? `${sharer} is missing ${missing} ${missing === 1 ? "card" : "cards"}` : `${sharer} owns every card`,
-    warnings ? `${warnings} rules ${warnings === 1 ? "warning" : "warnings"}${page ? ": see the deck's page" : ""}` : "Rules check passed",
-  ].join(" · ");
+  const main = entries.filter((e) => e.section === "main").reduce((n, e) => n + e.quantity, 0);
+  const curve = energyCurve(entries, cards);
 
-  const pictures = [legend, champion, ...counts("battlefields").map(([id]) => cards.get(id))]
+  const pictures = [legend, champion]
     .filter((c): c is Card => !!c)
     .flatMap((c): APIMediaGalleryItem[] => {
       const url = imageOf(catalogue, c, 300, c === legend ? deck.legend_printing_id : null);
       return url ? [{ media: { url }, description: c.name }] : [];
-    })
-    .slice(0, GALLERY_MAX);
-
-  // Gallery descriptions and button labels count towards the limit too.
-  const budget = MAX_TEXT - header.length - footer.length - pictures.reduce((n, p) => n + (p.description?.length ?? 0), 0) - 50;
-  const more = (n: number) => `and ${n} more ${n === 1 ? "card" : "cards"}${page ? `: ${page}` : ""}`;
-  let kept = lines.length;
-  const list = () => {
-    const left = lines.slice(kept).reduce((n, l) => n + l.cards, 0);
-    // A heading with none of its cards shown goes too.
-    const shown = lines.slice(0, kept);
-    while (shown.length && shown[shown.length - 1].cards === 0) shown.pop();
-    return [...shown.map((l) => l.text), ...(left ? [more(left)] : [])].join("\n");
-  };
-  while (kept > 0 && list().length > budget) kept--;
+    });
 
   const separator = { type: ComponentType.Separator, divider: true, spacing: SeparatorSpacingSize.Small } as const;
   const container: APIContainerComponent = {
@@ -199,9 +157,9 @@ export function deckMessage(
     components: [
       text(header),
       ...(pictures.length ? [{ type: ComponentType.MediaGallery as const, items: pictures }] : []),
-      ...(lines.length ? [separator, text(list())] : []),
+      ...(curve.some((b) => b.count) ? [separator, text(`**Energy curve**\n\`\`\`\n${curveBars(curve)}\n\`\`\``)] : []),
       separator,
-      text(`-# ${escapeMarkdown(footer)}`),
+      text(`-# ${main} ${main === 1 ? "card" : "cards"} in the main deck`),
     ],
   };
   const buttons: APIActionRowComponent<APIButtonComponent> = {

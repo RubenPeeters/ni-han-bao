@@ -95,7 +95,7 @@ import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type
 import { rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
 import { addToCollection, COLLECTION_COMMAND, setLending } from "./collection.js";
-import { deckText, missingCards, type DeckEntry, type OwnedCopy } from "./deck-match.js";
+import { deckText, type DeckEntry, type OwnedCopy } from "./deck-match.js";
 import { canSeeDeck, DECK_COMMAND, deckMessage, parseCopyButtonId, privatePrompt, SHARE_CANCEL_ID, SHARE_PUBLIC_ID, textMessage, type SharedDeck } from "./decks.js";
 import {
   answerReply,
@@ -1076,7 +1076,7 @@ async function returnCommand(interaction: ChatInputCommandInteraction<"cached">)
 
 const SHARE_PROMPT_MS = 60_000;
 
-/** A member's copies, for missingCards(), a page at a time: PostgREST caps a response at 1000 rows. */
+/** A member's copies, for /collection share, a page at a time: PostgREST caps a response at 1000 rows. */
 async function ownedCopies(userId: string): Promise<OwnedCopy[]> {
   const copies: OwnedCopy[] = [];
   for (let from = 0, size = 1000; ; from += size) {
@@ -1133,10 +1133,9 @@ async function deckCommand(interaction: ChatInputCommandInteraction): Promise<vo
         .eq("user_id", interaction.user.id);
       if (error) throw new Error(`riftbound_decks update: ${error.message}`);
     }
-    const { missing } = missingCards(deck, entries, await ownedCopies(interaction.user.id));
     await interaction.editReply(textMessage(`Shared, ${deck.visibility === "public" ? "public" : "for your servers' members"}.`));
     await interaction.followUp({
-      ...feedback(deckMessage(deck, entries, catalogue, icons, emojis, callerName(interaction.member, interaction.user), missing, config.siteUrl), "deck", deck.id),
+      ...feedback(deckMessage(deck, entries, catalogue, icons, emojis, callerName(interaction.member, interaction.user), config.siteUrl), "deck", deck.id),
       allowedMentions: { parse: [] },
     });
   } catch (err) {
