@@ -306,7 +306,7 @@ export async function DeckDetail({ id }: { id: string }) {
             <DeckLending
               deckId={id}
               notForLending={not_for_lending}
-              wanted={deckWanted({ cards: cards.data as Card[] }, { legend_id: rest.legend_id, entries: entries.data as Entry[] })}
+              wanted={deckWanted({ cards: cards.data as Card[] }, { legend_id: rest.legend_id, legend_printing_id: rest.legend_printing_id, entries: entries.data as Entry[] })}
               members={members.error ? [] : borrowers}
             />
           )}

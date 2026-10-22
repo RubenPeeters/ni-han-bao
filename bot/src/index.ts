@@ -940,10 +940,10 @@ async function lendCommand(interaction: ChatInputCommandInteraction<"cached">): 
 async function lenderDeck(
   lender: string,
   typed: string,
-): Promise<{ id: string; name: string; legend_id: string | null; entries: { card_id: string; quantity: number }[]; not_for_lending: boolean } | string> {
+): Promise<{ id: string; name: string; legend_id: string | null; legend_printing_id: string | null; entries: { card_id: string; quantity: number }[]; not_for_lending: boolean } | string> {
   const { data, error } = await db
     .from("riftbound_decks")
-    .select("id, name, legend_id, not_for_lending, entries:riftbound_deck_cards(card_id, quantity)")
+    .select("id, name, legend_id, legend_printing_id, not_for_lending, entries:riftbound_deck_cards(card_id, quantity)")
     .eq("user_id", lender);
   if (error) throw new Error(`riftbound_decks select: ${error.message}`);
   const named = data.filter((d) => d.id === typed || d.name.toLowerCase() === typed.toLowerCase());
