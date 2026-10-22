@@ -6,6 +6,8 @@ import type { Card, Catalogue } from "./card-match.js";
 export interface Wanted {
   card: Card;
   count: number;
+  /** Only copies of this printing: a deck's pinned Legend. */
+  printing?: string | null;
 }
 
 /** A row of riftbound_lend_options(): one of the lender's collection rows of a wanted card. */
@@ -34,9 +36,9 @@ export type LoanCard = Pick<CopyRow, "printing_id" | "finish" | "condition" | "l
 export function pickCopies(rows: CopyRow[], wanted: Wanted[]): { cards: LoanCard[]; unmarked: number } | string {
   const cards: LoanCard[] = [];
   let unmarked = 0;
-  for (const { card, count } of wanted) {
+  for (const { card, count, printing } of wanted) {
     const free = rows
-      .filter((r) => r.card_id === card.id)
+      .filter((r) => r.card_id === card.id && (!printing || r.printing_id === printing))
       .sort((a, b) => `${a.printing_id} ${a.finish} ${a.language} ${a.condition}`.localeCompare(`${b.printing_id} ${b.finish} ${b.language} ${b.condition}`))
       .map((row) => {
         const inHand = Math.max(row.quantity - row.lent, 0);
@@ -46,7 +48,7 @@ export function pickCopies(rows: CopyRow[], wanted: Wanted[]): { cards: LoanCard
       });
     const inHand = free.reduce((n, f) => n + f.marked + f.rest, 0);
     if (inHand < count) {
-      return `You have ${inHand ? `only ${inHand}` : "no"} ${card.name} to lend: that counts the copies in your collection (/collection add) that are not out on a loan.`;
+      return `You have ${inHand ? `only ${inHand}` : "no"} ${card.name}${printing ? " in the deck's printing" : ""} to lend: that counts the copies in your collection (/collection add) that are not out on a loan.`;
     }
     // The held copies are the in-hand ones left after the marked: as riftbound_free_to_lend().
     let markable = Math.max(inHand - (free[0]?.row.held ?? 0), 0);
@@ -73,13 +75,13 @@ export function pickCopies(rows: CopyRow[], wanted: Wanted[]): { cards: LoanCard
 }
 
 /**
- * A deck lent whole: its Legend and every entry, per card. shortcut: pinned printings and the
- * deck's language are not kept, the loan takes whichever copies the lender has; honour them
- * when someone lends a deck that relies on them.
+ * A deck lent whole: its Legend (in its pinned printing, if any) and every entry, per card.
+ * shortcut: the entries' pinned printings and the deck's language are not kept, the loan takes
+ * whichever copies the lender has; honour them when someone lends a deck that relies on them.
  */
 export function deckWanted(
   catalogue: Pick<Catalogue, "cards">,
-  deck: { legend_id: string | null; entries: { card_id: string; quantity: number }[] },
+  deck: { legend_id: string | null; legend_printing_id?: string | null; entries: { card_id: string; quantity: number }[] },
 ): Wanted[] | string {
   const counts = new Map<string, number>();
   for (const e of [...(deck.legend_id ? [{ card_id: deck.legend_id, quantity: 1 }] : []), ...deck.entries]) {
@@ -90,7 +92,7 @@ export function deckWanted(
   for (const [id, count] of counts) {
     const card = catalogue.cards.find((c) => c.id === id);
     if (!card) return "That deck has a card that is no longer in the catalogue: save it again first.";
-    wanted.push({ card, count });
+    wanted.push({ card, count, printing: id === deck.legend_id ? deck.legend_printing_id : null });
   }
   return wanted;
 }

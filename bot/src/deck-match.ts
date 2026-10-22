@@ -29,7 +29,7 @@ export interface Owning extends DeckEntry {
  * first, unpinned ones any printing left. With other languages off, only the deck's language counts.
  */
 export function missingCards(
-  deck: { legend_id: string | null; language: string; allow_other_languages: boolean },
+  deck: { legend_id: string | null; legend_printing_id: string | null; language: string; allow_other_languages: boolean },
   entries: DeckEntry[],
   owned: OwnedCopy[],
 ): { rows: Owning[]; missing: number } {
@@ -46,7 +46,7 @@ export function missingCards(
     return n;
   };
   const needs: Omit<Owning, "owned">[] = [
-    ...(deck.legend_id ? [{ section: "legend" as const, card_id: deck.legend_id, printing_id: null, quantity: 1 }] : []),
+    ...(deck.legend_id ? [{ section: "legend" as const, card_id: deck.legend_id, printing_id: deck.legend_printing_id, quantity: 1 }] : []),
     ...entries,
   ];
   const got = needs.map((n) => (n.printing_id ? take(n.printing_id, n.quantity) : 0));
