@@ -36,6 +36,7 @@ export interface Deck {
   id: string;
   name: string;
   legend_id: string | null;
+  legend_printing_id: string | null;
   champion_id: string | null;
   notes: string;
   visibility: string;
@@ -103,6 +104,7 @@ export function DeckEditor({
   const printings = useMemo(() => Map.groupBy(catalogue.printings, (p) => p.card_id), [catalogue]);
   const legends = useMemo(() => catalogue.cards.filter((c) => c.type === "Legend").toSorted((a, b) => legendLabel(a).localeCompare(legendLabel(b))), [catalogue]);
   const legend = settings.legend_id ? cards.get(settings.legend_id) : undefined;
+  const legendPrintings = (legend && printings.get(legend.id)) ?? [];
   const champions = catalogue.cards.filter((c) => c.supertypes.includes("Champion") && (!legend || championOf(legend, c)));
   const warnings = deckWarnings(settings, list, cards);
   const missing = missingCards(settings, list, owned);
@@ -122,11 +124,16 @@ export function DeckEditor({
     setDirty(true);
   };
   const apply = (next: DeckCards) => {
-    setSettings((s) => ({ ...s, legend_id: next.legend_id, champion_id: next.champion_id }));
+    setSettings((s) => ({ ...s, legend_id: next.legend_id, legend_printing_id: next.legend_printing_id, champion_id: next.champion_id }));
     setList(next.entries);
     setDirty(true);
   };
-  const current: DeckCards = { legend_id: settings.legend_id, champion_id: settings.champion_id, entries: list };
+  const current: DeckCards = {
+    legend_id: settings.legend_id,
+    legend_printing_id: settings.legend_printing_id,
+    champion_id: settings.champion_id,
+    entries: list,
+  };
 
   const q = normal(query);
   const found = findCards(catalogue, query).slice(0, SEARCH_RESULTS);
@@ -164,6 +171,7 @@ export function DeckEditor({
       p_allow_other_languages: settings.allow_other_languages,
       p_entries: list,
       p_wishlist_mode: settings.wishlist_mode,
+      p_legend_printing: settings.legend_printing_id,
     });
     if (error) return setStatus(`Not saved (${error.message}). Try again.`);
     setDirty(false);
@@ -198,7 +206,7 @@ export function DeckEditor({
         </Link>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
           <div className="flex gap-3">
-            <CardFigure label="Legend" card={legend} image={image} />
+            <CardFigure label="Legend" card={legend} printing={settings.legend_printing_id} image={image} />
             <CardFigure label="Chosen Champion" card={champion} image={image} />
           </div>
           <div className="flex min-w-0 flex-col gap-2">
@@ -404,17 +412,35 @@ export function DeckEditor({
               Name
               <Input value={settings.name} maxLength={100} onChange={(e) => change({ name: e.target.value })} className="h-11 text-base md:text-base" />
             </label>
-            <label className="flex flex-col gap-2 text-sm font-medium">
-              Legend
-              <select value={settings.legend_id ?? ""} onChange={(e) => change({ legend_id: e.target.value || null })} className={field}>
-                <option value="">No Legend yet</option>
-                {legends.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {legendLabel(c)}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="flex flex-col gap-2">
+              <label className="flex flex-col gap-2 text-sm font-medium">
+                Legend
+                {/* Another Legend starts at any printing: the pin was of the one before. */}
+                <select value={settings.legend_id ?? ""} onChange={(e) => change({ legend_id: e.target.value || null, legend_printing_id: null })} className={field}>
+                  <option value="">No Legend yet</option>
+                  {legends.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {legendLabel(c)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {legend && legendPrintings.length > 1 && (
+                <select
+                  aria-label={`Printing of ${legend.name}`}
+                  value={settings.legend_printing_id ?? ""}
+                  onChange={(e) => change({ legend_printing_id: e.target.value || null })}
+                  className={field}
+                >
+                  <option value="">Any printing</option>
+                  {legendPrintings.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      Only {p.collector_code}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
             <label className="flex flex-col gap-2 text-sm font-medium">
               Chosen Champion
               <select
@@ -689,6 +715,7 @@ export function RestoreVersion({ deck, entries, version }: { deck: Deck; entries
       p_language: deck.language,
       p_allow_other_languages: deck.allow_other_languages,
       p_entries: entries,
+      p_legend_printing: deck.legend_printing_id,
     });
     if (error) return setStatus(`Not restored (${error.message}). Try again.`);
     router.push(`/decks/${deck.id}`);

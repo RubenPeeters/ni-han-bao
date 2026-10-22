@@ -47,8 +47,9 @@ async function ownedCopies(supabase: Awaited<ReturnType<typeof createClient>>) {
 
 // A card's printings for its thumbnail, as on the deck page: the first by collector number with an image.
 const THUMB = "printings:riftbound_printings(image_url, collector_number)";
-const DECK = `id, user_id, name, visibility, not_for_lending, legend_id, language, allow_other_languages, updated_at,
+const DECK = `id, user_id, name, visibility, not_for_lending, legend_id, legend_printing_id, language, allow_other_languages, updated_at,
   legend:riftbound_cards!legend_id(name, tags, domains, ${THUMB}), champion:riftbound_cards!champion_id(name, ${THUMB}),
+  legend_printing:riftbound_printings!riftbound_decks_legend_printing(image_url),
   cards:riftbound_deck_cards(section, card_id, printing_id, quantity)`;
 type Thumbed = { printings: { image_url: string | null; collector_number: number }[] };
 const thumbOf = (card: Thumbed | null) =>
@@ -60,21 +61,23 @@ type ListedDeck = {
   visibility: string;
   not_for_lending: boolean;
   legend_id: string | null;
+  legend_printing_id: string | null;
   language: string;
   allow_other_languages: boolean;
   updated_at: string;
   legend: ({ name: string; tags: string[]; domains: string[] } & Thumbed) | null;
   champion: ({ name: string } & Thumbed) | null;
+  legend_printing: { image_url: string | null } | null;
   cards: Entry[];
 };
 
 const legendName = (d: ListedDeck) => (d.legend ? `${d.legend.tags.join(", ")}, ${d.legend.name}` : "No Legend yet");
 
-/** A deck's Legend, cropped to its art; an empty frame without one. */
+/** A deck's Legend, cropped to its art (its pinned printing's, if any); an empty frame without one. */
 function LegendArt({ deck, className }: { deck: ListedDeck; className: string }) {
   return (
     <span className={cn("shrink-0", className)}>
-      <CardThumb url={thumbOf(deck.legend)} name="" width={160} art />
+      <CardThumb url={deck.legend_printing?.image_url ?? thumbOf(deck.legend)} name="" width={160} art />
     </span>
   );
 }
@@ -222,7 +225,7 @@ export async function DeckDetail({ id }: { id: string }) {
   const [deck, entries, cards, printings, me, owned, versions, icons] = await Promise.all([
     supabase
       .from("riftbound_decks")
-      .select("id, user_id, name, legend_id, champion_id, notes, visibility, language, allow_other_languages, wishlist_mode, not_for_lending")
+      .select("id, user_id, name, legend_id, legend_printing_id, champion_id, notes, visibility, language, allow_other_languages, wishlist_mode, not_for_lending")
       .eq("id", id)
       .maybeSingle(),
     supabase.from("riftbound_deck_cards").select("section, card_id, printing_id, quantity").eq("deck_id", id),
@@ -436,7 +439,7 @@ const versionList = (supabase: Awaited<ReturnType<typeof createClient>>, id: str
     supabase.from("riftbound_deck_versions").select("version, saved_at").eq("deck_id", id).order("version", { ascending: false }).range(from, to),
   );
 
-const VERSION = "version, saved_at, name, legend_id, champion_id, notes, language, allow_other_languages, entries";
+const VERSION = "version, saved_at, name, legend_id, legend_printing_id, champion_id, notes, language, allow_other_languages, entries";
 type SavedVersion = Omit<Deck, "id" | "visibility" | "wishlist_mode"> & VersionListed & { entries: Entry[] };
 
 const pinText = (pins: Pin[], codes: Map<string, string>) =>

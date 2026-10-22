@@ -1063,7 +1063,7 @@ async function deckCommand(interaction: ChatInputCommandInteraction<"cached">): 
     const typed = interaction.options.getString("deck", true).trim();
     const { data, error } = await db
       .from("riftbound_decks")
-      .select("id, name, legend_id, champion_id, visibility, language, allow_other_languages, entries:riftbound_deck_cards(section, card_id, printing_id, quantity)")
+      .select("id, name, legend_id, legend_printing_id, champion_id, visibility, language, allow_other_languages, entries:riftbound_deck_cards(section, card_id, printing_id, quantity)")
       .eq("user_id", interaction.user.id);
     if (error) throw new Error(`riftbound_decks select: ${error.message}`);
     // A picked suggestion is the deck's id; a typed name must be exactly one of theirs.
@@ -1077,7 +1077,7 @@ async function deckCommand(interaction: ChatInputCommandInteraction<"cached">): 
     const { entries, ...deck } = named[0];
     if (deck.visibility === "private") {
       const legend = catalogue.cards.find((c) => c.id === deck.legend_id) ?? null;
-      const prompt = await interaction.editReply(privatePrompt(deck.name, legend, catalogue));
+      const prompt = await interaction.editReply(privatePrompt(deck.name, legend, catalogue, deck.legend_printing_id));
       // Timed out: the same as Cancel.
       const click = await prompt.awaitMessageComponent({ filter: (i) => i.user.id === interaction.user.id, time: SHARE_PROMPT_MS }).catch(() => null);
       if (click) await click.deferUpdate();

@@ -16,7 +16,7 @@ describe("missingCards", () => {
       { section: "sideboard", card_id: "a", printing_id: "a1", quantity: 2 },
       { section: "main", card_id: "b", printing_id: null, quantity: 1 },
     ];
-    const deck = { legend_id: "l", language: "en", allow_other_languages: true };
+    const deck = { legend_id: "l", legend_printing_id: null, language: "en", allow_other_languages: true };
     const any = missingCards(deck, entries, owned);
     expect(any.rows.map((r) => [r.section, r.card_id, r.owned])).toEqual([
       ["legend", "l", 1],
@@ -29,6 +29,10 @@ describe("missingCards", () => {
     expect(english.rows.map((r) => r.owned)).toEqual([1, 0, 2, 0]);
     expect(english.missing).toBe(4);
     expect(missingCards({ ...deck, legend_id: null }, [], owned).missing).toBe(0);
+    // A pinned Legend takes only its printing.
+    expect(missingCards({ ...deck, legend_printing_id: "l2" }, [], owned).rows).toEqual([
+      { section: "legend", card_id: "l", printing_id: "l2", quantity: 1, owned: 0 },
+    ]);
   });
 });
 
@@ -51,7 +55,7 @@ describe("deckMessage", () => {
   const printings = [printing("l", "https://cdn.test/l.png"), printing("a", "https://cdn.test/a.png"), printing("f", "https://cdn.test/f.png")];
   const icons = [{ facet: "domain", label: "Calm", color_primary: "#152311" }];
   const emojis = new Map([["rb_calm", "1"], ["rb_mind", "2"], ["rb_unit", "3"], ["rb_rune", "4"]]);
-  const deck = { id: "d1", name: "Foxy", legend_id: "l", champion_id: "a", visibility: "servers", language: "en", allow_other_languages: true };
+  const deck = { id: "d1", name: "Foxy", legend_id: "l", legend_printing_id: null, champion_id: "a", visibility: "servers", language: "en", allow_other_languages: true };
   const entries = [
     { section: "main", card_id: "b", printing_id: null, quantity: 2 },
     { section: "main", card_id: "a", printing_id: null, quantity: 1 },
@@ -91,6 +95,16 @@ describe("deckMessage", () => {
     ]);
     expect(parseCopyButtonId("deck-copy:d1")).toBe("d1");
     expect(parseCopyButtonId("deck-share:public")).toBeNull();
+  });
+
+  it("shows a pinned Legend's printing, its picture and collector code", () => {
+    const alt = { ...printing("l", "https://cdn.test/l-alt.png"), id: "l2", collector_code: "OGN-l*", collector_number: 2 };
+    const { components } = deckMessage({ ...deck, legend_printing_id: "l2" }, entries, { cards, printings: [...printings, alt] }, icons, emojis, "Anna", 0, null);
+    expect(texts(components[0])[0]).toContain("Legend: Ahri, Nine-Tailed Fox (OGN-l\\*)");
+    expect(JSON.stringify(components)).toContain("cdn.test/l-alt.png");
+    expect(JSON.stringify(components)).not.toContain("cdn.test/l.png");
+    const prompt = privatePrompt("Foxy", cards[0], { printings: [...printings, alt] }, "l2");
+    expect(prompt.components[0]).toMatchObject({ accessory: { media: { url: expect.stringContaining("cdn.test/l-alt.png") } } });
   });
 
   it("cuts a long list to Discord's limit with how many more cards, and passes a legal deck", () => {

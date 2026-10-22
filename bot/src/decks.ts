@@ -46,6 +46,8 @@ export interface SharedDeck {
   id: string;
   name: string;
   legend_id: string | null;
+  /** The Legend's pinned printing; null for any. */
+  legend_printing_id: string | null;
   champion_id: string | null;
   visibility: string;
   language: string;
@@ -64,8 +66,8 @@ const text = (content: string): APITextDisplayComponent => ({ type: ComponentTyp
 /** A reply in Discord's components: once a message has them, every edit of it must too. */
 export const textMessage = (content: string): V2 => ({ components: [text(content)], flags: MessageFlags.IsComponentsV2 });
 
-/** A private deck: nobody else could open its link, so who may see it is asked first, by its Legend's picture. */
-export function privatePrompt(name: string, legend: Card | null, catalogue: Pick<Catalogue, "printings">): V2 {
+/** A private deck: nobody else could open its link, so who may see it is asked first, by its Legend's picture (its pinned printing's, if any). */
+export function privatePrompt(name: string, legend: Card | null, catalogue: Pick<Catalogue, "printings">, printingId: string | null = null): V2 {
   const row: APIActionRowComponent<APIButtonComponent> = {
     type: ComponentType.ActionRow,
     components: [
@@ -75,7 +77,7 @@ export function privatePrompt(name: string, legend: Card | null, catalogue: Pick
     ],
   };
   const question = text(`**${escapeMarkdown(name)}** is private, so nobody else could open it. Who may see it?`);
-  const image = legend && imageOf(catalogue, legend, 160);
+  const image = legend && imageOf(catalogue, legend, 160, printingId);
   return {
     components: [
       image ? { type: ComponentType.Section, components: [question], accessory: { type: ComponentType.Thumbnail, media: { url: image }, description: legend.name } } : question,
@@ -127,6 +129,7 @@ export function deckMessage(
   const legend = deck.legend_id ? cards.get(deck.legend_id) : undefined;
   const champion = deck.champion_id ? cards.get(deck.champion_id) : undefined;
   const page = siteUrl ? `${siteUrl.replace(/\/$/, "")}/decks/${deck.id}` : null;
+  const legendCode = catalogue.printings.find((p) => p.id === deck.legend_printing_id)?.collector_code;
 
   // Pinned printings of a card are one line: the reply counts cards, the page shows the pins.
   const counts = (section: string) => {
@@ -160,7 +163,7 @@ export function deckMessage(
   const header = [
     `### ${escapeMarkdown(deck.name)}`,
     [`Shared by ${escapeMarkdown(sharer)}`, legend?.domains.map((d) => labelled(emojis, d)).join(" ")].filter(Boolean).join(" · "),
-    `Legend: ${legend ? escapeMarkdown([...legend.tags.slice(0, 1), legend.name].join(", ")) : "none yet"} · Chosen Champion: ${champion ? name(champion.id) : "none yet"}`,
+    `Legend: ${legend ? escapeMarkdown([...legend.tags.slice(0, 1), legend.name].join(", ")) + (legendCode ? ` (${escapeMarkdown(legendCode)})` : "") : "none yet"} · Chosen Champion: ${champion ? name(champion.id) : "none yet"}`,
   ].join("\n");
   const warnings = deckWarnings(deck, entries, cards).length;
   const footer = [
@@ -171,7 +174,7 @@ export function deckMessage(
   const pictures = [legend, champion, ...counts("battlefields").map(([id]) => cards.get(id))]
     .filter((c): c is Card => !!c)
     .flatMap((c): APIMediaGalleryItem[] => {
-      const url = imageOf(catalogue, c, 300);
+      const url = imageOf(catalogue, c, 300, c === legend ? deck.legend_printing_id : null);
       return url ? [{ media: { url }, description: c.name }] : [];
     })
     .slice(0, GALLERY_MAX);
