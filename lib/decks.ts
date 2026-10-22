@@ -90,18 +90,20 @@ export function withoutLine(text: string, line: string): string {
 
 export interface DeckCards {
   legend_id: string | null;
+  /** Pinned: only this printing of the Legend satisfies the deck. */
+  legend_printing_id: string | null;
   champion_id: string | null;
   entries: Entry[];
 }
 
 /**
- * A searched or pasted card into the deck: a legend becomes its Legend, anything else goes in
+ * A searched or pasted card into the deck: a legend becomes its Legend (another one at any printing), anything else goes in
  * by type (the sideboard if listed under that heading). Listed under "Champion:", a Champion
  * unit also becomes the Chosen Champion; the rules check whether it matches the Legend.
  */
 export function addCard(deck: DeckCards, card: RuleCard, quantity: number, heading: string | null = null): DeckCards {
   const section = heading === "sideboard" ? "sideboard" : sectionFor(card.type);
-  if (!section) return { ...deck, legend_id: card.id };
+  if (!section) return { ...deck, legend_id: card.id, legend_printing_id: card.id === deck.legend_id ? deck.legend_printing_id : null };
   return {
     ...deck,
     champion_id: heading === "champion" && card.supertypes.includes("Champion") ? card.id : deck.champion_id,
@@ -144,7 +146,7 @@ export function deckChanges(from: DeckCards, to: DeckCards): DeckChange[] {
   type Row = Omit<Entry, "section"> & { section: DeckChange["section"] };
   const rows = (d: DeckCards): Row[] => [
     ...d.entries,
-    ...(d.legend_id ? [{ section: "legend" as const, card_id: d.legend_id, printing_id: null, quantity: 1 }] : []),
+    ...(d.legend_id ? [{ section: "legend" as const, card_id: d.legend_id, printing_id: d.legend_printing_id, quantity: 1 }] : []),
     ...(d.champion_id ? [{ section: "champion" as const, card_id: d.champion_id, printing_id: null, quantity: 1 }] : []),
   ];
   const cards = new Map<string, { section: DeckChange["section"]; card_id: string; before: Row[]; after: Row[] }>();
@@ -185,16 +187,4 @@ export function byType<E extends Entry>(entries: E[], cards: Map<string, Sortabl
   return [...Map.groupBy(entries, typeOf)]
     .toSorted(([a], [b]) => typeRank(a) - typeRank(b) || a.localeCompare(b))
     .map(([type, es]) => ({ type, entries: es.toSorted((a, b) => energy(a) - energy(b) || name(a).localeCompare(name(b))) }));
-}
-
-export const CURVE_TOP = 7;
-
-/** The main deck's copies per energy cost, 0 to 7+; cards without a cost are left out. */
-export function energyCurve(entries: Entry[], cards: Map<string, Sortable>): { energy: string; count: number }[] {
-  const counts = Array<number>(CURVE_TOP + 1).fill(0);
-  for (const e of entries) {
-    const energy = cards.get(e.card_id)?.energy;
-    if (e.section === "main" && energy != null) counts[Math.min(energy, CURVE_TOP)] += e.quantity;
-  }
-  return counts.map((count, i) => ({ energy: i === CURVE_TOP ? `${CURVE_TOP}+` : String(i), count }));
 }

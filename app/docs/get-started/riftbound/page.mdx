@@ -37,6 +37,14 @@ From Discord, `/collection add card:Ahri count:2` adds copies too, in the langua
 
 ![My collection](/docs/shots/collection.png)
 
+`/collection share` posts a summary in the channel: how many cards you own, per set, your five rarest, and a link to your profile's **Collection** tab. `/wishlist share` does the same for the cards you still want, the first ten by name. Both follow your [profile visibility](/docs/get-started/link-accounts#your-profile): for **Server members**, the reply says the link opens only for members of your servers; a **Private** profile posts nothing and tells only you what to change.
+
+<ReplyExample name="collection-share" />
+
+<ReplyExample name="wishlist-share" />
+
+`/card`, `/deck share`, `/collection` and `/wishlist share` work in DMs too once you [add nexus to your account](/docs/get-started/add-the-bot#use-it-in-dms).
+
 ## Lending
 
 Lending is off until you turn it on, per person:
@@ -62,7 +70,7 @@ A deck's page lists, under **Who has my missing cards?**, the members of your se
 
 ## Sharing a deck
 
-`/deck share deck:Ahri control` posts one of your decks in the channel: pictures of its Legend, Chosen Champion and battlefields, every card by type with its count, domains and energy, how many cards you are missing, whether it passes the rules check, and a link to its page. **Copy as text** under it sends anyone who presses it the deck as `3 Card Name` lines, only for them. A private deck asks first whether your servers' members or anyone logged in may see it.
+`/deck share deck:Ahri control` posts one of your decks in the channel: pictures of its Legend and Chosen Champion, its energy curve, how many cards its main deck has, and a link to its page with the full list. **Copy as text** under it sends anyone who presses it the deck as `3 Card Name` lines, only for them. A private deck asks first whether your servers' members or anyone logged in may see it.
 
 <ReplyExample name="deck-share" />
 

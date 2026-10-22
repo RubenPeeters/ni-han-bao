@@ -29,7 +29,7 @@ export interface Owning extends DeckEntry {
  * first, unpinned ones any printing left. With other languages off, only the deck's language counts.
  */
 export function missingCards(
-  deck: { legend_id: string | null; language: string; allow_other_languages: boolean },
+  deck: { legend_id: string | null; legend_printing_id: string | null; language: string; allow_other_languages: boolean },
   entries: DeckEntry[],
   owned: OwnedCopy[],
 ): { rows: Owning[]; missing: number } {
@@ -46,7 +46,7 @@ export function missingCards(
     return n;
   };
   const needs: Omit<Owning, "owned">[] = [
-    ...(deck.legend_id ? [{ section: "legend" as const, card_id: deck.legend_id, printing_id: null, quantity: 1 }] : []),
+    ...(deck.legend_id ? [{ section: "legend" as const, card_id: deck.legend_id, printing_id: deck.legend_printing_id, quantity: 1 }] : []),
     ...entries,
   ];
   const got = needs.map((n) => (n.printing_id ? take(n.printing_id, n.quantity) : 0));
@@ -142,4 +142,16 @@ export function deckWarnings(
       warnings.push(`Outside the Legend's domains (${legend.domains.join(", ") || "none"}): ${outside.join(", ")} (${rule("103.2.b.1")}).`);
   }
   return warnings;
+}
+
+export const CURVE_TOP = 7;
+
+/** The main deck's copies per energy cost, 0 to 7+; cards without a cost are left out. The deck page's chart and /deck share's bars. */
+export function energyCurve(entries: DeckEntry[], cards: Map<string, { energy: number | null }>): { energy: string; count: number }[] {
+  const counts = Array<number>(CURVE_TOP + 1).fill(0);
+  for (const e of entries) {
+    const energy = cards.get(e.card_id)?.energy;
+    if (e.section === "main" && energy != null) counts[Math.min(energy, CURVE_TOP)] += e.quantity;
+  }
+  return counts.map((count, i) => ({ energy: i === CURVE_TOP ? `${CURVE_TOP}+` : String(i), count }));
 }

@@ -3,7 +3,8 @@
 import type { Card, Printing } from "@/bot/src/card-match";
 import { CardThumb } from "@/components/card-thumb";
 import { TypeIcon, type RiftboundIcon } from "@/components/riftbound-icons";
-import { byType, energyCurve, SECTIONS, type Entry } from "@/lib/decks";
+import { energyCurve } from "@/bot/src/deck-match";
+import { byType, SECTIONS, type Entry } from "@/lib/decks";
 import Link from "next/link";
 
 export type CardImage = (card_id: string, printing_id: string | null) => string | null;
@@ -19,12 +20,23 @@ export function cardImage(printings: Printing[]): CardImage {
 const focus = "rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /** The Legend or the Chosen Champion in a deck's header, an empty frame without one. */
-export function CardFigure({ label, card, image }: { label: string; card: Card | undefined; image: CardImage }) {
+export function CardFigure({
+  label,
+  card,
+  printing = null,
+  image,
+}: {
+  label: string;
+  card: Card | undefined;
+  /** The pinned printing to show, if any. */
+  printing?: string | null;
+  image: CardImage;
+}) {
   return (
     <figure className="flex w-24 shrink-0 flex-col gap-1 sm:w-32">
       {card ? (
         <Link href={`/cards/${card.id}`} aria-label={`${label}: ${card.name}`} className={focus}>
-          <CardThumb url={image(card.id, null)} name={card.name} width={256} eager />
+          <CardThumb url={image(card.id, printing)} name={card.name} width={256} eager />
         </Link>
       ) : (
         <CardThumb url={null} name={`No ${label} yet`} />

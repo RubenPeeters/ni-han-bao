@@ -116,6 +116,12 @@ describe("pickCopies", () => {
     expect(pickCopies([row({ quantity: 2, lent: 1 })], [{ card: unit, count: 2 }])).toContain("only 1");
     expect(pickCopies([], [{ card: legend, count: 1 }])).toContain("no ");
   });
+
+  it("takes only the pinned printing when one is wanted", () => {
+    const rows = [row({ printing_id: "a" }), row({ printing_id: "b" })];
+    expect(pickCopies(rows, [{ card: unit, count: 1, printing: "b" }])).toMatchObject({ cards: [{ printing_id: "b", quantity: 1 }] });
+    expect(pickCopies(rows, [{ card: unit, count: 3, printing: "b" }])).toContain("in the deck's printing");
+  });
 });
 
 describe("lending a deck", () => {
@@ -138,6 +144,7 @@ describe("lending a deck", () => {
       [legend.id, 1],
       [unit.id, 3],
     ]);
+    expect((deckWanted(catalogue, { legend_id: legend.id, legend_printing_id: "p", entries: [] }) as Wanted[])[0].printing).toBe("p");
     expect(deckWanted(catalogue, { legend_id: null, entries: [] })).toContain("no cards");
     expect(deckWanted(catalogue, { legend_id: "gone", entries: [] })).toContain("no longer in the catalogue");
   });
