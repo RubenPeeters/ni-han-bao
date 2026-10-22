@@ -346,6 +346,227 @@
       "flags": 32768
     }
   },
+  "collection-share": {
+    "command": "/collection share",
+    "ephemeral": false,
+    "channels": {},
+    "users": {},
+    "emojis": {
+      "rb_body": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/7a5533034de5870808347bc4b296f0029bdd8eea-64x64.png?accountingTag=RB",
+      "rb_calm": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/b9ef2f5b74841ad11f3629aa381a76ac0187d007-64x64.png?accountingTag=RB",
+      "rb_chaos": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/597ddb82be59e87b467c52bb10204f02c2005d06-64x64.png?accountingTag=RB",
+      "rb_fury": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/5aeb4bfd203b5d265902f65aa5afae7da1682eaa-64x64.png?accountingTag=RB",
+      "rb_mind": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/17ab95a6bd052085b6803d846a287f625f347288-64x64.png?accountingTag=RB",
+      "rb_order": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/8bb1b193a8e1adc26ca28e1a21da8d1e2f5d2f72-64x64.png?accountingTag=RB",
+      "rb_might": "https://assetcdn.rgpub.io/public/live/riot-shared/player-experiences/riot-glyphs/rb/latest/might.svg",
+      "rb_power": "https://assetcdn.rgpub.io/public/live/riot-shared/player-experiences/riot-glyphs/rb/latest/card_type_rune.svg",
+      "rb_common": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/a088ae851d94b5c34aa4900e8ccb4cc103144dce-354x354.png?accountingTag=RB",
+      "rb_epic": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/5e9799d87d0f8baa55f6d9bddb9750669a0f485b-455x419.png?accountingTag=RB",
+      "rb_rare": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/d90078e1ec2ef7cbcbba2be86da1b192c389581a-429x425.png?accountingTag=RB",
+      "rb_showcase": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/a0e92b9edf3291fa62c9b35ffd6363de0d7947c0-376x426.png?accountingTag=RB",
+      "rb_uncommon": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/808205a0f070e479107a7655e622fe15a356275b-480x410.png?accountingTag=RB",
+      "rb_champion": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/c56f1df327f53562a56b493d3d38c3cee5780c5a-64x64.png?accountingTag=RB",
+      "rb_battlefield": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/1f37eb1bed2605bdaab8270a9dc4396cad746522-64x64.png?accountingTag=RB",
+      "rb_gear": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/ee2664a6dfe767b7e8b4b08ed04611e019d2c166-64x64.png?accountingTag=RB",
+      "rb_legend": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/59e98d14f83125c88880af1d61213e3aef941370-64x64.png?accountingTag=RB",
+      "rb_rune": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/fa3d8362379b722a5025995077a7fbd1b4a6ba0e-24x24.png?accountingTag=RB",
+      "rb_spell": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/73c26354435212281d3f1cefe7cdbd7c803fe18f-64x64.png?accountingTag=RB",
+      "rb_unit": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/cb0caf49361546ece0c25d65b7fbf57c0eee57f0-64x64.png?accountingTag=RB"
+    },
+    "message": {
+      "components": [
+        {
+          "type": 17,
+          "components": [
+            {
+              "type": 10,
+              "content": "### Anna's collection · 403 cards"
+            },
+            {
+              "type": 10,
+              "content": "**OGN** Origins · 102 cards\n**OGS** Proving Grounds · 6 cards\n**SFD** Spiritforged · 84 cards\n**UNL** Unleashed · 83 cards\n**VEN** Vendetta · 67 cards\n**RAD** Radiance · 61 cards"
+            },
+            {
+              "type": 14,
+              "divider": true,
+              "spacing": 1
+            },
+            {
+              "type": 10,
+              "content": "**Rarest**"
+            },
+            {
+              "type": 9,
+              "components": [
+                {
+                  "type": 10,
+                  "content": "<:rb_showcase:900000000000000311> **Fury Rune**\n-# Showcase · OGN-007a/298"
+                }
+              ],
+              "accessory": {
+                "type": 11,
+                "media": {
+                  "url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/09da06c69d07d4e72dde703737ef167472c715af-1488x2078.png?accountingTag=RB&w=160&fm=webp&q=75"
+                },
+                "description": "Fury Rune"
+              }
+            },
+            {
+              "type": 9,
+              "components": [
+                {
+                  "type": 10,
+                  "content": "<:rb_showcase:900000000000000311> **Darius, Trifarian**\n-# Showcase · OGN-027a/298"
+                }
+              ],
+              "accessory": {
+                "type": 11,
+                "media": {
+                  "url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/df878ecc25160bb7e53b254a609ec243e133e8f1-744x1039.png?accountingTag=RB&w=160&fm=webp&q=75"
+                },
+                "description": "Darius, Trifarian"
+              }
+            },
+            {
+              "type": 9,
+              "components": [
+                {
+                  "type": 10,
+                  "content": "<:rb_showcase:900000000000000311> **Kai'Sa, Survivor**\n-# Showcase · OGN-039a/298"
+                }
+              ],
+              "accessory": {
+                "type": 11,
+                "media": {
+                  "url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/ad69bde670ce218adee1d2a618a7295d2fb7bd4c-744x1039.png?accountingTag=RB&w=160&fm=webp&q=75"
+                },
+                "description": "Kai'Sa, Survivor"
+              }
+            },
+            {
+              "type": 9,
+              "components": [
+                {
+                  "type": 10,
+                  "content": "<:rb_showcase:900000000000000311> **Volibear, Imposing**\n-# Showcase · OGN-158a/298"
+                }
+              ],
+              "accessory": {
+                "type": 11,
+                "media": {
+                  "url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/faceb90b6a46e79eadba43871b8cffe1ec5037a7-744x1039.png?accountingTag=RB&w=160&fm=webp&q=75"
+                },
+                "description": "Volibear, Imposing"
+              }
+            },
+            {
+              "type": 9,
+              "components": [
+                {
+                  "type": 10,
+                  "content": "<:rb_showcase:900000000000000311> **Daughter of the Void**\n-# Showcase · OGN-299\\*/298"
+                }
+              ],
+              "accessory": {
+                "type": 11,
+                "media": {
+                  "url": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/ae8e68af43400f61f7391c0a6ee339fd718a7540-1488x2078.png?accountingTag=RB&w=160&fm=webp&q=75"
+                },
+                "description": "Daughter of the Void"
+              }
+            },
+            {
+              "type": 14,
+              "divider": true,
+              "spacing": 1
+            },
+            {
+              "type": 10,
+              "content": "-# The link opens only for members of Anna's servers."
+            }
+          ]
+        },
+        {
+          "type": 1,
+          "components": [
+            {
+              "type": 2,
+              "style": 5,
+              "label": "Open collection",
+              "url": "https://nexus.example/u/900000000000000101/collection"
+            }
+          ]
+        }
+      ],
+      "flags": 32768
+    }
+  },
+  "wishlist-share": {
+    "command": "/wishlist share",
+    "ephemeral": false,
+    "channels": {},
+    "users": {},
+    "emojis": {
+      "rb_body": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/7a5533034de5870808347bc4b296f0029bdd8eea-64x64.png?accountingTag=RB",
+      "rb_calm": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/b9ef2f5b74841ad11f3629aa381a76ac0187d007-64x64.png?accountingTag=RB",
+      "rb_chaos": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/597ddb82be59e87b467c52bb10204f02c2005d06-64x64.png?accountingTag=RB",
+      "rb_fury": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/5aeb4bfd203b5d265902f65aa5afae7da1682eaa-64x64.png?accountingTag=RB",
+      "rb_mind": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/17ab95a6bd052085b6803d846a287f625f347288-64x64.png?accountingTag=RB",
+      "rb_order": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/8bb1b193a8e1adc26ca28e1a21da8d1e2f5d2f72-64x64.png?accountingTag=RB",
+      "rb_might": "https://assetcdn.rgpub.io/public/live/riot-shared/player-experiences/riot-glyphs/rb/latest/might.svg",
+      "rb_power": "https://assetcdn.rgpub.io/public/live/riot-shared/player-experiences/riot-glyphs/rb/latest/card_type_rune.svg",
+      "rb_common": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/a088ae851d94b5c34aa4900e8ccb4cc103144dce-354x354.png?accountingTag=RB",
+      "rb_epic": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/5e9799d87d0f8baa55f6d9bddb9750669a0f485b-455x419.png?accountingTag=RB",
+      "rb_rare": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/d90078e1ec2ef7cbcbba2be86da1b192c389581a-429x425.png?accountingTag=RB",
+      "rb_showcase": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/a0e92b9edf3291fa62c9b35ffd6363de0d7947c0-376x426.png?accountingTag=RB",
+      "rb_uncommon": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/808205a0f070e479107a7655e622fe15a356275b-480x410.png?accountingTag=RB",
+      "rb_champion": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/c56f1df327f53562a56b493d3d38c3cee5780c5a-64x64.png?accountingTag=RB",
+      "rb_battlefield": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/1f37eb1bed2605bdaab8270a9dc4396cad746522-64x64.png?accountingTag=RB",
+      "rb_gear": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/ee2664a6dfe767b7e8b4b08ed04611e019d2c166-64x64.png?accountingTag=RB",
+      "rb_legend": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/59e98d14f83125c88880af1d61213e3aef941370-64x64.png?accountingTag=RB",
+      "rb_rune": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/fa3d8362379b722a5025995077a7fbd1b4a6ba0e-24x24.png?accountingTag=RB",
+      "rb_spell": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/73c26354435212281d3f1cefe7cdbd7c803fe18f-64x64.png?accountingTag=RB",
+      "rb_unit": "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/cb0caf49361546ece0c25d65b7fbf57c0eee57f0-64x64.png?accountingTag=RB"
+    },
+    "message": {
+      "components": [
+        {
+          "type": 17,
+          "components": [
+            {
+              "type": 10,
+              "content": "### Anna's wishlist · 6 cards"
+            },
+            {
+              "type": 10,
+              "content": "1× **Ahri, Alluring** <:rb_calm:900000000000000301> · only OGN-066/298\n3× **Calm Rune** <:rb_calm:900000000000000301>\n2× **Jinx, Demolitionist** <:rb_fury:900000000000000303>"
+            },
+            {
+              "type": 14,
+              "divider": true,
+              "spacing": 1
+            },
+            {
+              "type": 10,
+              "content": "-# The link opens only for members of Anna's servers."
+            }
+          ]
+        },
+        {
+          "type": 1,
+          "components": [
+            {
+              "type": 2,
+              "style": 5,
+              "label": "Open wishlist",
+              "url": "https://nexus.example/u/900000000000000101/wishlist"
+            }
+          ]
+        }
+      ],
+      "flags": 32768
+    }
+  },
   "lend": {
     "command": "/lend",
     "ephemeral": false,

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
-import { ApplicationCommandOptionType } from "discord.js";
+import { ApplicationCommandOptionType, ApplicationIntegrationType, InteractionContextType } from "discord.js";
 import { describe, expect, it } from "vitest";
-import { COMMANDS, commandReference, REFERENCE_PATH, type RefCommand } from "./commands.js";
+import { COMMANDS, commandReference, GLOBAL_COMMANDS, globalCommandsChanged, GUILD_COMMANDS, REFERENCE_PATH, type RefCommand } from "./commands.js";
 
 describe("commandReference", () => {
   it("lists subcommands as their own usages, with options and choices", () => {
@@ -60,5 +60,31 @@ describe("the website's command reference (lib/commands.json)", () => {
 
   it("matches the command definitions", () => {
     expect(committed, stale).toEqual(commandReference(COMMANDS));
+  });
+});
+
+describe("where the commands are registered (#250)", () => {
+  it("registers /card, /deck, /collection and /wishlist globally, for servers and accounts, in servers and DMs", () => {
+    expect(GLOBAL_COMMANDS.map((c) => c.name).sort()).toEqual(["card", "collection", "deck", "wishlist"]);
+    for (const c of GLOBAL_COMMANDS) {
+      expect(c.integration_types).toEqual([ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall]);
+      expect(c.contexts).toEqual([InteractionContextType.Guild, InteractionContextType.BotDM, InteractionContextType.PrivateChannel]);
+    }
+  });
+
+  it("registers every other command per server, and none in both places", () => {
+    const names = [...GLOBAL_COMMANDS, ...GUILD_COMMANDS].map((c) => c.name);
+    expect(names.sort()).toEqual(COMMANDS.map((c) => c.name).sort());
+    expect(GUILD_COMMANDS.map((c) => c.name)).toContain("setup");
+  });
+
+  it("rewrites the global commands only when one was added, removed or changed", () => {
+    const wanted = [{ name: "card" }, { name: "deck" }];
+    const registered = (...same: boolean[]) => wanted.map((w, i) => ({ name: w.name, equals: () => same[i] }));
+    expect(globalCommandsChanged(registered(true, true), wanted)).toBe(false);
+    expect(globalCommandsChanged(registered(true, false), wanted)).toBe(true);
+    expect(globalCommandsChanged(registered(true), wanted)).toBe(true);
+    expect(globalCommandsChanged([], wanted)).toBe(true);
+    expect(globalCommandsChanged([...registered(true, true), { name: "old", equals: () => false }], wanted)).toBe(true);
   });
 });

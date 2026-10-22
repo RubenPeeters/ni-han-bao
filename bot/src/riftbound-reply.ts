@@ -153,3 +153,12 @@ export function cardMessage(
   const row: APIActionRowComponent<APIButtonComponent>[] = buttons.length ? [{ type: ComponentType.ActionRow, components: buttons }] : [];
   return { components: [container, ...row], flags: MessageFlags.IsComponentsV2 };
 }
+
+/**
+ * The caller's name for a shared reply: their nickname where they ran the command, else their
+ * Discord name. A DM has no member, and a server the bot is not in gives the raw one (#250).
+ */
+export function callerName(member: { displayName: string } | { nick?: string | null } | null, user: { displayName: string }): string {
+  if (!member) return user.displayName;
+  return "displayName" in member ? member.displayName : (member.nick ?? user.displayName);
+}

@@ -441,6 +441,23 @@
             ]
           }
         ]
+      },
+      {
+        "name": "collection share",
+        "description": "Post a summary of your collection in this channel",
+        "options": []
+      }
+    ]
+  },
+  {
+    "name": "wishlist",
+    "description": "Your Riftbound wishlist",
+    "admin": false,
+    "usages": [
+      {
+        "name": "wishlist share",
+        "description": "Post the cards you still want in this channel",
+        "options": []
       }
     ]
   },

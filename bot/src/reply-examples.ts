@@ -19,6 +19,7 @@ import { settingsText } from "./setup.js";
 import { leaderboardEmbed } from "./stats.js";
 import { tradeDm } from "./trades.js";
 import { welcomeText } from "./welcome.js";
+import { collectionShare, wishlistShare } from "./profile-share.js";
 
 export interface ReplyExample {
   /** The slash command the reply answers, as typed; null for a message the bot posts by itself. */
@@ -39,6 +40,8 @@ const ZONE = "Europe/Brussels";
 const GUILD = "900000000000000001";
 const REPORT_CHANNEL = "900000000000000201";
 const SATURDAY = "2026-10-17T17:00:00Z";
+// Anna, the demo viewer (supabase/seed.sql), whose profile is for members.
+const ANNA = { id: "900000000000000101", name: "Anna", visibility: "members" };
 const reply = (command: string | null, message: ReplyExample["message"], more: Partial<ReplyExample> = {}): ReplyExample =>
   ({ command, ephemeral: false, channels: {}, users: {}, emojis: {}, message, ...more });
 
@@ -120,6 +123,33 @@ export function replyExamples(): Record<string, ReplyExample> {
       "/collection add",
       addedMessage(catalogue, ahri, catalogue.printings.find((p) => p.id === "ogn-066-298")!, 2, 4, "fr", emojiIds),
       { ephemeral: true, emojis: iconUrls },
+    ),
+    // Demo copies: every 7th printing, 1 to 3 of each.
+    "collection-share": reply(
+      "/collection share",
+      collectionShare(
+        ANNA,
+        catalogue.printings.filter((_, i) => i % 7 === 0).map((p, i) => ({ printing_id: p.id, quantity: 1 + (i % 3) })),
+        catalogue,
+        emojiIds,
+        SITE,
+      ) as ReplyExample["message"],
+      { emojis: iconUrls },
+    ),
+    "wishlist-share": reply(
+      "/wishlist share",
+      wishlistShare(
+        ANNA,
+        [
+          { card_id: "jinx-demolitionist", printing_id: null, language: null, decks: 3, manual: null, wanted: 2 },
+          { card_id: "ahri-alluring", printing_id: "ogn-066-298", language: null, decks: 1, manual: null, wanted: 1 },
+          { card_id: "calm-rune", printing_id: null, language: null, decks: 6, manual: null, wanted: 3 },
+        ],
+        catalogue,
+        emojiIds,
+        SITE,
+      ) as ReplyExample["message"],
+      { emojis: iconUrls },
     ),
     lend: reply(
       "/lend",
