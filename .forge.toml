@@ -4,3 +4,5 @@ base = "dev"           # PRs target this branch
 check = "make check"   # must pass locally before push; CI runs the same target
 required_checks = ["check"]   # CI job names that must report green before auto-merge
 screenshots = "make screenshots"   # forge: visual review of every page
+# paths that cannot change a page: a fix round that only touches these reuses the screenshots
+screenshots_ignore = ["bot/deploy/*", "bot/Dockerfile", "supabase/tests/*", "*.test.ts", "README.md", "CLAUDE.md"]
