@@ -122,7 +122,7 @@ import {
   type Wanted,
 } from "./lending.js";
 import { CARD_COMMAND, cardChoices, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
-import { callerName, cardMessage, PAGING_MS, parsePageButtonId, type V2 } from "./riftbound-reply.js";
+import { callerName, cardMessage, PAGING_MS, PAGING_OVER, parsePageButtonId, shownPage, type V2 } from "./riftbound-reply.js";
 import { emojiImage, emojiPlan, wantedEmojis, type Emojis } from "./emojis.js";
 import { feedItems, fetchFeed, transformFeed, type FeedCard, type FeedIcon, type FeedPrinting } from "./riftbound-feed.js";
 import {
@@ -789,13 +789,26 @@ async function cardCommand(interaction: ChatInputCommandInteraction): Promise<vo
   }
 }
 
-/** /card's Previous and Next: anyone in the channel, within PAGING_MS of the reply; later clicks change nothing. */
+/**
+ * /card's Previous and Next: anyone in the channel, within PAGING_MS of the reply. The first click
+ * after that removes them, so no timer is needed, and tells only the clicker why.
+ */
 async function cardPageButton(interaction: ButtonInteraction, cardId: string, index: number): Promise<void> {
   try {
     const card = catalogue.cards.find((c) => c.id === cardId);
     const printings = catalogue.printings.filter((p) => p.card_id === cardId);
-    if (!card || index >= printings.length || Date.now() - interaction.message.createdTimestamp > PAGING_MS) {
+    if (!card || index >= printings.length) {
       await interaction.deferUpdate();
+      return;
+    }
+    if (Date.now() - interaction.message.createdTimestamp > PAGING_MS) {
+      const shown = shownPage(interaction.message.components.map((c) => c.toJSON()));
+      if (shown === null) {
+        await interaction.deferUpdate();
+        return;
+      }
+      await interaction.update(feedback(cardMessage(card, printings, icons, emojis, config.siteUrl, shown, false), "card", card.id));
+      await interaction.followUp({ content: PAGING_OVER, flags: MessageFlags.Ephemeral });
       return;
     }
     await interaction.update(feedback(cardMessage(card, printings, icons, emojis, config.siteUrl, index), "card", card.id));
