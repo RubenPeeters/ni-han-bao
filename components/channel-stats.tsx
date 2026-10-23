@@ -75,8 +75,14 @@ function BusiestChannels({ rows }: { rows: ChannelRow[] }) {
         <RankList>
           {rows.map((row, i) => (
             <RankRow key={row.channel_id} rank={i + 1} value={row.message_count.toLocaleString("en-US")}>
+              <span
+                aria-hidden
+                className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground"
+              >
+                #
+              </span>
               <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-                <span className="truncate">#{row.name}</span>
+                <span className="truncate">{row.name}</span>
                 <span className="h-1.5 rounded-full bg-muted" aria-hidden>
                   <span
                     className="block h-full rounded-full bg-chart-2"
