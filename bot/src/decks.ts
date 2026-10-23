@@ -49,6 +49,8 @@ export interface SharedDeck {
   /** The Legend's pinned printing; null for any. */
   legend_printing_id: string | null;
   champion_id: string | null;
+  /** The Chosen Champion's pinned printing; null for any. */
+  champion_printing_id: string | null;
   visibility: string;
   language: string;
   allow_other_languages: boolean;
@@ -146,7 +148,7 @@ export function deckMessage(
   const pictures = [legend, champion]
     .filter((c): c is Card => !!c)
     .flatMap((c): APIMediaGalleryItem[] => {
-      const url = imageOf(catalogue, c, 300, c === legend ? deck.legend_printing_id : null);
+      const url = imageOf(catalogue, c, 300, c === legend ? deck.legend_printing_id : deck.champion_printing_id);
       return url ? [{ media: { url }, description: c.name }] : [];
     });
 

@@ -225,7 +225,7 @@ export async function DeckDetail({ id }: { id: string }) {
   const [deck, entries, cards, printings, me, owned, versions, icons] = await Promise.all([
     supabase
       .from("riftbound_decks")
-      .select("id, user_id, name, legend_id, legend_printing_id, champion_id, notes, visibility, language, allow_other_languages, wishlist_mode, not_for_lending")
+      .select("id, user_id, name, legend_id, legend_printing_id, champion_id, champion_printing_id, notes, visibility, language, allow_other_languages, wishlist_mode, not_for_lending")
       .eq("id", id)
       .maybeSingle(),
     supabase.from("riftbound_deck_cards").select("section, card_id, printing_id, quantity").eq("deck_id", id),
@@ -439,7 +439,7 @@ const versionList = (supabase: Awaited<ReturnType<typeof createClient>>, id: str
     supabase.from("riftbound_deck_versions").select("version, saved_at").eq("deck_id", id).order("version", { ascending: false }).range(from, to),
   );
 
-const VERSION = "version, saved_at, name, legend_id, legend_printing_id, champion_id, notes, language, allow_other_languages, entries";
+const VERSION = "version, saved_at, name, legend_id, legend_printing_id, champion_id, champion_printing_id, notes, language, allow_other_languages, entries";
 type SavedVersion = Omit<Deck, "id" | "visibility" | "wishlist_mode"> & VersionListed & { entries: Entry[] };
 
 const pinText = (pins: Pin[], codes: Map<string, string>) =>

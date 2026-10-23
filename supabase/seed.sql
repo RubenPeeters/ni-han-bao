@@ -214,7 +214,8 @@ begin
             'annie-fiery', '', 'servers', 'fr', false),
            ('00000000-0000-4000-8000-0000000d0003', users[1], 'Work in progress', null, null, '', 'private', 'en', true);
     -- The demo deck's Legend pinned to its Showcase art (#249); version 1 below has it unpinned.
-    update public.riftbound_decks set legend_printing_id = 'ogn-303-298' where id = '00000000-0000-4000-8000-0000000d0001';
+    -- Its champion pinned to the printing of its pinned main deck copy (#268).
+    update public.riftbound_decks set legend_printing_id = 'ogn-303-298', champion_printing_id = 'ogn-066-298' where id = '00000000-0000-4000-8000-0000000d0001';
     insert into public.riftbound_deck_cards (deck_id, section, card_id, printing_id, quantity)
         values ('00000000-0000-4000-8000-0000000d0001', 'main', 'ahri-alluring', 'ogn-066-298', 1),
                ('00000000-0000-4000-8000-0000000d0002', 'main', 'annie-fiery', null, 1);
