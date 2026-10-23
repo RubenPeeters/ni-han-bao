@@ -93,7 +93,27 @@ export interface DeckCards {
   /** Pinned: only this printing of the Legend satisfies the deck. */
   legend_printing_id: string | null;
   champion_id: string | null;
+  /** The Chosen Champion's printing, for the header; one main deck copy is pinned to it. */
+  champion_printing_id: string | null;
   entries: Entry[];
+}
+
+/** The main deck copy that is the Chosen Champion: of the entry pinned to its printing if there is one, else of any entry of it. */
+export function championCopy(entries: Entry[], champion_id: string | null, printing_id: string | null): Entry | undefined {
+  const copies = entries.filter((e) => e.section === "main" && e.card_id === champion_id);
+  return copies.find((e) => e.printing_id === printing_id) ?? copies[0];
+}
+
+/** The Chosen Champion at another printing (null: any): its copy moves to an entry pinned to it, one added if there was none. */
+export function pinChampion(deck: DeckCards, printing_id: string | null): DeckCards {
+  if (!deck.champion_id) return deck;
+  const from = championCopy(deck.entries, deck.champion_id, deck.champion_printing_id);
+  const entries = from ? changeEntry(deck.entries, from, -1) : deck.entries;
+  return {
+    ...deck,
+    champion_printing_id: printing_id,
+    entries: changeEntry(entries, { section: "main", card_id: deck.champion_id, printing_id }, 1),
+  };
 }
 
 /**
@@ -106,7 +126,9 @@ export function addCard(deck: DeckCards, card: RuleCard, quantity: number, headi
   if (!section) return { ...deck, legend_id: card.id, legend_printing_id: card.id === deck.legend_id ? deck.legend_printing_id : null };
   return {
     ...deck,
-    champion_id: heading === "champion" && card.supertypes.includes("Champion") ? card.id : deck.champion_id,
+    ...(heading === "champion" && card.supertypes.includes("Champion") && card.id !== deck.champion_id
+      ? { champion_id: card.id, champion_printing_id: null }
+      : {}),
     entries: changeEntry(deck.entries, { section, card_id: card.id, printing_id: null }, quantity),
   };
 }
@@ -147,7 +169,7 @@ export function deckChanges(from: DeckCards, to: DeckCards): DeckChange[] {
   const rows = (d: DeckCards): Row[] => [
     ...d.entries,
     ...(d.legend_id ? [{ section: "legend" as const, card_id: d.legend_id, printing_id: d.legend_printing_id, quantity: 1 }] : []),
-    ...(d.champion_id ? [{ section: "champion" as const, card_id: d.champion_id, printing_id: null, quantity: 1 }] : []),
+    ...(d.champion_id ? [{ section: "champion" as const, card_id: d.champion_id, printing_id: d.champion_printing_id, quantity: 1 }] : []),
   ];
   const cards = new Map<string, { section: DeckChange["section"]; card_id: string; before: Row[]; after: Row[] }>();
   const add = (e: Row, side: "before" | "after") => {

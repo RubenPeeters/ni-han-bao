@@ -3,7 +3,7 @@ import { ComponentType, MessageFlags } from "discord.js";
 import { describe, expect, it } from "vitest";
 import type { FeedIcon } from "./riftbound-feed.js";
 import type { Catalogue } from "./riftbound.js";
-import { MAX_COMPONENTS, MAX_TEXT, accentColor, callerName, cardHeading, cardMessage, cardSection, discordRules, fitLines, pageButtonId, parsePageButtonId } from "./riftbound-reply.js";
+import { MAX_COMPONENTS, MAX_TEXT, accentColor, callerName, cardHeading, cardMessage, cardSection, discordRules, fitLines, pageButtonId, parsePageButtonId, shownPage } from "./riftbound-reply.js";
 
 const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue & { icons: FeedIcon[] };
 const card = (id: string) => catalogue.cards.find((c) => c.id === id)!;
@@ -122,6 +122,22 @@ describe("/card", () => {
   it("shows the collector code and rarity of a printing without an image", () => {
     const [page] = fox(0, [{ ...printed("nine-tailed-fox")[0], image_url: null }]);
     expect(page.components.map((c) => c.content)).toEqual(["<:rb_rare:8> **OGN-255/298** · Rare", "-# **OGN-255/298**"]);
+  });
+
+  it("drops Previous and Next once paging ends, keeping the shown printing and pointing to the card page", () => {
+    const [page, row] = cardMessage(card("nine-tailed-fox"), printed("nine-tailed-fox"), catalogue.icons, emojis, "https://site.test/", 1, false)
+      .components as unknown as [Page, Row];
+    expect(row.components.map((b) => b.label)).toEqual(["Card page"]);
+    expect(footnote(page)).toBe("-# OGN-255/298 · **OGN-303\\*/298** · OGN-303/298 · see them all on the card page");
+    const [bare, ...rows] = cardMessage(card("nine-tailed-fox"), printed("nine-tailed-fox"), catalogue.icons, emojis, null, 1, false)
+      .components as unknown as [Page, Row];
+    expect(rows).toEqual([]);
+    expect(footnote(bare)).toBe("-# OGN-255/298 · **OGN-303\\*/298** · OGN-303/298");
+  });
+
+  it("reads the shown page back from a message's paging buttons", () => {
+    for (const index of [0, 1, 2]) expect(shownPage(fox(index) as never)).toBe(index);
+    expect(shownPage(cardMessage(card("nine-tailed-fox"), printed("nine-tailed-fox"), catalogue.icons, emojis, null, 1, false).components)).toBeNull();
   });
 
   it("reads a paging button's card and page back", () => {

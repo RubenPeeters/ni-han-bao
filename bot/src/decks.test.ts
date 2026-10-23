@@ -55,7 +55,7 @@ describe("deckMessage", () => {
   const printings = [printing("l", "https://cdn.test/l.png"), printing("a", "https://cdn.test/a.png"), printing("f", "https://cdn.test/f.png")];
   const icons = [{ facet: "domain", label: "Calm", color_primary: "#152311" }];
   const emojis = new Map([["rb_calm", "1"], ["rb_mind", "2"], ["rb_unit", "3"], ["rb_rune", "4"]]);
-  const deck = { id: "d1", name: "Foxy", legend_id: "l", legend_printing_id: null, champion_id: "a", visibility: "servers", language: "en", allow_other_languages: true };
+  const deck = { id: "d1", name: "Foxy", legend_id: "l", legend_printing_id: null, champion_id: "a", champion_printing_id: null, visibility: "servers", language: "en", allow_other_languages: true };
   const entries = [
     { section: "main", card_id: "b", printing_id: null, quantity: 2 },
     { section: "main", card_id: "a", printing_id: null, quantity: 1 },
@@ -94,6 +94,14 @@ describe("deckMessage", () => {
     expect(JSON.stringify(components)).not.toContain("cdn.test/l.png");
     const prompt = privatePrompt("Foxy", cards[0], { printings: [...printings, alt] }, "l2");
     expect(prompt.components[0]).toMatchObject({ accessory: { media: { url: expect.stringContaining("cdn.test/l-alt.png") } } });
+  });
+
+  it("pictures a pinned Chosen Champion's printing, its copy still counted in the main deck", () => {
+    const alt = { ...printing("a", "https://cdn.test/a-alt.png"), id: "a2", collector_number: 2 };
+    const { components } = deckMessage({ ...deck, champion_printing_id: "a2" }, entries, { cards, printings: [...printings, alt] }, icons, emojis, "Anna", null);
+    expect(JSON.stringify(components)).toContain("cdn.test/a-alt.png");
+    expect(JSON.stringify(components)).not.toContain("cdn.test/a.png");
+    expect(texts(components[0]).at(-1)).toBe("-# 8 cards in the main deck");
   });
 
   it("an empty deck: no pictures, no curve, no Open deck without a site", () => {

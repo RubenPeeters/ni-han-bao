@@ -112,10 +112,22 @@ export function parsePageButtonId(customId: string): { cardId: string; index: nu
   const m = /^card-page:(.+):(\d+)$/.exec(customId);
   return m ? { cardId: m[1], index: Number(m[2]) } : null;
 }
+/** The page a /card message shows: its last paging button (Next) opens the one after it. */
+export function shownPage(components: APIMessageTopLevelComponent[]): number | null {
+  const pages = components
+    .flatMap((c) => (c.type === ComponentType.ActionRow ? c.components : []))
+    .map((b) => ("custom_id" in b ? parsePageButtonId(b.custom_id) : null))
+    .filter((p) => p !== null);
+  return pages.length ? pages[pages.length - 1].index - 1 : null;
+}
+export const PAGING_OVER = "Paging stops 15 minutes after /card. Run /card again to page through the printings.";
 
 const escaped = (code: string) => code.replace(/[*_~`|\\]/g, "\\$&");
 
-/** /card: one page per printing, its image and every version below it, the shown one in bold. */
+/**
+ * /card: one page per printing, its image and every version below it, the shown one in bold.
+ * Without `paging` (after PAGING_MS) it has no Previous and Next, and points to the card page instead.
+ */
 export function cardMessage(
   card: Card,
   printings: Printing[],
@@ -123,6 +135,7 @@ export function cardMessage(
   emojis: Emojis,
   siteUrl: string | null,
   index = 0,
+  paging = true,
 ): V2 {
   const sorted = [...printings].sort(byPrinting);
   const shown = sorted[index] ?? null;
@@ -133,13 +146,14 @@ export function cardMessage(
     ? gallery(cardImageUrl(shown.image_url, 600), card.name)
     : text([rarity, `**${escaped(shown?.collector_code ?? card.name)}**`, shown?.rarity && `· ${shown.rarity}`].filter(Boolean).join(" "));
   // shortcut: a card with hundreds of printings would pass Discord's text limit; real cards have a handful.
-  const footnote = sorted.map((p, i) => (i === index ? `**${escaped(p.collector_code)}**` : escaped(p.collector_code))).join(" · ");
+  const codes = sorted.map((p, i) => (i === index ? `**${escaped(p.collector_code)}**` : escaped(p.collector_code))).join(" · ");
+  const footnote = codes && !paging && page ? `${codes} · see them all on the card page` : codes;
   const container: APIContainerComponent = {
     type: ComponentType.Container,
     accent_color: accentColor(card, icons),
     components: [body, ...(footnote ? [text(`-# ${footnote}`)] : [])],
   };
-  const paging = (label: string, to: number): APIButtonComponent => ({
+  const pageButton = (label: string, to: number): APIButtonComponent => ({
     type: ComponentType.Button,
     style: ButtonStyle.Secondary,
     label,
@@ -147,7 +161,7 @@ export function cardMessage(
     disabled: to < 0 || to >= sorted.length,
   });
   const buttons: APIButtonComponent[] = [
-    ...(sorted.length > 1 ? [paging("Previous", index - 1), paging("Next", index + 1)] : []),
+    ...(paging && sorted.length > 1 ? [pageButton("Previous", index - 1), pageButton("Next", index + 1)] : []),
     ...(page ? [{ type: ComponentType.Button as const, style: ButtonStyle.Link as const, label: "Card page", url: page }] : []),
   ];
   const row: APIActionRowComponent<APIButtonComponent>[] = buttons.length ? [{ type: ComponentType.ActionRow, components: buttons }] : [];
