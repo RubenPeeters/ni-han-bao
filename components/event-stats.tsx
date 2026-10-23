@@ -1,4 +1,5 @@
 import { EmptyState, ErrorState, StatCard, StatGrid } from "@/components/stat-ui";
+import { StoreImage } from "@/components/store-stats";
 import { guildTimeZone } from "@/lib/guild";
 import { createClient } from "@/lib/supabase/server";
 
@@ -10,6 +11,8 @@ interface UpcomingEvent {
   store_name: string | null;
   store_city: string | null;
   going: string[];
+  image_url: string | null;
+  store_image_url: string | null;
 }
 
 export async function EventStats({ guild }: { guild: string }) {
@@ -47,28 +50,31 @@ export async function EventStats({ guild }: { guild: string }) {
               // A Discord event's title leads, so its store goes underneath; otherwise just the city.
               const where = event.name ? event.store_name && `${event.store_name} · ${event.store_city}` : event.store_city;
               return (
-                <li key={event.id} className="flex flex-col gap-1 py-2 text-sm first:pt-0 last:pb-0">
-                  <div className="flex items-baseline justify-between gap-3">
-                    {event.url ? (
-                      <a
-                        href={event.url}
-                        target="_blank"
-                        rel="noopener noreferrer nofollow"
-                        className="min-w-0 truncate font-medium underline-offset-4 hover:text-gold hover:underline"
-                      >
-                        {title}
-                      </a>
-                    ) : (
-                      <span className="min-w-0 truncate font-medium">{title}</span>
-                    )}
-                    <time dateTime={event.starts_at} className="shrink-0 tabular-nums text-muted-foreground">
-                      {when.format(new Date(event.starts_at))}
-                    </time>
+                <li key={event.id} className="flex items-start gap-3 py-2 text-sm first:pt-0 last:pb-0">
+                  <StoreImage name={title} image_url={event.image_url ?? event.store_image_url} />
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <div className="flex items-baseline justify-between gap-3">
+                      {event.url ? (
+                        <a
+                          href={event.url}
+                          target="_blank"
+                          rel="noopener noreferrer nofollow"
+                          className="min-w-0 truncate font-medium underline-offset-4 hover:text-gold hover:underline"
+                        >
+                          {title}
+                        </a>
+                      ) : (
+                        <span className="min-w-0 truncate font-medium">{title}</span>
+                      )}
+                      <time dateTime={event.starts_at} className="shrink-0 tabular-nums text-muted-foreground">
+                        {when.format(new Date(event.starts_at))}
+                      </time>
+                    </div>
+                    {where && <span className="truncate text-xs text-muted-foreground">{where}</span>}
+                    <p className="text-muted-foreground">
+                      {event.going.length ? `Going: ${event.going.join(", ")}` : "Nobody has said they are going yet."}
+                    </p>
                   </div>
-                  {where && <span className="truncate text-xs text-muted-foreground">{where}</span>}
-                  <p className="text-muted-foreground">
-                    {event.going.length ? `Going: ${event.going.join(", ")}` : "Nobody has said they are going yet."}
-                  </p>
                 </li>
               );
             })}

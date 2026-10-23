@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fetchPage, isPublicAddress, previewImage } from "./store-image.js";
+import { fetchPage, isDiscordUrl, isPublicAddress, previewImage } from "./store-image.js";
 
 const PAGE = "https://shop.example/stores/gent";
 
@@ -47,6 +47,19 @@ describe("fetchPage", () => {
       await expect(fetchPage(url)).rejects.toThrow(/non-public|not a public/);
     },
   );
+
+  it.each(["https://discord.com/events/1/2", "https://DISCORD.com./events/1/2", "https://ptb.discord.com/x", "https://discordapp.com/x"])(
+    "never fetches the Discord page %s",
+    async (url) => {
+      expect(isDiscordUrl(url)).toBe(true);
+      await expect(fetchPage(url)).rejects.toThrow(/a Discord page/);
+    },
+  );
+
+  it("tells Discord apart from look-alikes", () => {
+    expect(isDiscordUrl("https://notdiscord.com/x")).toBe(false);
+    expect(isDiscordUrl("https://playriftbound.com/events/1")).toBe(false);
+  });
 
   it("refuses http", async () => {
     await expect(fetchPage("http://shop.example/")).rejects.toThrow(/not https/);

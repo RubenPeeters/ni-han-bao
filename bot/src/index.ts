@@ -89,7 +89,7 @@ import {
   storeList,
   type Store,
 } from "./stores.js";
-import { storeImage } from "./store-image.js";
+import { isDiscordUrl, storeImage } from "./store-image.js";
 import { challengeText, GAME, LOL_COMMAND, startLink, verifyLink, type Platform, type RiotLookup } from "./lol.js";
 import { PROFILE_COMMAND, setProfileVisibility } from "./profile.js";
 import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type Match, type MatchRow } from "./matches.js";
@@ -1918,7 +1918,23 @@ async function findOrAddEvent(
   if (error?.code === "23505") return (await find()) ?? "Something went wrong, nothing was changed. Please try again.";
   if (error) throw new Error(`events insert: ${error.message}`);
   log("info", "event_added", { guild: guildId, event: data.id });
+  // Not awaited, as for stores. A Discord event's row is the synced one and has its cover.
+  if (url && !isDiscordUrl(url)) void tracked("event_image", checkEventImage(data.id, url));
   return data as unknown as EventRow;
+}
+
+/** Finds an event link's preview image, once: events are short-lived, so a page that cannot be read leaves none. */
+async function checkEventImage(id: number, url: string): Promise<void> {
+  let image: string | null;
+  try {
+    image = await storeImage(url);
+  } catch (err) {
+    log("info", "event_image_unreadable", { event: id, error: err });
+    return;
+  }
+  if (!image) return;
+  const { error } = await db.from("events").update({ image_url: image }).eq("id", id);
+  if (error) throw new Error(`events update: ${error.message}`);
 }
 
 /** The Going button under an /event going message. */
@@ -1966,6 +1982,8 @@ async function saveScheduledEvent(event: GuildScheduledEvent): Promise<number | 
         name: event.name,
         starts_at: new Date(event.scheduledStartTimestamp ?? Date.now()).toISOString(),
         url: event.url,
+        // Every save, so a cover added, changed or removed in Discord follows.
+        image_url: event.coverImageURL(),
         // Only the location's text is read, to pick a store; it is not stored.
         store_id: matchStore(stores, event.entityMetadata?.location ?? null)?.id ?? null,
       },

@@ -10,11 +10,11 @@ interface Store {
   image_url: string | null;
 }
 
-/** The store website's preview image (og:image), in its 1.91:1 shape, or the store's initial. */
-function StoreImage({ name, image_url }: Store) {
+/** A preview image (og:image, or a Discord event's cover) in its 1.91:1 shape, or the name's initial. */
+export function StoreImage({ name, image_url }: { name: string; image_url: string | null }) {
   if (image_url) {
     return (
-      // Hotlinked from the store's site, as for avatars and game icons: no next/image.
+      // Hotlinked from the store's site or Discord, as for avatars and game icons: no next/image.
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={image_url}
