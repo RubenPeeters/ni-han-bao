@@ -1106,7 +1106,7 @@ async function deckCommand(interaction: ChatInputCommandInteraction): Promise<vo
     const typed = interaction.options.getString("deck", true).trim();
     const { data, error } = await db
       .from("riftbound_decks")
-      .select("id, name, legend_id, legend_printing_id, champion_id, visibility, language, allow_other_languages, entries:riftbound_deck_cards(section, card_id, printing_id, quantity)")
+      .select("id, name, legend_id, legend_printing_id, champion_id, champion_printing_id, visibility, language, allow_other_languages, entries:riftbound_deck_cards(section, card_id, printing_id, quantity)")
       .eq("user_id", interaction.user.id);
     if (error) throw new Error(`riftbound_decks select: ${error.message}`);
     // A picked suggestion is the deck's id; a typed name must be exactly one of theirs.

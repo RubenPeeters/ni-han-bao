@@ -16,6 +16,7 @@ import {
   addCard,
   changeEntry,
   parseDeckList,
+  pinChampion,
   replaceEntry,
   SECTIONS,
   VISIBILITIES,
@@ -38,6 +39,7 @@ export interface Deck {
   legend_id: string | null;
   legend_printing_id: string | null;
   champion_id: string | null;
+  champion_printing_id: string | null;
   notes: string;
   visibility: string;
   language: string;
@@ -124,7 +126,13 @@ export function DeckEditor({
     setDirty(true);
   };
   const apply = (next: DeckCards) => {
-    setSettings((s) => ({ ...s, legend_id: next.legend_id, legend_printing_id: next.legend_printing_id, champion_id: next.champion_id }));
+    setSettings((s) => ({
+      ...s,
+      legend_id: next.legend_id,
+      legend_printing_id: next.legend_printing_id,
+      champion_id: next.champion_id,
+      champion_printing_id: next.champion_printing_id,
+    }));
     setList(next.entries);
     setDirty(true);
   };
@@ -132,6 +140,7 @@ export function DeckEditor({
     legend_id: settings.legend_id,
     legend_printing_id: settings.legend_printing_id,
     champion_id: settings.champion_id,
+    champion_printing_id: settings.champion_printing_id,
     entries: list,
   };
 
@@ -172,6 +181,7 @@ export function DeckEditor({
       p_entries: list,
       p_wishlist_mode: settings.wishlist_mode,
       p_legend_printing: settings.legend_printing_id,
+      p_champion_printing: settings.champion_printing_id,
     });
     if (error) return setStatus(`Not saved (${error.message}). Try again.`);
     setDirty(false);
@@ -197,6 +207,7 @@ export function DeckEditor({
   };
 
   const champion = settings.champion_id ? cards.get(settings.champion_id) : undefined;
+  const championPrintings = (champion && printings.get(champion.id)) ?? [];
   const byName = (a: Entry, b: Entry) => (cards.get(a.card_id)?.name ?? "").localeCompare(cards.get(b.card_id)?.name ?? "");
   return (
     <div className="flex flex-col gap-6">
@@ -207,7 +218,7 @@ export function DeckEditor({
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
           <div className="flex gap-3">
             <CardFigure label="Legend" card={legend} printing={settings.legend_printing_id} image={image} />
-            <CardFigure label="Chosen Champion" card={champion} image={image} />
+            <CardFigure label="Chosen Champion" card={champion} printing={settings.champion_printing_id} image={image} />
           </div>
           <div className="flex min-w-0 flex-col gap-2">
             <h1 className="break-words text-4xl font-semibold">{settings.name || "Untitled deck"}</h1>
@@ -256,7 +267,13 @@ export function DeckEditor({
             <>
               <EnergyCurve entries={list} cards={cards} />
               {view === "cards" ? (
-                <VisualDecklist entries={list} cards={cards} image={image} icons={icons} />
+                <VisualDecklist
+                  entries={list}
+                  cards={cards}
+                  image={image}
+                  icons={icons}
+                  champion={{ id: settings.champion_id, printing_id: settings.champion_printing_id }}
+                />
               ) : (
                 SECTIONS.map(({ value, label }) => {
                   const rows = list.filter((e) => e.section === value);
@@ -441,29 +458,47 @@ export function DeckEditor({
                 </select>
               )}
             </div>
-            <label className="flex flex-col gap-2 text-sm font-medium">
-              Chosen Champion
-              <select
-                value={settings.champion_id ?? ""}
-                onChange={(e) => {
-                  const id = e.target.value || null;
-                  // The Chosen Champion is one of the main deck's cards: put one in if it is not there.
-                  const missing = id && !list.some((x) => x.section === "main" && x.card_id === id);
-                  if (missing) setList(changeEntry(list, { section: "main", card_id: id, printing_id: null }, 1));
-                  change({ champion_id: id });
-                }}
-                className={field}
-              >
-                <option value="">None yet</option>
-                {/* A champion picked before the Legend changed stays listed, so the select shows it. */}
-                {champion && !champions.includes(champion) && <option value={champion.id}>{champion.name}</option>}
-                {champions.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="flex flex-col gap-2">
+              <label className="flex flex-col gap-2 text-sm font-medium">
+                Chosen Champion
+                <select
+                  value={settings.champion_id ?? ""}
+                  onChange={(e) => {
+                    const id = e.target.value || null;
+                    // The Chosen Champion is one of the main deck's cards: put one in if it is not there.
+                    const missing = id && !list.some((x) => x.section === "main" && x.card_id === id);
+                    if (missing) setList(changeEntry(list, { section: "main", card_id: id, printing_id: null }, 1));
+                    // Another champion starts at any printing: the pin was of the one before.
+                    change({ champion_id: id, champion_printing_id: null });
+                  }}
+                  className={field}
+                >
+                  <option value="">None yet</option>
+                  {/* A champion picked before the Legend changed stays listed, so the select shows it. */}
+                  {champion && !champions.includes(champion) && <option value={champion.id}>{champion.name}</option>}
+                  {champions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {champion && championPrintings.length > 1 && (
+                <select
+                  aria-label={`Printing of ${champion.name}`}
+                  value={settings.champion_printing_id ?? ""}
+                  onChange={(e) => apply(pinChampion(current, e.target.value || null))}
+                  className={field}
+                >
+                  <option value="">Any printing</option>
+                  {championPrintings.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      Only {p.collector_code}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
             <label className="flex flex-col gap-2 text-sm font-medium">
               Who sees it
               <select value={settings.visibility} onChange={(e) => change({ visibility: e.target.value })} className={field}>
@@ -716,6 +751,7 @@ export function RestoreVersion({ deck, entries, version }: { deck: Deck; entries
       p_allow_other_languages: deck.allow_other_languages,
       p_entries: entries,
       p_legend_printing: deck.legend_printing_id,
+      p_champion_printing: deck.champion_printing_id,
     });
     if (error) return setStatus(`Not restored (${error.message}). Try again.`);
     router.push(`/decks/${deck.id}`);

@@ -4,7 +4,7 @@ import type { Card, Printing } from "@/bot/src/card-match";
 import { CardThumb } from "@/components/card-thumb";
 import { TypeIcon, type RiftboundIcon } from "@/components/riftbound-icons";
 import { energyCurve } from "@/bot/src/deck-match";
-import { byType, SECTIONS, type Entry } from "@/lib/decks";
+import { byType, championCopy, SECTIONS, type Entry } from "@/lib/decks";
 import Link from "next/link";
 
 export type CardImage = (card_id: string, printing_id: string | null) => string | null;
@@ -81,13 +81,17 @@ export function VisualDecklist({
   cards,
   image,
   icons,
+  champion,
 }: {
   entries: Entry[];
   cards: Map<string, Card>;
   image: CardImage;
   icons: RiftboundIcon[];
+  /** The Chosen Champion: one copy is in the header, so the grid shows one fewer; the counts keep it. */
+  champion: { id: string | null; printing_id: string | null };
 }) {
   const count = (es: Entry[]) => es.reduce((n, e) => n + e.quantity, 0);
+  const header = championCopy(entries, champion.id, champion.printing_id);
   return (
     <div className="flex flex-col gap-6">
       {SECTIONS.map(({ value, label }) => {
@@ -110,6 +114,8 @@ export function VisualDecklist({
                 )}
                 <ul className={landscape ? "grid grid-cols-2 gap-3 sm:grid-cols-3" : "grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-6"}>
                   {g.entries.map((e) => {
+                    const quantity = e === header ? e.quantity - 1 : e.quantity;
+                    if (!quantity) return null;
                     const name = cards.get(e.card_id)?.name ?? e.card_id;
                     return (
                       <li key={`${e.card_id}|${e.printing_id}`} className="min-w-0">
@@ -120,11 +126,11 @@ export function VisualDecklist({
                               aria-hidden
                               className="absolute right-1 top-1 rounded-full bg-background/90 px-1.5 text-xs font-semibold tabular-nums shadow-sm"
                             >
-                              ×{e.quantity}
+                              ×{quantity}
                             </span>
                           </span>
                           <span className="truncate text-xs" title={name}>
-                            <span className="sr-only">{e.quantity} × </span>
+                            <span className="sr-only">{quantity} × </span>
                             {name}
                           </span>
                         </Link>

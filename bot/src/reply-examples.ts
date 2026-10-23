@@ -69,7 +69,7 @@ export function replyExamples(): Record<string, ReplyExample> {
     ...["abandoned-hall", "altar-to-unity", "aspirants-climb"].map((id) => ({ section: "battlefields", card_id: id, printing_id: null, quantity: 1 })),
   ];
   const deck = {
-    id: "00000000-0000-4000-8000-0000000d0001", name: "Ahri control", legend_id: card.id, legend_printing_id: "ogn-303-298", champion_id: "ahri-alluring",
+    id: "00000000-0000-4000-8000-0000000d0001", name: "Ahri control", legend_id: card.id, legend_printing_id: "ogn-303-298", champion_id: "ahri-alluring", champion_printing_id: "ogn-066-298",
     visibility: "public", language: "en", allow_other_languages: true,
   };
   const iconUrls = Object.fromEntries(emojis.map((e) => [e.name, e.url]));
