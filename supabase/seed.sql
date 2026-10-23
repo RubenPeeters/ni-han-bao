@@ -300,11 +300,13 @@ begin
     insert into public.store_regulars (guild_id, store_id, user_id)
         select g, s.id, users[i] from public.stores s, generate_series(1, 12) i
         where s.guild_id = g and abs(hashtext(s.name || users[i])) % 3 = 0;
-    insert into public.events (guild_id, store_id, name, starts_at)
-        select g, s.id, e.name, date_trunc('day', now()) + e.offs
-        from (values ('The Card Corner', 'Riftbound Nexus Night', interval '3 days 19 hours'),
-                     ('Dragon''s Den Games', 'Riftbound Summoner Skirmish', interval '9 days 13 hours'),
-                     ('Meeple Market', 'Riftbound casual play', interval '16 days 18 hours')) e (store, name, offs)
+    -- Images (#262): the store's, the event's own cover, and the placeholder.
+    insert into public.events (guild_id, store_id, name, starts_at, image_url)
+        select g, s.id, e.name, date_trunc('day', now()) + e.offs, e.image_url
+        from (values ('The Card Corner', 'Riftbound Nexus Night', interval '3 days 19 hours', null),
+                     ('Dragon''s Den Games', 'Riftbound Summoner Skirmish', interval '9 days 13 hours',
+                         'https://placehold.co/1200x630/png?text=Summoner+Skirmish'),
+                     ('Meeple Market', 'Riftbound casual play', interval '16 days 18 hours', null)) e (store, name, offs, image_url)
         join public.stores s on s.guild_id = g and s.name = e.store;
     insert into public.event_attendees (guild_id, event_id, user_id)
         select g, ev.id, users[i] from public.events ev, generate_series(1, 12) i

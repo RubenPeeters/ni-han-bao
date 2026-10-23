@@ -74,11 +74,18 @@ const publicLookup: LookupFunction = (hostname, options, callback) => {
   });
 };
 
+export function isDiscordUrl(url: string): boolean {
+  const host = new URL(url).hostname.toLowerCase().replace(/\.$/, "");
+  return ["discord.com", "discordapp.com"].some((d) => host === d || host.endsWith(`.${d}`));
+}
+
 /** GETs one https page, refusing non-public hosts (also after each redirect); the final URL and at most 1 MB of its HTML. */
 export async function fetchPage(url: string, signal = AbortSignal.timeout(TIMEOUT_MS)): Promise<{ url: string; html: string }> {
   let current = new URL(url);
   for (let redirects = 0; ; redirects++) {
     if (current.protocol !== "https:") throw new Error(`not https: ${current.href}`);
+    // Discord's pages are never read: a synced event's cover comes from the API instead.
+    if (isDiscordUrl(current.href)) throw new Error(`a Discord page: ${current.href}`);
     // Node skips the lookup for an IP literal, so check that here.
     const host = current.hostname.replace(/^\[|\]$/g, "");
     if (isIP(host) && !isPublicAddress(host)) throw new Error(`${host} is not a public address`);
