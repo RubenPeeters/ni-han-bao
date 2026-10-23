@@ -15,15 +15,21 @@ for (const [net, prefix] of [
   ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.0.2.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15],
   ["198.51.100.0", 24], ["203.0.113.0", 24], ["224.0.0.0", 4], ["240.0.0.0", 4],
 ] as const) NON_PUBLIC.addSubnet(net, prefix, "ipv4");
-for (const [net, prefix] of [
-  // BlockList checks ::ffff:a.b.c.d against the IPv4 ranges; NAT64 can carry a private one too.
-  ["::", 128], ["::1", 128], ["64:ff9b::", 96], ["100::", 64], ["2001:db8::", 32],
-  ["fc00::", 7], ["fe80::", 10], ["ff00::", 8],
-] as const) NON_PUBLIC.addSubnet(net, prefix, "ipv6");
+// IPv6: only global unicast (2000::/3) and IPv4-mapped, which BlockList checks against the
+// IPv4 ranges above; everything else (site-local, NAT64, ULA, ...) is refused.
+const PUBLIC_V6 = new BlockList();
+PUBLIC_V6.addSubnet("2000::", 3, "ipv6");
+PUBLIC_V6.addSubnet("::ffff:0:0", 96, "ipv6");
+// Special-purpose blocks inside 2000::/3: IETF assignments (incl. Teredo), documentation,
+// and 6to4, which embeds an arbitrary IPv4 address.
+for (const [net, prefix] of [["2001::", 23], ["2001:db8::", 32], ["2002::", 16], ["3fff::", 20]] as const) {
+  NON_PUBLIC.addSubnet(net, prefix, "ipv6");
+}
 
 export function isPublicAddress(address: string): boolean {
   const family = isIP(address);
-  return family !== 0 && !NON_PUBLIC.check(address, family === 4 ? "ipv4" : "ipv6");
+  if (family === 4) return !NON_PUBLIC.check(address, "ipv4");
+  return family === 6 && PUBLIC_V6.check(address, "ipv6") && !NON_PUBLIC.check(address, "ipv6");
 }
 
 /** The page's preview image (og:image, else twitter:image) as an absolute https URL, or null. */
@@ -90,12 +96,13 @@ function get(url: URL, signal: AbortSignal): Promise<{ location: string | null; 
   return new Promise((resolve, reject) => {
     const req = request(url, { headers: { "User-Agent": USER_AGENT, Accept: "text/html" }, lookup: publicLookup, signal }, (res) => {
       const status = res.statusCode ?? 0;
+      // Bodies we do not read are cut off, not drained: MAX_HTML would not limit them.
       if (status >= 300 && status < 400 && res.headers.location) {
-        res.resume();
+        res.destroy();
         return resolve({ location: res.headers.location, html: "" });
       }
       if (status !== 200) {
-        res.resume();
+        res.destroy();
         return reject(new Error(`HTTP ${status}`));
       }
       const chunks: Buffer[] = [];
