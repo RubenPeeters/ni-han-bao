@@ -89,6 +89,7 @@ import {
   storeList,
   type Store,
 } from "./stores.js";
+import { isDiscordUrl, storeImage } from "./store-image.js";
 import { challengeText, GAME, LOL_COMMAND, startLink, verifyLink, type Platform, type RiotLookup } from "./lol.js";
 import { PROFILE_COMMAND, setProfileVisibility } from "./profile.js";
 import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type Match, type MatchRow } from "./matches.js";
@@ -156,6 +157,8 @@ const MATCHES_MS = 6 * 60 * 60_000;
 const NUDGE_MS = 60 * 60_000;
 const TRADES_MS = 60 * 60_000;
 const FEED_CHECK_MS = 24 * 60 * 60_000;
+const STORE_IMAGES_MS = 24 * 60 * 60_000;
+const STORE_IMAGE_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
 
 const config = loadConfig();
 const log = createLogger();
@@ -1670,10 +1673,14 @@ async function storeCommand(interaction: ChatInputCommandInteraction<"cached">):
       if (typeof row === "string") {
         reply = row;
       } else {
-        const { error } = await db.from("stores").insert({ ...row, guild_id: guildId, added_by: userId });
+        const { data, error } = await db.from("stores").insert({ ...row, guild_id: guildId, added_by: userId }).select("id").single();
         if (error?.code === "23505") reply = `${storeLabel(row)} is already on the list.`;
         else if (error) throw new Error(`stores insert: ${error.message}`);
-        else reply = `Added ${storeLabel(row)}. Mark it as yours with /store mine.`;
+        else {
+          reply = `Added ${storeLabel(row)}. Mark it as yours with /store mine.`;
+          // Not awaited: a slow or dead site must not hold up the reply.
+          if (row.url) void tracked("store_image", checkStoreImage(data.id, row.url));
+        }
       }
     } else {
       // Autocomplete only suggests; a typed id may belong to another server, hence the guild filter.
@@ -1712,6 +1719,44 @@ async function storeCommand(interaction: ChatInputCommandInteraction<"cached">):
   }
   // Store names are typed by members: no @everyone or role pings from them.
   await interaction.editReply({ content: reply, allowedMentions: { parse: [] } });
+}
+
+/** Finds a store's preview image. A page that cannot be read keeps the image found before, until the next check. */
+async function checkStoreImage(id: number, url: string): Promise<void> {
+  const update: { image_checked_at: string; image_url?: string | null } = { image_checked_at: new Date().toISOString() };
+  try {
+    update.image_url = await storeImage(url);
+  } catch (err) {
+    log("info", "store_image_unreadable", { store: id, error: err });
+  }
+  const { error } = await db.from("stores").update(update).eq("id", id);
+  if (error) throw new Error(`stores update: ${error.message}`);
+}
+
+let checkingStoreImages = false;
+
+/** Daily: rechecks links not checked for a week, so a changed or removed image is picked up. */
+async function refreshStoreImages(): Promise<void> {
+  if (checkingStoreImages) return;
+  checkingStoreImages = true;
+  try {
+    const before = new Date(Date.now() - STORE_IMAGE_MAX_AGE_MS).toISOString();
+    const stores = await readAll(async (from, to) => {
+      const { data, error } = await db
+        .from("stores")
+        .select("id, url")
+        .not("url", "is", null)
+        .or(`image_checked_at.is.null,image_checked_at.lt.${before}`)
+        .order("id")
+        .range(from, to);
+      if (error) throw new Error(`stores select: ${error.message}`);
+      return data;
+    });
+    for (const s of stores) await tracked("store_image", checkStoreImage(s.id, s.url));
+    if (stores.length > 0) log("info", "store_images_checked", { stores: stores.length });
+  } finally {
+    checkingStoreImages = false;
+  }
 }
 
 /** The server's upcoming events, with goers' names; hidden members are left out by upcoming_events() itself. */
@@ -1873,7 +1918,23 @@ async function findOrAddEvent(
   if (error?.code === "23505") return (await find()) ?? "Something went wrong, nothing was changed. Please try again.";
   if (error) throw new Error(`events insert: ${error.message}`);
   log("info", "event_added", { guild: guildId, event: data.id });
+  // Not awaited, as for stores. A Discord event's row is the synced one and has its cover.
+  if (url && !isDiscordUrl(url)) void tracked("event_image", checkEventImage(data.id, url));
   return data as unknown as EventRow;
+}
+
+/** Finds an event link's preview image, once: events are short-lived, so a page that cannot be read leaves none. */
+async function checkEventImage(id: number, url: string): Promise<void> {
+  let image: string | null;
+  try {
+    image = await storeImage(url);
+  } catch (err) {
+    log("info", "event_image_unreadable", { event: id, error: err });
+    return;
+  }
+  if (!image) return;
+  const { error } = await db.from("events").update({ image_url: image }).eq("id", id);
+  if (error) throw new Error(`events update: ${error.message}`);
 }
 
 /** The Going button under an /event going message. */
@@ -1921,6 +1982,8 @@ async function saveScheduledEvent(event: GuildScheduledEvent): Promise<number | 
         name: event.name,
         starts_at: new Date(event.scheduledStartTimestamp ?? Date.now()).toISOString(),
         url: event.url,
+        // Every save, so a cover added, changed or removed in Discord follows.
+        image_url: event.coverImageURL(),
         // Only the location's text is read, to pick a store; it is not stored.
         store_id: matchStore(stores, event.entityMetadata?.location ?? null)?.id ?? null,
       },
@@ -2738,6 +2801,9 @@ client.once(Events.ClientReady, async (c) => {
   setInterval(() => void refreshRanks(), RANKS_MS);
   setInterval(() => void refreshAllMatches(), MATCHES_MS);
   setInterval(() => void nudgeDueLoans(), NUDGE_MS);
+  // On start too: deploys restart the bot more often than once a day.
+  void tracked("store_images", refreshStoreImages());
+  setInterval(() => void tracked("store_images", refreshStoreImages()), STORE_IMAGES_MS);
   setInterval(() => void notifyTradeMatches(), TRADES_MS);
   // An overdue report waits for the games played while the bot was down.
   void refreshAllMatches().finally(() => {
