@@ -291,10 +291,12 @@ begin
     on conflict (user_id, printing_id, finish, condition, language) do update set for_trade = c.quantity;
 
     -- Riftbound local play: stores, regulars and upcoming events.
-    insert into public.stores (guild_id, name, city, url, added_by) values
-        (g, 'The Card Corner', 'Leuven', 'https://example.com/card-corner', users[1]),
-        (g, 'Dragon''s Den Games', 'Brussels', null, users[2]),
-        (g, 'Meeple Market', 'Ghent', 'https://example.com/meeple-market', users[4]);
+    -- One store with a preview image (#261), one whose site has none, one without a link.
+    insert into public.stores (guild_id, name, city, url, added_by, image_url, image_checked_at) values
+        (g, 'The Card Corner', 'Leuven', 'https://example.com/card-corner', users[1],
+            'https://placehold.co/1200x630/png?text=The+Card+Corner', now()),
+        (g, 'Dragon''s Den Games', 'Brussels', null, users[2], null, null),
+        (g, 'Meeple Market', 'Ghent', 'https://example.com/meeple-market', users[4], null, now());
     insert into public.store_regulars (guild_id, store_id, user_id)
         select g, s.id, users[i] from public.stores s, generate_series(1, 12) i
         where s.guild_id = g and abs(hashtext(s.name || users[i])) % 3 = 0;
