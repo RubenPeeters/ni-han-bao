@@ -337,6 +337,10 @@ begin
         or (select language || ':' || quantity from public.riftbound_collection) <> 'zh-Hans:3' then
         raise exception 'own_riftbound_playset() does not fill the set to 3 in the language asked for';
     end if;
+    if public.own_riftbound_playset('RLS', 'zh-Hans', 6) <> 1
+        or (select language || ':' || quantity from public.riftbound_collection) <> 'zh-Hans:6' then
+        raise exception 'own_riftbound_playset() does not fill the set to 6 for two playsets';
+    end if;
     perform public.set_card_lending(true, false);
     if (select lends_cards from public.profiles where user_id = 'rls-user') is not true then
         raise exception 'set_card_lending() does not save your own setting';
