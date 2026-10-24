@@ -18,6 +18,7 @@ import {
   rowKey,
   shown as countOf,
   step,
+  tilePrinting,
   type Condition,
   type Copies,
   type Finish,
@@ -39,8 +40,9 @@ export interface LibraryCard {
   energy: number | null;
   tags: string[];
   sets: string[];
-  /** Set and collector order; the steppers change the first, or the one a typed number finds. */
-  printings: { id: string; set_code: string; collector_code: string; collector_number: number }[];
+  /** Set and collector order; the steppers change the one `tilePrinting` picks. */
+  printings: { id: string; set_code: string; collector_code: string; collector_number: number; image_url: string | null }[];
+  /** The first printing's image that has one: for a tile whose own printing has none. */
   image_url: string | null;
 }
 
@@ -86,14 +88,10 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
   const [added, setAdded] = useState("");
   const deck = mine.decks.find((d) => d.id === deckId);
   const q = normal(query);
-  // The printing a typed number finds, per card: "34" is a printing in every set.
-  const hits = new Map(
-    cards.flatMap((c) => {
-      const p = q && c.printings.find((p) => matchesCode(query, p.collector_code));
-      return p ? [[c.id, p] as const] : [];
-    }),
-  );
-  const printingOf = (c: LibraryCard) => hits.get(c.id) ?? c.printings[0];
+  const hit = (p: { collector_code: string }) => !!q && matchesCode(query, p.collector_code);
+  const printingOf = (c: LibraryCard) => tilePrinting(c.printings, set, hit);
+  // The cards a typed number finds, at that printing: "34" is a printing in every set.
+  const hits = new Set(cards.flatMap((c) => (q && printingOf(c) && hit(printingOf(c)) ? [c.id] : [])));
   const shown = cards.filter(
     (c) =>
       (!q || normal(c.name).includes(q) || c.tags.some((t) => normal(t).includes(q)) || hits.has(c.id)) &&
@@ -102,8 +100,8 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
       (!cost || String(c.energy) === cost) &&
       (!set || c.sets.includes(set)),
   );
-  // By the printing found, so the 34s of every set come together, set after set.
-  if (hits.size) shown.sort((a, b) => (printingOf(a) && printingOf(b) ? byPrinting(printingOf(a), printingOf(b)) : 0));
+  // By the printing found, so the 34s of every set come together, set after set; a picked set in its own order.
+  if (hits.size || set) shown.sort((a, b) => (printingOf(a) && printingOf(b) ? byPrinting(printingOf(a), printingOf(b)) : 0));
   const filters = [
     {
       label: "Type",
@@ -269,7 +267,7 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
                   href={`/cards/${c.id}`}
                   className="flex flex-col gap-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:opacity-80"
                 >
-                  <CardThumb url={c.image_url} name={c.name} landscape={c.type === "Battlefield"} />
+                  <CardThumb url={p?.image_url ?? c.image_url} name={c.name} landscape={c.type === "Battlefield"} />
                   <span className="flex min-w-0 flex-col gap-1">
                     <span className="truncate text-sm font-medium" title={c.name}>
                       {c.name}
