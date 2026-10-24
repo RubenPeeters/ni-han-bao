@@ -47,6 +47,52 @@ export function tilePrinting<P extends { set_code: string }>(printings: P[], set
   return inSet.find(hit) ?? inSet[0];
 }
 
+/** Copies owned per printing, over every finish, condition and language. */
+export function ownedByPrinting(rows: Map<string, Copies>): Map<string, number> {
+  const owned = new Map<string, number>();
+  for (const [key, row] of rows) {
+    const { printing_id } = parseKey(key);
+    owned.set(printing_id, (owned.get(printing_id) ?? 0) + row.quantity);
+  }
+  return owned;
+}
+
+/** How the Cards grid orders its tiles (#275). */
+export type Sort = "set" | "name" | "cost" | "rarity" | "owned";
+
+/** A tile to sort: its card, the printing it shows (`tilePrinting`), and the copies owned over all printings. */
+export interface Sorted<P> {
+  name: string;
+  energy: number | null;
+  printing: P | undefined;
+  owned: number;
+}
+
+/**
+ * The tiles' order for a sort and direction, set and number breaking ties. A tile without a
+ * printing, a card without a cost and an unknown rarity go last either way. `byPrinting` and
+ * `rarityRank` come from the bot's card-match, which this file cannot import and still run in tests.
+ */
+export function cardOrder<P extends { set_code: string; collector_number: number; collector_code: string; rarity: string | null }>(
+  sort: Sort,
+  descending: boolean,
+  { byPrinting, rarityRank }: { byPrinting: (a: P, b: P) => number; rarityRank: (rarity: string | null) => number },
+) {
+  const dir = descending ? -1 : 1;
+  const bySet = (a: Sorted<P>, b: Sorted<P>) => (a.printing && b.printing ? byPrinting(a.printing, b.printing) : 0);
+  const unknown = rarityRank(null);
+  const rank = (t: Sorted<P>) => rarityRank(t.printing?.rarity ?? null);
+  const key: Record<Sort, (a: Sorted<P>, b: Sorted<P>) => number> = {
+    set: (a, b) => dir * bySet(a, b),
+    name: (a, b) => dir * a.name.localeCompare(b.name),
+    cost: (a, b) => Number(a.energy === null) - Number(b.energy === null) || dir * ((a.energy ?? 0) - (b.energy ?? 0)),
+    // Rarest has the lowest rank, so ascending (Common first) runs the ranks backwards.
+    rarity: (a, b) => Number(rank(a) === unknown) - Number(rank(b) === unknown) || dir * (rank(b) - rank(a)),
+    owned: (a, b) => dir * (a.owned - b.owned),
+  };
+  return (a: Sorted<P>, b: Sorted<P>) => Number(!a.printing) - Number(!b.printing) || key[sort](a, b) || bySet(a, b);
+}
+
 export const NONE: Copies = { quantity: 0, for_trade: 0, lendable: null };
 
 /** What the stepper shows for a row: the lendable count as the database would work it out. */

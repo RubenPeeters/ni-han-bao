@@ -12,7 +12,7 @@ import {
   MessageFlags,
   SeparatorSpacingSize,
 } from "discord.js";
-import { byPrinting, SET_NAMES, type Catalogue } from "./card-match.js";
+import { byPrinting, rarityRank, SET_NAMES, type Catalogue } from "./card-match.js";
 import { emoji, type Emojis } from "./emojis.js";
 import { imageOf, type V2, withThumbnail } from "./riftbound-reply.js";
 import { escapeMarkdown } from "./stores.js";
@@ -37,8 +37,6 @@ export interface Sharer {
   visibility: string | null;
 }
 
-const RARITY_ORDER = ["Showcase", "Epic", "Rare", "Uncommon", "Common"];
-const rarityRank = (rarity: string | null) => (rarity && RARITY_ORDER.includes(rarity) ? RARITY_ORDER.indexOf(rarity) : RARITY_ORDER.length);
 const setRank = (code: string) => (code in SET_NAMES ? Object.keys(SET_NAMES).indexOf(code) : Infinity);
 const COLLECTION_RAREST = 5;
 const WISHLIST_SHOWN = 10;

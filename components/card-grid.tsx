@@ -1,6 +1,6 @@
 "use client";
 
-import { byPrinting, matchesCode, normal } from "@/bot/src/card-match";
+import { byPrinting, matchesCode, normal, rarityRank } from "@/bot/src/card-match";
 import { addToDeck, type MyDeck } from "@/components/add-to-deck";
 import { CardThumb } from "@/components/card-thumb";
 import { DomainIcon, EnergyBadge, FacetIcon, TypeIcon, type RiftboundIcon } from "@/components/riftbound-icons";
@@ -9,10 +9,12 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/stat-ui";
 import {
   applyPlayset,
+  cardOrder,
   CONDITIONS,
   FINISHES,
   LANGUAGES,
   NONE,
+  ownedByPrinting,
   parseKey,
   PLAYSET,
   retryDelay,
@@ -26,12 +28,13 @@ import {
   type Language,
   type Mode,
   type OwnedRow,
+  type Sort,
 } from "@/lib/collection";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import { Minus, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, Minus, Plus } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export interface LibraryCard {
   id: string;
@@ -42,7 +45,7 @@ export interface LibraryCard {
   tags: string[];
   sets: string[];
   /** Set and collector order; the steppers change the one `tilePrinting` picks. */
-  printings: { id: string; set_code: string; collector_code: string; collector_number: number; image_url: string | null }[];
+  printings: { id: string; set_code: string; collector_code: string; collector_number: number; rarity: string | null; image_url: string | null }[];
   /** The first printing's image that has one: for a tile whose own printing has none. */
   image_url: string | null;
 }
@@ -65,6 +68,15 @@ const MODES: { value: Mode; label: string }[] = [
   { value: "lendable", label: "To lend" },
 ];
 
+const SORTS: { value: Sort; label: string }[] = [
+  { value: "set", label: "Set and number" },
+  { value: "name", label: "Name" },
+  { value: "cost", label: "Cost" },
+  { value: "rarity", label: "Rarity" },
+  { value: "owned", label: "Copies owned" },
+];
+const SORT_STORAGE = "riftbound-cards-sort";
+
 const sorted = <T,>(values: T[]) => [...new Set(values)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 // Hundreds of tiles at once are a long page and many image loads on a phone.
 const PAGE = 24;
@@ -78,6 +90,8 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
   const [domain, setDomain] = useState("");
   const [cost, setCost] = useState("");
   const [set, setSet] = useState("");
+  const [sort, setSort] = useState<Sort>("set");
+  const [descending, setDescending] = useState(false);
   const [limit, setLimit] = useState(PAGE);
   const [editing, setEditing] = useState(false);
   const [mode, setMode] = useState<Mode>("quantity");
@@ -93,16 +107,35 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
   const printingOf = (c: LibraryCard) => tilePrinting(c.printings, set, hit);
   // The cards a typed number finds, at that printing: "34" is a printing in every set.
   const hits = new Set(cards.flatMap((c) => (q && printingOf(c) && hit(printingOf(c)) ? [c.id] : [])));
-  const shown = cards.filter(
-    (c) =>
-      (!q || normal(c.name).includes(q) || c.tags.some((t) => normal(t).includes(q)) || hits.has(c.id)) &&
-      (!type || c.type === type) &&
-      (!domain || c.domains.includes(domain)) &&
-      (!cost || String(c.energy) === cost) &&
-      (!set || c.sets.includes(set)),
-  );
-  // By the printing found, so the 34s of every set come together, set after set; a picked set in its own order.
-  if (hits.size || set) shown.sort((a, b) => (printingOf(a) && printingOf(b) ? byPrinting(printingOf(a), printingOf(b)) : 0));
+  // Set and number sorts by the printing found, so the 34s of every set come together, set after set.
+  const shown = cards
+    .filter(
+      (c) =>
+        (!q || normal(c.name).includes(q) || c.tags.some((t) => normal(t).includes(q)) || hits.has(c.id)) &&
+        (!type || c.type === type) &&
+        (!domain || c.domains.includes(domain)) &&
+        (!cost || String(c.energy) === cost) &&
+        (!set || c.sets.includes(set)),
+    )
+    .map((c) => ({ ...c, printing: printingOf(c), owned: collection.owned(c) }))
+    .sort(cardOrder(sort, descending, { byPrinting, rarityRank }));
+  // Per device, read after the first render so the server's HTML (the default) still matches.
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SORT_STORAGE) ?? "null");
+      if (SORTS.some((s) => s.value === saved?.sort)) setSort(saved.sort);
+      if (typeof saved?.descending === "boolean") setDescending(saved.descending);
+    } catch {}
+  }, []);
+  const chooseSort = (next: Sort, nextDescending: boolean) => {
+    setSort(next);
+    setDescending(nextDescending);
+    try {
+      localStorage.setItem(SORT_STORAGE, JSON.stringify({ sort: next, descending: nextDescending }));
+    } catch {
+      // Storage blocked: the choice lasts while the page is open.
+    }
+  };
   const filters = [
     {
       label: "Type",
@@ -147,7 +180,7 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
           }}
           className="h-11 text-base md:text-base"
         />
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {filters.map((f) => {
             // An <option> cannot hold an image: the chosen value's icon sits in the field instead.
             const facet = f.value && "facet" in f && icons.some((i) => i.facet === f.facet && i.label === f.value) ? f.facet : null;
@@ -169,6 +202,27 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
               </div>
             );
           })}
+          <div className="col-span-2 flex min-w-0 gap-2">
+            <select aria-label="Sort" value={sort} onChange={(e) => chooseSort(e.target.value as Sort, descending)} className={field}>
+              {SORTS.map((s) => (
+                <option key={s.value} value={s.value}>
+                  Sort: {s.label}
+                </option>
+              ))}
+            </select>
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-11 shrink-0"
+              // A toggle keeps one label; pressed says which way.
+              aria-label="Descending"
+              title={descending ? "Descending" : "Ascending"}
+              aria-pressed={descending}
+              onClick={() => chooseSort(sort, !descending)}
+            >
+              {descending ? <ArrowDown aria-hidden /> : <ArrowUp aria-hidden />}
+            </Button>
+          </div>
         </div>
         {editing && (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -263,9 +317,9 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
       ) : (
         <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
           {shown.slice(0, limit).map((c) => {
-            const p = printingOf(c);
+            const p = c.printing;
             const count = p ? countOf(collection.rows.get(rowKey(p.id, finish, condition, language)) ?? NONE, mode, mine.lendAll) : 0;
-            const owned = collection.owned(c);
+            const owned = c.owned;
             return (
               <li key={c.id} className="flex min-w-0 flex-col gap-2">
                 <Link
@@ -432,12 +486,9 @@ function useCollection(mine: MyCollection) {
     setStatus(`Added ${what} of ${set}`);
   };
 
-  const owned = (c: LibraryCard) => {
-    const ids = new Set(c.printings.map((p) => p.id));
-    let n = 0;
-    for (const [key, row] of rows) if (ids.has(parseKey(key).printing_id)) n += row.quantity;
-    return n;
-  };
+  // Once per change, not once per card: the Copies owned sort asks for every card.
+  const perPrinting = useMemo(() => ownedByPrinting(rows), [rows]);
+  const owned = (c: LibraryCard) => c.printings.reduce((n, p) => n + (perPrinting.get(p.id) ?? 0), 0);
 
   return { rows, status, waiting, change, playset, owned };
 }

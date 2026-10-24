@@ -74,6 +74,10 @@ const SETS = Object.keys(SET_NAMES);
 const setRank = (set: string) => (SETS.includes(set) ? SETS.indexOf(set) : SETS.length);
 
 /** Set release order, then collector number: the 34s of every set together, set after set. */
+export const RARITY_ORDER = ["Showcase", "Epic", "Rare", "Uncommon", "Common"];
+/** Rarest first; a rarity not in the list after all of them. */
+export const rarityRank = (rarity: string | null) => (rarity && RARITY_ORDER.includes(rarity) ? RARITY_ORDER.indexOf(rarity) : RARITY_ORDER.length);
+
 export const byPrinting = (
   a: { set_code: string; collector_number: number; collector_code: string },
   b: { set_code: string; collector_number: number; collector_code: string },
