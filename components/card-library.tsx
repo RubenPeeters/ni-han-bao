@@ -109,7 +109,7 @@ export async function CardLibrary({ owned: ownedOnly = false }: { owned?: boolea
       energy: c.energy,
       tags: c.tags,
       sets: [...new Set(c.printings.map((p) => p.set_code))],
-      printings: c.printings.map(({ id, set_code, collector_code, collector_number }) => ({ id, set_code, collector_code, collector_number })),
+      printings: c.printings.map(({ id, set_code, collector_code, collector_number, image_url }) => ({ id, set_code, collector_code, collector_number, image_url })),
       image_url: c.printings.find((p) => p.image_url)?.image_url ?? null,
     }));
   if (ownedOnly && library.length === 0) {

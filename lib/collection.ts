@@ -38,6 +38,15 @@ export function parseKey(key: string) {
   return { printing_id, finish: finish as Finish, condition: condition as Condition, language: language as Language };
 }
 
+/**
+ * The printing a Cards tile shows and steps (#273): the typed number's hit, else the first in
+ * collector order; with a set picked, only that set's printings count.
+ */
+export function tilePrinting<P extends { set_code: string }>(printings: P[], set: string, hit: (p: P) => boolean) {
+  const inSet = set ? printings.filter((p) => p.set_code === set) : printings;
+  return inSet.find(hit) ?? inSet[0];
+}
+
 export const NONE: Copies = { quantity: 0, for_trade: 0, lendable: null };
 
 /** What the stepper shows for a row: the lendable count as the database would work it out. */
