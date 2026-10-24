@@ -75,17 +75,22 @@ export const PLAYSET = 3;
 
 /**
  * "I own a playset of this set", as own_riftbound_playset() does it in the database: each
- * printing with fewer than 3 copies (in any language) is topped up with normal, NM ones in `language`.
+ * printing with fewer than `copies` (in any language) is topped up with normal, NM ones in `language`.
  */
-export function applyPlayset(rows: Map<string, Copies>, printings: string[], language: Language): Map<string, Copies> {
+export function applyPlayset(
+  rows: Map<string, Copies>,
+  printings: string[],
+  language: Language,
+  copies = PLAYSET,
+): Map<string, Copies> {
   const next = new Map(rows);
   for (const id of printings) {
     let owned = 0;
     for (const [key, row] of rows) if (parseKey(key).printing_id === id) owned += row.quantity;
-    if (owned >= PLAYSET) continue;
+    if (owned >= copies) continue;
     const key = rowKey(id, "normal", "NM", language);
     const row = next.get(key) ?? NONE;
-    next.set(key, { ...row, quantity: row.quantity + PLAYSET - owned });
+    next.set(key, { ...row, quantity: row.quantity + copies - owned });
   }
   return next;
 }

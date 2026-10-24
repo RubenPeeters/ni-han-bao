@@ -14,6 +14,7 @@ import {
   LANGUAGES,
   NONE,
   parseKey,
+  PLAYSET,
   retryDelay,
   rowKey,
   shown as countOf,
@@ -225,23 +226,27 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
                 ))}
               </select>
             )}
-            {editing && playsetOf && (
-              <Button
-                variant="secondary"
-                size="sm"
-                // The database tops up from what it has, so the taps go first.
-                disabled={collection.waiting > 0}
-                onClick={() =>
-                  collection.playset(
-                    playsetOf,
-                    cards.flatMap((c) => c.printings.filter((p) => p.set_code === playsetOf).map((p) => p.id)),
-                    language,
-                  )
-                }
-              >
-                I own a playset of {playsetOf}
-              </Button>
-            )}
+            {editing &&
+              playsetOf &&
+              [PLAYSET, 2 * PLAYSET].map((copies) => (
+                <Button
+                  key={copies}
+                  variant="secondary"
+                  size="sm"
+                  // The database tops up from what it has, so the taps go first.
+                  disabled={collection.waiting > 0}
+                  onClick={() =>
+                    collection.playset(
+                      playsetOf,
+                      cards.flatMap((c) => c.printings.filter((p) => p.set_code === playsetOf).map((p) => p.id)),
+                      language,
+                      copies,
+                    )
+                  }
+                >
+                  I own {copies === PLAYSET ? "a playset" : "2 playsets"} of {playsetOf}
+                </Button>
+              ))}
             <Button variant={editing ? "default" : "secondary"} size="sm" aria-pressed={editing} onClick={() => setEditing(!editing)}>
               {editing ? "Done" : "Edit my collection"}
             </Button>
@@ -418,12 +423,13 @@ function useCollection(mine: MyCollection) {
     void flush();
   };
 
-  const playset = async (set: string, printings: string[], language: Language) => {
-    setStatus(`Adding a playset of ${set}…`);
-    const { error } = await createClient().rpc("own_riftbound_playset", { p_set: set, p_language: language });
-    if (error) return setStatus(`Could not add the playset (${error.message}). Try again.`);
-    setRows(applyPlayset(latest.current, printings, language));
-    setStatus(`Playset of ${set} added`);
+  const playset = async (set: string, printings: string[], language: Language, copies: number) => {
+    const what = copies === PLAYSET ? "a playset" : "2 playsets";
+    setStatus(`Adding ${what} of ${set}…`);
+    const { error } = await createClient().rpc("own_riftbound_playset", { p_set: set, p_language: language, p_copies: copies });
+    if (error) return setStatus(`Could not add ${what} (${error.message}). Try again.`);
+    setRows(applyPlayset(latest.current, printings, language, copies));
+    setStatus(`Added ${what} of ${set}`);
   };
 
   const owned = (c: LibraryCard) => {
