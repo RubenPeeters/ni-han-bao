@@ -115,11 +115,8 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
   const shown = gridTiles(cards, {
     view,
     set,
-    named: (c) =>
-      (!q || normal(c.name).includes(q) || c.tags.some((t) => normal(t).includes(q))) &&
-      (!type || c.type === type) &&
-      (!domain || c.domains.includes(domain)) &&
-      (!cost || String(c.energy) === cost),
+    kept: (c) => (!type || c.type === type) && (!domain || c.domains.includes(domain)) && (!cost || String(c.energy) === cost),
+    named: (c) => !q || normal(c.name).includes(q) || c.tags.some((t) => normal(t).includes(q)),
     hit,
     owned: collection.perPrinting,
   }).sort(cardOrder(sort, descending, { byPrinting, rarityRank }));

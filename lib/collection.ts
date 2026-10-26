@@ -53,16 +53,17 @@ export function tilePrinting<P extends Omit<Printing, "id">>(printings: P[], set
 export type View = "card" | "printing";
 
 /**
- * Which tiles the Cards grid shows (#285). `named` is the card's own filters (name, type, domain,
- * cost); a printing the typed number `hit`s is shown too. `owned` is copies per printing
+ * Which tiles the Cards grid shows (#285). `kept` is the card's type, domain and cost filters, which
+ * always apply; `named` is the text search, which a printing the typed number `hit`s passes too. `owned` is copies per printing
  * (`ownedByPrinting`); `elsewhere` is how many of a card's copies sit on printings its tile does not step.
  */
 export function gridTiles<C extends { printings: Printing[] }, P extends C["printings"][number] = C["printings"][number]>(
   cards: C[],
-  { view, set, named, hit, owned }: { view: View; set: string; named: (c: C) => boolean; hit: (p: P) => boolean; owned: Map<string, number> },
+  { view, set, kept, named, hit, owned }: { view: View; set: string; kept: (c: C) => boolean; named: (c: C) => boolean; hit: (p: P) => boolean; owned: Map<string, number> },
 ) {
   const copies = (p: Printing) => owned.get(p.id) ?? 0;
   return cards.flatMap((card) => {
+    if (!kept(card)) return [];
     const inSet = (set ? card.printings.filter((p) => p.set_code === set) : card.printings) as P[];
     if (view === "printing") {
       return inSet.filter((p) => named(card) || hit(p)).map((printing) => ({ ...card, printing, owned: copies(printing), elsewhere: 0 }));
