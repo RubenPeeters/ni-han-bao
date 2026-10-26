@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { parseCollectionCsv, type ImportPreview } from "@/lib/collection-import";
 import { allPages } from "@/lib/decks";
 import { createClient } from "@/lib/supabase/client";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
@@ -20,7 +21,7 @@ function Rows({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** /collection's CSV import: read and previewed here, only the matched rows saved, on confirm. */
+/** /collection/import's CSV import: read and previewed here, only the matched rows saved, on confirm. */
 export function CollectionImport() {
   const router = useRouter();
   const [preview, setPreview] = useState<ImportPreview | null>(null);
@@ -91,6 +92,14 @@ export function CollectionImport() {
       {status && (
         <p aria-live="polite" className="text-sm">
           {status}
+          {saved && (
+            <>
+              {" "}
+              <Link href="/collection" className="underline underline-offset-4 hover:text-muted-foreground">
+                See my collection
+              </Link>
+            </>
+          )}
         </p>
       )}
       {preview && (
