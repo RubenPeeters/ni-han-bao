@@ -120,17 +120,26 @@ export const retryDelay = (attempt: number) => Math.min(30_000, 1_000 * 2 ** att
 export const PLAYSET = 3;
 
 /**
- * "I own a playset of this set", as own_riftbound_playset() does it in the database: each
+ * A set's normal number (#284): `SET-NNN/TOTAL` with NNN <= TOTAL. Not an alternate art (`023a`),
+ * starred (`197*`), overnumbered (`169/166`), SP, token or rune printing. own_riftbound_playset() has the same rule.
+ */
+export function isBasicPrinting(collector_code: string, collector_number: number) {
+  const total = /^[^-]+-\d+\/(\d+)$/.exec(collector_code)?.[1];
+  return total !== undefined && collector_number <= Number(total);
+}
+
+/**
+ * "I own a playset of this set", as own_riftbound_playset() does it in the database: each basic
  * printing with fewer than `copies` (in any language) is topped up with normal, NM ones in `language`.
  */
 export function applyPlayset(
   rows: Map<string, Copies>,
-  printings: string[],
+  printings: { id: string; collector_code: string; collector_number: number }[],
   language: Language,
   copies = PLAYSET,
 ): Map<string, Copies> {
   const next = new Map(rows);
-  for (const id of printings) {
+  for (const { id } of printings.filter((p) => isBasicPrinting(p.collector_code, p.collector_number))) {
     let owned = 0;
     for (const [key, row] of rows) if (parseKey(key).printing_id === id) owned += row.quantity;
     if (owned >= copies) continue;

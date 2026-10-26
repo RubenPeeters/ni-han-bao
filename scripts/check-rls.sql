@@ -88,7 +88,9 @@ begin
     -- The Riftbound catalogue (#148): global, for anyone logged in.
     insert into public.riftbound_cards (id, name, type) values ('rls-card', 'x', 'Spell');
     insert into public.riftbound_printings (id, card_id, set_code, collector_code, collector_number)
-    values ('rls-printing', 'rls-card', 'RLS', 'RLS-001', 1);
+    values ('rls-printing', 'rls-card', 'RLS', 'RLS-001/001', 1),
+        -- An alternate art (#284): no playset ever fills it.
+        ('rls-alt', 'rls-card', 'RLS', 'RLS-001a/001', 1);
     -- Collections (#150): rls-rls-mine lends everything, rls-hidden lends but is hidden,
     -- rls-rls-other lends but shares no server; rls-user owns one but does not lend.
     update public.profiles set lends_cards = true, lend_all = true where user_id in ('rls-rls-mine', 'rls-hidden', 'rls-rls-other');
@@ -335,16 +337,18 @@ begin
     if exists (select from public.riftbound_collection) then raise exception 'set_riftbound_copies() keeps a row at 0'; end if;
     -- Each call is its own statement: a read in the same statement sees the rows from before the call.
     if public.own_riftbound_playset('RLS', 'zh-Hans') <> 1 then
-        raise exception 'own_riftbound_playset() does not fill the set to 3 in the language asked for';
+        raise exception 'own_riftbound_playset() does not fill the set''s basic printings to 3 in the language asked for';
     end if;
-    if (select language || ':' || quantity from public.riftbound_collection) is distinct from 'zh-Hans:3' then
-        raise exception 'own_riftbound_playset() does not fill the set to 3 in the language asked for';
+    if (select string_agg(printing_id || ':' || language || ':' || quantity, ',') from public.riftbound_collection)
+        is distinct from 'rls-printing:zh-Hans:3' then
+        raise exception 'own_riftbound_playset() does not fill the set''s basic printings to 3 in the language asked for';
     end if;
     if public.own_riftbound_playset('RLS', 'zh-Hans', 6) <> 1 then
-        raise exception 'own_riftbound_playset() does not fill the set to 6 for two playsets';
+        raise exception 'own_riftbound_playset() does not fill the set''s basic printings to 6 for two playsets';
     end if;
-    if (select language || ':' || quantity from public.riftbound_collection) is distinct from 'zh-Hans:6' then
-        raise exception 'own_riftbound_playset() does not fill the set to 6 for two playsets';
+    if (select string_agg(printing_id || ':' || language || ':' || quantity, ',') from public.riftbound_collection)
+        is distinct from 'rls-printing:zh-Hans:6' then
+        raise exception 'own_riftbound_playset() does not fill the set''s basic printings to 6 for two playsets';
     end if;
     -- Back to the 3 copies the checks below were written for.
     perform public.set_riftbound_copies('rls-printing', 'normal', 'NM', 'zh-Hans', 3, 0, null);
