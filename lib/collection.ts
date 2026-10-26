@@ -38,13 +38,41 @@ export function parseKey(key: string) {
   return { printing_id, finish: finish as Finish, condition: condition as Condition, language: language as Language };
 }
 
+type Printing = { id: string; set_code: string; collector_code: string; collector_number: number };
+
 /**
- * The printing a Cards tile shows and steps (#273): the typed number's hit, else the first in
- * collector order; with a set picked, only that set's printings count.
+ * The printing a Cards tile shows and steps (#273): the typed number's hit, else the first basic
+ * one in collector order (#285), else the first; with a set picked, only that set's printings count.
  */
-export function tilePrinting<P extends { set_code: string }>(printings: P[], set: string, hit: (p: P) => boolean) {
+export function tilePrinting<P extends Omit<Printing, "id">>(printings: P[], set: string, hit: (p: P) => boolean) {
   const inSet = set ? printings.filter((p) => p.set_code === set) : printings;
-  return inSet.find(hit) ?? inSet[0];
+  return inSet.find(hit) ?? inSet.find((p) => isBasicPrinting(p.collector_code, p.collector_number)) ?? inSet[0];
+}
+
+/** One tile per card, or one per printing. */
+export type View = "card" | "printing";
+
+/**
+ * Which tiles the Cards grid shows (#285). `named` is the card's own filters (name, type, domain,
+ * cost); a printing the typed number `hit`s is shown too. `owned` is copies per printing
+ * (`ownedByPrinting`); `elsewhere` is how many of a card's copies sit on printings its tile does not step.
+ */
+export function gridTiles<C extends { printings: Printing[] }, P extends C["printings"][number] = C["printings"][number]>(
+  cards: C[],
+  { view, set, named, hit, owned }: { view: View; set: string; named: (c: C) => boolean; hit: (p: P) => boolean; owned: Map<string, number> },
+) {
+  const copies = (p: Printing) => owned.get(p.id) ?? 0;
+  return cards.flatMap((card) => {
+    const inSet = (set ? card.printings.filter((p) => p.set_code === set) : card.printings) as P[];
+    if (view === "printing") {
+      return inSet.filter((p) => named(card) || hit(p)).map((printing) => ({ ...card, printing, owned: copies(printing), elsewhere: 0 }));
+    }
+    if (set && !inSet.length) return [];
+    const printing = tilePrinting(card.printings as P[], set, hit);
+    if (!named(card) && !(printing && hit(printing))) return [];
+    const total = card.printings.reduce((n, p) => n + copies(p), 0);
+    return [{ ...card, printing, owned: total, elsewhere: total - (printing ? copies(printing) : 0) }];
+  });
 }
 
 /** Copies owned per printing, over every finish, condition and language. */
@@ -60,7 +88,7 @@ export function ownedByPrinting(rows: Map<string, Copies>): Map<string, number> 
 /** How the Cards grid orders its tiles (#275). */
 export type Sort = "set" | "name" | "cost" | "rarity" | "owned";
 
-/** A tile to sort: its card, the printing it shows (`tilePrinting`), and the copies owned over all printings. */
+/** A tile to sort: its card, the printing it shows (`gridTiles`), and the copies it counts as owned. */
 export interface Sorted<P> {
   name: string;
   energy: number | null;
