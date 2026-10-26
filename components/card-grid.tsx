@@ -292,7 +292,7 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
                   onClick={() =>
                     collection.playset(
                       playsetOf,
-                      cards.flatMap((c) => c.printings.filter((p) => p.set_code === playsetOf).map((p) => p.id)),
+                      cards.flatMap((c) => c.printings.filter((p) => p.set_code === playsetOf)),
                       language,
                       copies,
                     )
@@ -477,7 +477,7 @@ function useCollection(mine: MyCollection) {
     void flush();
   };
 
-  const playset = async (set: string, printings: string[], language: Language, copies: number) => {
+  const playset = async (set: string, printings: LibraryCard["printings"], language: Language, copies: number) => {
     const what = copies === PLAYSET ? "a playset" : "2 playsets";
     setStatus(`Adding ${what} of ${set}…`);
     const { error } = await createClient().rpc("own_riftbound_playset", { p_set: set, p_language: language, p_copies: copies });
