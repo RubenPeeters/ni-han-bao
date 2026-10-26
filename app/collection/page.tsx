@@ -1,4 +1,5 @@
 import { CardLibrary } from "@/components/card-library";
+import { CollectionExport } from "@/components/collection-export";
 import { ProfileCollection } from "@/components/profile-collection";
 import { LogInPrompt } from "@/components/server-picker";
 import { ErrorState, NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
@@ -22,7 +23,7 @@ export default function MyCollectionPage() {
         action={
           hasEnvVars && (
             <Suspense fallback={null}>
-              <ImportLink />
+              <CollectionActions />
             </Suspense>
           )
         }
@@ -38,16 +39,19 @@ export default function MyCollectionPage() {
   );
 }
 
-async function ImportLink() {
+async function CollectionActions() {
   const { me } = await myDiscordId();
   if (!me) return null;
   return (
-    <Button asChild variant="outline" className="h-11 self-start">
-      <Link href="/collection/import">
-        <Upload aria-hidden />
-        Import from CSV
-      </Link>
-    </Button>
+    <div className="flex flex-wrap items-start gap-2">
+      <Button asChild variant="outline" className="h-11">
+        <Link href="/collection/import">
+          <Upload aria-hidden />
+          Import from CSV
+        </Link>
+      </Button>
+      <CollectionExport />
+    </div>
   );
 }
 
