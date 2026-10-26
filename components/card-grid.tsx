@@ -12,6 +12,7 @@ import {
   cardOrder,
   CONDITIONS,
   FINISHES,
+  gridTiles,
   LANGUAGES,
   NONE,
   ownedByPrinting,
@@ -21,7 +22,6 @@ import {
   rowKey,
   shown as countOf,
   step,
-  tilePrinting,
   type Condition,
   type Copies,
   type Finish,
@@ -29,6 +29,7 @@ import {
   type Mode,
   type OwnedRow,
   type Sort,
+  type View,
 } from "@/lib/collection";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -44,7 +45,7 @@ export interface LibraryCard {
   energy: number | null;
   tags: string[];
   sets: string[];
-  /** Set and collector order; the steppers change the one `tilePrinting` picks. */
+  /** Set and collector order; a tile steps the one `gridTiles` gives it. */
   printings: { id: string; set_code: string; collector_code: string; collector_number: number; rarity: string | null; image_url: string | null }[];
   /** The first printing's image that has one: for a tile whose own printing has none. */
   image_url: string | null;
@@ -76,6 +77,11 @@ const SORTS: { value: Sort; label: string }[] = [
   { value: "owned", label: "Copies owned" },
 ];
 const SORT_STORAGE = "riftbound-cards-sort";
+const VIEWS: { value: View; label: string }[] = [
+  { value: "card", label: "One per card" },
+  { value: "printing", label: "Every printing" },
+];
+const VIEW_STORAGE = "riftbound-cards-view";
 
 const sorted = <T,>(values: T[]) => [...new Set(values)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 // Hundreds of tiles at once are a long page and many image loads on a phone.
@@ -92,6 +98,7 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
   const [set, setSet] = useState("");
   const [sort, setSort] = useState<Sort>("set");
   const [descending, setDescending] = useState(false);
+  const [view, setView] = useState<View>("card");
   const [limit, setLimit] = useState(PAGE);
   const [editing, setEditing] = useState(false);
   const [mode, setMode] = useState<Mode>("quantity");
@@ -104,21 +111,17 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
   const deck = mine.decks.find((d) => d.id === deckId);
   const q = normal(query);
   const hit = (p: { collector_code: string }) => !!q && matchesCode(query, p.collector_code);
-  const printingOf = (c: LibraryCard) => tilePrinting(c.printings, set, hit);
-  // The cards a typed number finds, at that printing: "34" is a printing in every set.
-  const hits = new Set(cards.flatMap((c) => (q && printingOf(c) && hit(printingOf(c)) ? [c.id] : [])));
   // Set and number sorts by the printing found, so the 34s of every set come together, set after set.
-  const shown = cards
-    .filter(
-      (c) =>
-        (!q || normal(c.name).includes(q) || c.tags.some((t) => normal(t).includes(q)) || hits.has(c.id)) &&
-        (!type || c.type === type) &&
-        (!domain || c.domains.includes(domain)) &&
-        (!cost || String(c.energy) === cost) &&
-        (!set || c.sets.includes(set)),
-    )
-    .map((c) => ({ ...c, printing: printingOf(c), owned: collection.owned(c) }))
-    .sort(cardOrder(sort, descending, { byPrinting, rarityRank }));
+  const shown = gridTiles(cards, {
+    view,
+    set,
+    kept: (c) => (!type || c.type === type) && (!domain || c.domains.includes(domain)) && (!cost || String(c.energy) === cost),
+    named: (c) => !q || normal(c.name).includes(q) || c.tags.some((t) => normal(t).includes(q)),
+    hit,
+    owned: collection.perPrinting,
+  }).sort(cardOrder(sort, descending, { byPrinting, rarityRank }));
+  const total = view === "card" ? cards.length : cards.reduce((n, c) => n + c.printings.length, 0);
+  const noun = view === "card" ? "cards" : "printings";
   // Per device, read after the first render so the server's HTML (the default) still matches.
   useEffect(() => {
     try {
@@ -126,7 +129,19 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
       if (SORTS.some((s) => s.value === saved?.sort)) setSort(saved.sort);
       if (typeof saved?.descending === "boolean") setDescending(saved.descending);
     } catch {}
+    try {
+      const saved = localStorage.getItem(VIEW_STORAGE);
+      if (VIEWS.some((v) => v.value === saved)) setView(saved as View);
+    } catch {}
   }, []);
+  const chooseView = (next: View) => {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_STORAGE, next);
+    } catch {
+      // Storage blocked: the choice lasts while the page is open.
+    }
+  };
   const chooseSort = (next: Sort, nextDescending: boolean) => {
     setSort(next);
     setDescending(nextDescending);
@@ -158,8 +173,7 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
   ];
   const sets = filters[3].options;
   const playsetOf = set || (sets.length === 1 ? sets[0] : "");
-  const tap = (c: LibraryCard, delta: number) => {
-    const p = printingOf(c);
+  const tap = (p: LibraryCard["printings"][number] | undefined, delta: number) => {
     if (p) collection.change(rowKey(p.id, finish, condition, language), (row) => step(row, mode, delta, mine.lendAll));
   };
   return (
@@ -176,7 +190,7 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
           onChange={(e) => setQuery(e.target.value)}
           // Card in hand, code typed, Enter: one more, without reaching for the mouse.
           onKeyDown={(e) => {
-            if (e.key === "Enter" && editing && shown.length === 1) tap(shown[0], e.shiftKey ? -1 : 1);
+            if (e.key === "Enter" && editing && shown.length === 1) tap(shown[0].printing, e.shiftKey ? -1 : 1);
           }}
           className="h-11 text-base md:text-base"
         />
@@ -258,9 +272,9 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
         )}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p aria-live="polite" className="text-xs text-muted-foreground">
-            {shown.length === cards.length
-              ? `${cards.length.toLocaleString("en-US")} cards`
-              : `${shown.length.toLocaleString("en-US")} of ${cards.length.toLocaleString("en-US")} cards`}
+            {shown.length === total
+              ? `${total.toLocaleString("en-US")} ${noun}`
+              : `${shown.length.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} ${noun}`}
             {collection.status && ` · ${collection.status}`}
             {added && ` · ${added}`}
           </p>
@@ -312,6 +326,13 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
           </p>
         )}
       </div>
+      <div role="group" aria-label="Tiles" className="flex gap-1">
+        {VIEWS.map((v) => (
+          <Button key={v.value} variant={view === v.value ? "default" : "ghost"} size="sm" className="h-11" aria-pressed={view === v.value} onClick={() => chooseView(v.value)}>
+            {v.label}
+          </Button>
+        ))}
+      </div>
       {shown.length === 0 ? (
         <EmptyState>No card matches. Try fewer filters.</EmptyState>
       ) : (
@@ -319,9 +340,8 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
           {shown.slice(0, limit).map((c) => {
             const p = c.printing;
             const count = p ? countOf(collection.rows.get(rowKey(p.id, finish, condition, language)) ?? NONE, mode, mine.lendAll) : 0;
-            const owned = c.owned;
             return (
-              <li key={c.id} className="flex min-w-0 flex-col gap-2">
+              <li key={p?.id ?? c.id} className="flex min-w-0 flex-col gap-2">
                 <Link
                   href={`/cards/${c.id}`}
                   className="flex flex-col gap-2 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:opacity-80"
@@ -338,7 +358,13 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
                         <DomainIcon key={d} icons={icons} domain={d} />
                       ))}
                     </span>
-                    {owned > 0 && <span className="text-xs font-medium">{owned.toLocaleString("en-US")} owned</span>}
+                    {view === "printing" && p && <span className="text-xs text-muted-foreground tabular-nums">{p.collector_code}</span>}
+                    {c.owned > 0 && (
+                      <span className="text-xs font-medium">
+                        {c.owned.toLocaleString("en-US")} owned
+                        {c.elsewhere > 0 && <span className="font-normal text-muted-foreground"> · {c.elsewhere.toLocaleString("en-US")} on other printings</span>}
+                      </span>
+                    )}
                   </span>
                 </Link>
                 {deck && (
@@ -354,11 +380,11 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
                 )}
                 {editing && p && (
                   <div className="mt-auto flex items-center justify-between gap-1">
-                    <Button variant="secondary" size="icon" className="size-11" aria-label={`One fewer: ${c.name}`} disabled={count === 0} onClick={() => tap(c, -1)}>
+                    <Button variant="secondary" size="icon" className="size-11" aria-label={`One fewer: ${c.name}`} disabled={count === 0} onClick={() => tap(p, -1)}>
                       <Minus aria-hidden />
                     </Button>
                     <span className="min-w-0 text-center text-lg font-semibold tabular-nums">{count}</span>
-                    <Button variant="secondary" size="icon" className="size-11" aria-label={`One more: ${c.name}`} onClick={() => tap(c, 1)}>
+                    <Button variant="secondary" size="icon" className="size-11" aria-label={`One more: ${c.name}`} onClick={() => tap(p, 1)}>
                       <Plus aria-hidden />
                     </Button>
                   </div>
@@ -488,7 +514,6 @@ function useCollection(mine: MyCollection) {
 
   // Once per change, not once per card: the Copies owned sort asks for every card.
   const perPrinting = useMemo(() => ownedByPrinting(rows), [rows]);
-  const owned = (c: LibraryCard) => c.printings.reduce((n, p) => n + (perPrinting.get(p.id) ?? 0), 0);
 
-  return { rows, status, waiting, change, playset, owned };
+  return { rows, status, waiting, change, playset, perPrinting };
 }
