@@ -88,7 +88,9 @@ begin
     -- The Riftbound catalogue (#148): global, for anyone logged in.
     insert into public.riftbound_cards (id, name, type) values ('rls-card', 'x', 'Spell');
     insert into public.riftbound_printings (id, card_id, set_code, collector_code, collector_number)
-    values ('rls-printing', 'rls-card', 'RLS', 'RLS-001', 1);
+    values ('rls-printing', 'rls-card', 'RLS', 'RLS-001/001', 1),
+        -- An alternate art (#284): no playset ever fills it.
+        ('rls-alt', 'rls-card', 'RLS', 'RLS-001a/001', 1);
     -- Collections (#150): rls-rls-mine lends everything, rls-hidden lends but is hidden,
     -- rls-rls-other lends but shares no server; rls-user owns one but does not lend.
     update public.profiles set lends_cards = true, lend_all = true where user_id in ('rls-rls-mine', 'rls-hidden', 'rls-rls-other');
@@ -333,14 +335,23 @@ begin
     perform public.set_riftbound_copies('rls-printing', 'normal', 'NM', 'fr', 0, 0, null);
     perform public.set_riftbound_copies('rls-printing', 'normal', 'NM', 'en', 0, 0, null);
     if exists (select from public.riftbound_collection) then raise exception 'set_riftbound_copies() keeps a row at 0'; end if;
-    if public.own_riftbound_playset('RLS', 'zh-Hans') <> 1
-        or (select language || ':' || quantity from public.riftbound_collection) <> 'zh-Hans:3' then
-        raise exception 'own_riftbound_playset() does not fill the set to 3 in the language asked for';
+    -- Each call is its own statement: a read in the same statement sees the rows from before the call.
+    if public.own_riftbound_playset('RLS', 'zh-Hans') <> 1 then
+        raise exception 'own_riftbound_playset() does not fill the set''s basic printings to 3 in the language asked for';
     end if;
-    if public.own_riftbound_playset('RLS', 'zh-Hans', 6) <> 1
-        or (select language || ':' || quantity from public.riftbound_collection) <> 'zh-Hans:6' then
-        raise exception 'own_riftbound_playset() does not fill the set to 6 for two playsets';
+    if (select string_agg(printing_id || ':' || language || ':' || quantity, ',') from public.riftbound_collection)
+        is distinct from 'rls-printing:zh-Hans:3' then
+        raise exception 'own_riftbound_playset() does not fill the set''s basic printings to 3 in the language asked for';
     end if;
+    if public.own_riftbound_playset('RLS', 'zh-Hans', 6) <> 1 then
+        raise exception 'own_riftbound_playset() does not fill the set''s basic printings to 6 for two playsets';
+    end if;
+    if (select string_agg(printing_id || ':' || language || ':' || quantity, ',') from public.riftbound_collection)
+        is distinct from 'rls-printing:zh-Hans:6' then
+        raise exception 'own_riftbound_playset() does not fill the set''s basic printings to 6 for two playsets';
+    end if;
+    -- Back to the 3 copies the checks below were written for.
+    perform public.set_riftbound_copies('rls-printing', 'normal', 'NM', 'zh-Hans', 3, 0, null);
     perform public.set_card_lending(true, false);
     if (select lends_cards from public.profiles where user_id = 'rls-user') is not true then
         raise exception 'set_card_lending() does not save your own setting';
@@ -424,9 +435,12 @@ begin
     begin
         if (select copies || ':' || wishes from public.import_riftbound_collection(
                 '[{"printing_id":"rls-printing","quantity":2,"want":3},{"printing_id":"rls-printing","quantity":1,"want":0},
-                  {"printing_id":"rls-unknown","quantity":5,"want":5}]')) <> '3:1'
-            or (select sum(quantity) from public.riftbound_collection where printing_id = 'rls-printing') <> 6
-            or (select quantity from public.riftbound_wishlist where printing_id = 'rls-printing') <> 8 then
+                  {"printing_id":"rls-unknown","quantity":5,"want":5}]')) <> '3:1' then
+            raise exception 'import_riftbound_collection() does not add to what the caller has';
+        end if;
+        -- Its own statement, as for own_riftbound_playset() above.
+        if (select sum(quantity) from public.riftbound_collection where printing_id = 'rls-printing') is distinct from 6
+            or (select quantity from public.riftbound_wishlist where printing_id = 'rls-printing') is distinct from 8 then
             raise exception 'import_riftbound_collection() does not add to what the caller has';
         end if;
         perform public.import_riftbound_collection('[{"printing_id":"rls-printing","quantity":0,"want":95}]');

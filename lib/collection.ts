@@ -38,13 +38,42 @@ export function parseKey(key: string) {
   return { printing_id, finish: finish as Finish, condition: condition as Condition, language: language as Language };
 }
 
+type Printing = { id: string; set_code: string; collector_code: string; collector_number: number };
+
 /**
- * The printing a Cards tile shows and steps (#273): the typed number's hit, else the first in
- * collector order; with a set picked, only that set's printings count.
+ * The printing a Cards tile shows and steps (#273): the typed number's hit, else the first basic
+ * one in collector order (#285), else the first; with a set picked, only that set's printings count.
  */
-export function tilePrinting<P extends { set_code: string }>(printings: P[], set: string, hit: (p: P) => boolean) {
+export function tilePrinting<P extends Omit<Printing, "id">>(printings: P[], set: string, hit: (p: P) => boolean) {
   const inSet = set ? printings.filter((p) => p.set_code === set) : printings;
-  return inSet.find(hit) ?? inSet[0];
+  return inSet.find(hit) ?? inSet.find((p) => isBasicPrinting(p.collector_code, p.collector_number)) ?? inSet[0];
+}
+
+/** One tile per card, or one per printing. */
+export type View = "card" | "printing";
+
+/**
+ * Which tiles the Cards grid shows (#285). `kept` is the card's type, domain and cost filters, which
+ * always apply; `named` is the text search, which a printing the typed number `hit`s passes too. `owned` is copies per printing
+ * (`ownedByPrinting`); `elsewhere` is how many of a card's copies sit on printings its tile does not step.
+ */
+export function gridTiles<C extends { printings: Printing[] }, P extends C["printings"][number] = C["printings"][number]>(
+  cards: C[],
+  { view, set, kept, named, hit, owned }: { view: View; set: string; kept: (c: C) => boolean; named: (c: C) => boolean; hit: (p: P) => boolean; owned: Map<string, number> },
+) {
+  const copies = (p: Printing) => owned.get(p.id) ?? 0;
+  return cards.flatMap((card) => {
+    if (!kept(card)) return [];
+    const inSet = (set ? card.printings.filter((p) => p.set_code === set) : card.printings) as P[];
+    if (view === "printing") {
+      return inSet.filter((p) => named(card) || hit(p)).map((printing) => ({ ...card, printing, owned: copies(printing), elsewhere: 0 }));
+    }
+    if (set && !inSet.length) return [];
+    const printing = tilePrinting(card.printings as P[], set, hit);
+    if (!named(card) && !(printing && hit(printing))) return [];
+    const total = card.printings.reduce((n, p) => n + copies(p), 0);
+    return [{ ...card, printing, owned: total, elsewhere: total - (printing ? copies(printing) : 0) }];
+  });
 }
 
 /** Copies owned per printing, over every finish, condition and language. */
@@ -60,7 +89,7 @@ export function ownedByPrinting(rows: Map<string, Copies>): Map<string, number> 
 /** How the Cards grid orders its tiles (#275). */
 export type Sort = "set" | "name" | "cost" | "rarity" | "owned";
 
-/** A tile to sort: its card, the printing it shows (`tilePrinting`), and the copies owned over all printings. */
+/** A tile to sort: its card, the printing it shows (`gridTiles`), and the copies it counts as owned. */
 export interface Sorted<P> {
   name: string;
   energy: number | null;
@@ -120,17 +149,26 @@ export const retryDelay = (attempt: number) => Math.min(30_000, 1_000 * 2 ** att
 export const PLAYSET = 3;
 
 /**
- * "I own a playset of this set", as own_riftbound_playset() does it in the database: each
+ * A set's normal number (#284): `SET-NNN/TOTAL` with NNN <= TOTAL. Not an alternate art (`023a`),
+ * starred (`197*`), overnumbered (`169/166`), SP, token or rune printing. own_riftbound_playset() has the same rule.
+ */
+export function isBasicPrinting(collector_code: string, collector_number: number) {
+  const total = /^[^-]+-\d+\/(\d+)$/.exec(collector_code)?.[1];
+  return total !== undefined && collector_number <= Number(total);
+}
+
+/**
+ * "I own a playset of this set", as own_riftbound_playset() does it in the database: each basic
  * printing with fewer than `copies` (in any language) is topped up with normal, NM ones in `language`.
  */
 export function applyPlayset(
   rows: Map<string, Copies>,
-  printings: string[],
+  printings: { id: string; collector_code: string; collector_number: number }[],
   language: Language,
   copies = PLAYSET,
 ): Map<string, Copies> {
   const next = new Map(rows);
-  for (const id of printings) {
+  for (const { id } of printings.filter((p) => isBasicPrinting(p.collector_code, p.collector_number))) {
     let owned = 0;
     for (const [key, row] of rows) if (parseKey(key).printing_id === id) owned += row.quantity;
     if (owned >= copies) continue;

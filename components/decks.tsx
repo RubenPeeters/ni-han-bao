@@ -125,18 +125,27 @@ export async function DeckList() {
   return (
     <>
       {!asked.data?.wishlist_mode && <WishlistModeQuestion />}
-      <form action={createDeck} className="card flex flex-col gap-2 sm:flex-row sm:items-end">
-        <label className="flex min-w-0 flex-1 flex-col gap-2 text-sm font-medium">
-          New deck
-          <Input name="name" placeholder="Deck name" maxLength={100} autoComplete="off" className="h-11 text-base md:text-base" />
-        </label>
-        <Button type="submit" size="lg" className="h-11">
-          Make deck
-        </Button>
-      </form>
-      <StatCard title="Your decks" description="Private unless you share one in its editor">
+      <StatCard
+        title="Your decks"
+        description="Private unless you share one in its editor"
+        aside={
+          <form action={createDeck} className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <Input
+              name="name"
+              placeholder="Deck name"
+              aria-label="New deck name"
+              maxLength={100}
+              autoComplete="off"
+              className="h-11 text-base sm:w-56 md:text-base"
+            />
+            <Button type="submit" size="lg" className="h-11">
+              Make deck
+            </Button>
+          </form>
+        }
+      >
         {decks.length === 0 ? (
-          <EmptyState>No decks yet. Make one above, then search or paste its cards.</EmptyState>
+          <EmptyState>No decks yet. Make one here, then search or paste its cards.</EmptyState>
         ) : (
           <ul className="flex flex-col divide-y">
             {decks.map((d) => {
