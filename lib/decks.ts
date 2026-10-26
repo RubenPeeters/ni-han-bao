@@ -61,7 +61,7 @@ export interface PastedLine {
 }
 
 // Deck lists often group their lines under headings; they say where a card goes, not which.
-const HEADING = /^(legend|champion|main ?deck|main|runes?|battlefields?|sideboard)\s*(\(\d+\))?:?$/i;
+const HEADING = /^(legend|champion|main ?deck|main|rune ?pool|runes?|battlefields?|sideboard)\s*(\(\d+\))?:?$/i;
 
 /** "3 Card Name", "3x Card Name" or a bare name (one copy), one per line; blank lines and headings are no cards. */
 export function parseDeckList(text: string): PastedLine[] {
