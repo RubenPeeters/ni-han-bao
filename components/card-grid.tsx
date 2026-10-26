@@ -351,6 +351,8 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
                     <span className="truncate text-sm font-medium" title={c.name}>
                       {c.name}
                     </span>
+                    {/* Always one line tall, so a tile without a printing lines up with its row. */}
+                    <span className="h-4 truncate text-xs text-muted-foreground tabular-nums">{p?.collector_code}</span>
                     <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                       {c.type && <TypeIcon icons={icons} type={c.type} />}
                       {c.energy !== null && <EnergyBadge value={c.energy} />}
@@ -358,7 +360,6 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
                         <DomainIcon key={d} icons={icons} domain={d} />
                       ))}
                     </span>
-                    {view === "printing" && p && <span className="text-xs text-muted-foreground tabular-nums">{p.collector_code}</span>}
                     {c.owned > 0 && (
                       <span className="text-xs font-medium">
                         {c.owned.toLocaleString("en-US")} owned
