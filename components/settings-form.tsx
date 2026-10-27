@@ -40,6 +40,25 @@ export function Options({
   ));
 }
 
+/** Checkboxes of which at least one stays ticked: with none, all are required and the browser asks for one. */
+export function Checkboxes({ name, options, value }: { name: string; options: readonly Option[]; value: string[] }) {
+  const [ticked, setTicked] = useState(value);
+  return options.map((o) => (
+    <label key={o.value} className="flex min-h-11 items-start gap-3 py-1 text-sm">
+      <input
+        type="checkbox"
+        name={name}
+        value={o.value}
+        checked={ticked.includes(o.value)}
+        required={ticked.length === 0}
+        onChange={(e) => setTicked(e.target.checked ? [...ticked, o.value] : ticked.filter((v) => v !== o.value))}
+        className="mt-0.5 size-4 shrink-0 accent-primary"
+      />
+      <span className="font-medium">{o.label}</span>
+    </label>
+  ));
+}
+
 /**
  * A settings form around one of the profile's server actions, which throw on failure (the
  * error page then shows). "Saved" stays until the form is changed again.

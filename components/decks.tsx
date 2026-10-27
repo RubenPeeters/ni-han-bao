@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import type { Card, Printing } from "@/bot/src/card-match";
 import { missingCards, type OwnedCopy } from "@/bot/src/deck-match";
 import { deckWanted } from "@/bot/src/lend-copies";
-import { perLanguage } from "@/lib/collection";
+import { borrowCopies, borrowLanguages } from "@/lib/collection";
 import { allPages, deckChanges, SECTIONS, VISIBILITIES, type Entry, type Pin } from "@/lib/decks";
 import { formatExact } from "@/lib/time";
 import { createClient } from "@/lib/supabase/server";
@@ -259,12 +259,12 @@ export async function DeckDetail({ id }: { id: string }) {
     if (error) console.error("open_riftbound_deck failed:", error.message);
   }
   const missing = missingCards(rest, entries.data as Entry[], owned.data).rows.filter((r) => r.owned < r.quantity);
-  const [lenders, members] = await Promise.all([
+  const [lenders, members, profile] = await Promise.all([
+    // Every language: those the visitor does not take fold into "also" rather than disappear.
     missing.length
       ? supabase.rpc("riftbound_card_lenders", {
           p_cards: [...new Set(missing.filter((r) => !r.printing_id).map((r) => r.card_id))],
           p_printings: [...new Set(missing.flatMap((r) => r.printing_id ?? []))],
-          p_language: rest.allow_other_languages ? null : rest.language,
         })
       : { data: [], error: null },
     // Whom the owner can lend to: their servers' members (RLS), not those hidden with /hide-me.
@@ -273,8 +273,10 @@ export async function DeckDetail({ id }: { id: string }) {
           supabase.from("members").select("user_id, display_name").eq("hidden", false).neq("user_id", me.data).order("guild_id").order("user_id").range(from, to),
         )
       : { data: [], error: null },
+    supabase.from("profiles").select("borrow_languages").eq("user_id", me.data ?? "").maybeSingle(),
   ]);
-  // The deck still opens without them, and each says it could not load.
+  // The deck still opens without them, and each says it could not load; without the setting, the default.
+  if (profile.error) console.error("profiles failed:", profile.error.message);
   if (lenders.error) console.error("riftbound_card_lenders failed:", lenders.error.message);
   if (members.error) console.error("members failed:", members.error.message);
   const names = new Map((cards.data as Card[]).map((c) => [c.id, c.name]));
@@ -310,6 +312,7 @@ export async function DeckDetail({ id }: { id: string }) {
           <WhoHasMissing
             missing={[...short.values()]}
             lenders={lenders.error ? null : (lenders.data as CardLender[])}
+            languages={borrowLanguages(profile.data?.borrow_languages ?? ["en"], rest)}
           />
           {mine && (
             <DeckLending
@@ -385,15 +388,17 @@ interface MissingCard {
 
 /**
  * Who has my missing cards?: for each card the visitor is short of, who in their servers has
- * copies to lend, of the pinned printing and in the deck's language if it takes no other.
- * riftbound_card_lenders() leaves out copies not available, and whoever may not show.
+ * copies to lend, of the pinned printing; copies outside `languages` (borrowLanguages()) fold
+ * into "also". riftbound_card_lenders() leaves out copies not available, and whoever may not show.
  */
 function WhoHasMissing({
   missing,
   lenders,
+  languages,
 }: {
   missing: MissingCard[];
   lenders: CardLender[] | null;
+  languages: string[];
 }) {
   if (missing.length === 0) return null;
   return (
@@ -404,7 +409,10 @@ function WhoHasMissing({
         <ul className="flex flex-col divide-y">
           {missing.map((m) => {
             // One row per member, though they may share several servers with the visitor.
-            const who = [...new Map(lenders.filter((l) => l.card_id === m.card_id && l.printing_id === m.printing_id).map((l) => [l.user_id, l])).values()];
+            const who = [...new Map(lenders.filter((l) => l.card_id === m.card_id && l.printing_id === m.printing_id).map((l) => [l.user_id, l])).values()]
+              .map((l) => ({ l, c: borrowCopies(l.copies, languages) }))
+              // Stable: within each group, the database's order (most copies first).
+              .toSorted((a, b) => Number(b.c.matches > 0) - Number(a.c.matches > 0));
             return (
               <li key={`${m.card_id} ${m.printing_id ?? ""}`} className="flex flex-col gap-2 py-3 text-sm first:pt-0 last:pb-0">
                 <span className="flex min-w-0 items-center justify-between gap-3">
@@ -420,13 +428,14 @@ function WhoHasMissing({
                   <p className="text-xs text-muted-foreground">Nobody in your servers lends it yet.</p>
                 ) : (
                   <RankList>
-                    {who.map((l, i) => (
+                    {who.map(({ l, c }, i) => (
                       <MemberRankRow
                         key={l.user_id}
                         rank={i + 1}
                         name={l.display_name}
                         avatarUrl={l.avatar_url}
-                        value={perLanguage(l.copies)}
+                        value={c.value}
+                        detail={c.also}
                         href={`/u/${l.user_id}`}
                       />
                     ))}

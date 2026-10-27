@@ -1,10 +1,11 @@
-import { setLending, setVisibility, setWishlistMode } from "@/app/u/[userId]/actions";
+import { setBorrowLanguages, setLending, setVisibility, setWishlistMode } from "@/app/u/[userId]/actions";
 import { VISIBILITIES } from "@/components/profile-stats";
 import { LogInPrompt } from "@/components/server-picker";
-import { Options, SettingsForm, ThemeSettings } from "@/components/settings-form";
+import { Checkboxes, Options, SettingsForm, ThemeSettings } from "@/components/settings-form";
 import { ErrorState, PageHeader, StatsSkeleton } from "@/components/stat-ui";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/server";
+import { LANGUAGES } from "@/lib/collection";
 import { hasEnvVars, cn } from "@/lib/utils";
 import { WISHLIST_MODES } from "@/lib/wishlist";
 import { Suspense, type ReactNode } from "react";
@@ -52,6 +53,7 @@ interface MySettings {
   lends_cards: boolean;
   lend_all: boolean;
   wishlist_mode: string | null;
+  borrow_languages: string[];
 }
 
 async function Settings() {
@@ -61,7 +63,7 @@ async function Settings() {
   const me = await supabase.rpc("current_discord_id");
   const [profile, servers, accounts] = await Promise.all([
     // The caller's own row is always visible to them (can_see_profile()); no row is the defaults.
-    supabase.from("profiles").select("visibility, lends_cards, lend_all, wishlist_mode").eq("user_id", me.data ?? "").maybeSingle<MySettings>(),
+    supabase.from("profiles").select("visibility, lends_cards, lend_all, wishlist_mode, borrow_languages").eq("user_id", me.data ?? "").maybeSingle<MySettings>(),
     supabase.rpc("my_server_visibility"),
     supabase.rpc("my_game_accounts"),
   ]);
@@ -99,7 +101,7 @@ async function Settings() {
         </SettingsForm>
       </Section>
 
-      <Section id="riftbound" failed={profileFailed} description="Lending, and how your decks count on your wishlist.">
+      <Section id="riftbound" failed={profileFailed} description="Lending, borrowing, and how your decks count on your wishlist.">
         <SettingsForm action={setLending}>
           <label className="flex min-h-11 items-start gap-3 py-1 text-sm">
             <input type="checkbox" name="lends" defaultChecked={mine?.lends_cards ?? false} className="mt-0.5 size-4 shrink-0 accent-primary" />
@@ -116,6 +118,17 @@ async function Settings() {
           </fieldset>
           <Help>
             Also with <Cmd>/collection lending</Cmd> in Discord. A private profile is never listed.
+          </Help>
+        </SettingsForm>
+        <hr />
+        <SettingsForm action={setBorrowLanguages}>
+          <fieldset className="flex flex-col gap-1">
+            <legend className="mb-2 text-sm font-medium">Languages I accept when borrowing</legend>
+            <Checkboxes name="languages" options={LANGUAGES.map((l) => ({ value: l.code, label: l.name }))} value={mine?.borrow_languages ?? ["en"]} />
+          </fieldset>
+          <Help>
+            Who has it? lists copies in these first, and the others as also. A deck that takes only its own language
+            uses that instead. Mixing languages is legal: this is only what you prefer.
           </Help>
         </SettingsForm>
         <hr />

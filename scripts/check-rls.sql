@@ -356,6 +356,16 @@ begin
     if (select lends_cards from public.profiles where user_id = 'rls-user') is not true then
         raise exception 'set_card_lending() does not save your own setting';
     end if;
+    perform public.set_borrow_languages(array['en', 'fr']);
+    if (select borrow_languages::text[] from public.profiles where user_id = 'rls-user') is distinct from array['en', 'fr'] then
+        raise exception 'set_borrow_languages() does not save your own setting';
+    end if;
+    begin
+        perform public.set_borrow_languages('{}');
+        raise exception 'set_borrow_languages() accepts no language';
+    exception when raise_exception then
+        if sqlerrm <> 'pick at least one language' then raise; end if;
+    end;
     -- Decks (#173): public ones and those of members of the visitor's servers, never private.
     if (select array_agg(name order by name) from public.riftbound_decks where user_id like 'rls-%') <> array['public', 'servers-shared']
         or (select count(*) from public.riftbound_deck_cards where card_id = 'rls-card') <> 2 then
