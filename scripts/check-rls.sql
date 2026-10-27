@@ -795,6 +795,10 @@ begin
         from public.my_riftbound_lend_options(array['rls-card'])) <> 'zh-Hans:3:0:[]' then
         raise exception 'my_riftbound_lend_options() is not the caller''s own copies';
     end if;
+    -- The caller marks none of those to lend (#300).
+    if (select free || ':' || held from public.my_lending_summary()) <> '0:0' then
+        raise exception 'my_lending_summary() is not the caller''s own copies to lend';
+    end if;
     begin
         perform public.lend_my_riftbound_deck(deck, 'rls-rls-other', null, cards);
         raise exception 'a deck is lent to someone in none of the lender''s servers';

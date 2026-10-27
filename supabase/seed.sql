@@ -76,10 +76,11 @@ begin
         from generate_series(1, 12) i;
     insert into public.guild_members (guild_id, user_id) select g, u from unnest(users) u;
     -- Anna (the viewer) shares with members; a few are public, the rest stay private.
-    -- Bram lends everything, Chloé the cards she marks; Daan lends too, but his profile is private.
+    -- Anna and Bram lend everything (Anna for /loans' summary, #300), Chloé the cards she marks;
+    -- Daan lends too, but his profile is private.
     insert into public.profiles (user_id, visibility, lends_cards, lend_all)
         select users[i], case when i in (1, 2, 5) then 'members' when i in (3, 8) then 'public' else 'private' end,
-               i in (2, 3, 4), i = 2
+               i in (1, 2, 3, 4), i in (1, 2)
         from generate_series(1, 12) i;
 
     -- Activity over the last 120 days. Members differ in level (i) and every day is noisy.
