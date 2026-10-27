@@ -7,23 +7,23 @@ import { DomainIcon, EnergyBadge, FacetIcon, TypeIcon, type RiftboundIcon } from
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/stat-ui";
+import { useCollection } from "@/components/use-collection";
+import { CopiesSheet, YourCopies } from "@/components/your-copies";
 import {
-  applyPlayset,
   cardOrder,
   CONDITIONS,
   FINISHES,
   gridTiles,
   LANGUAGES,
+  languageCode,
   NONE,
-  ownedByPrinting,
-  parseKey,
   PLAYSET,
-  retryDelay,
   rowKey,
+  rowsByPrinting,
   shown as countOf,
   step,
+  tileCopies,
   type Condition,
-  type Copies,
   type Finish,
   type Language,
   type Mode,
@@ -31,11 +31,10 @@ import {
   type Sort,
   type View,
 } from "@/lib/collection";
-import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { ArrowDown, ArrowUp, Minus, Plus } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export interface LibraryCard {
   id: string;
@@ -106,6 +105,9 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
   const [condition, setCondition] = useState<Condition>("NM");
   const [language, setLanguage] = useState<Language>(mine.language);
   const collection = useCollection(mine);
+  const rowsOf = useMemo(() => rowsByPrinting(collection.rows), [collection.rows]);
+  // The tile whose Your copies sheet is open: its card, and its printing in Every printing.
+  const [sheet, setSheet] = useState<{ card: LibraryCard; only?: string } | null>(null);
   const [deckId, setDeckId] = useState("");
   const [added, setAdded] = useState("");
   const deck = mine.decks.find((d) => d.id === deckId);
@@ -340,6 +342,8 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
           {shown.slice(0, limit).map((c) => {
             const p = c.printing;
             const count = p ? countOf(collection.rows.get(rowKey(p.id, finish, condition, language)) ?? NONE, mode, mine.lendAll) : 0;
+            const { chips } = tileCopies(rowsOf, view === "printing" && p ? [p.id] : c.printings.map((x) => x.id), language);
+            const open = () => setSheet({ card: c, only: view === "printing" ? p?.id : undefined });
             return (
               <li key={p?.id ?? c.id} className="flex min-w-0 flex-col gap-2">
                 <Link
@@ -360,14 +364,25 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
                         <DomainIcon key={d} icons={icons} domain={d} />
                       ))}
                     </span>
-                    {c.owned > 0 && (
-                      <span className="text-xs font-medium">
-                        {c.owned.toLocaleString("en-US")} owned
-                        {c.elsewhere > 0 && <span className="font-normal text-muted-foreground"> · {c.elsewhere.toLocaleString("en-US")} on other printings</span>}
-                      </span>
-                    )}
                   </span>
                 </Link>
+                {c.owned > 0 && (
+                  <button
+                    type="button"
+                    aria-haspopup="dialog"
+                    title="Your copies"
+                    onClick={open}
+                    className="-mt-2 flex min-h-11 flex-wrap items-center gap-x-1 rounded-md text-left text-xs font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {c.owned.toLocaleString("en-US")} owned
+                    {c.elsewhere > 0 && <span className="font-normal text-muted-foreground">· {c.elsewhere.toLocaleString("en-US")} on other printings</span>}
+                    {chips.map((x) => (
+                      <span key={x.language} className="font-normal text-muted-foreground">
+                        · {languageCode(x.language)} {x.copies}
+                      </span>
+                    ))}
+                  </button>
+                )}
                 {deck && (
                   <Button
                     variant="secondary"
@@ -384,7 +399,15 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
                     <Button variant="secondary" size="icon" className="size-11" aria-label={`One fewer: ${c.name}`} disabled={count === 0} onClick={() => tap(p, -1)}>
                       <Minus aria-hidden />
                     </Button>
-                    <span className="min-w-0 text-center text-lg font-semibold tabular-nums">{count}</span>
+                    <Button
+                      variant="ghost"
+                      className="h-11 min-w-0 px-2 text-lg font-semibold tabular-nums"
+                      aria-haspopup="dialog"
+                      aria-label={`${count}: your copies of ${c.name}`}
+                      onClick={open}
+                    >
+                      {count}
+                    </Button>
                     <Button variant="secondary" size="icon" className="size-11" aria-label={`One more: ${c.name}`} onClick={() => tap(p, 1)}>
                       <Plus aria-hidden />
                     </Button>
@@ -395,6 +418,20 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
           })}
         </ul>
       )}
+      {sheet && (
+        <CopiesSheet title={sheet.only ? `${sheet.card.name}, ${sheet.card.printings.find((x) => x.id === sheet.only)?.collector_code}` : sheet.card.name} onClose={() => setSheet(null)}>
+          <YourCopies
+            cardId={sheet.card.id}
+            cardName={sheet.card.name}
+            printings={sheet.card.printings}
+            only={sheet.only}
+            collection={collection}
+            userId={mine.userId}
+            lendAll={mine.lendAll}
+            language={language}
+          />
+        </CopiesSheet>
+      )}
       {shown.length > limit && (
         <Button variant="secondary" size="lg" className="h-11 w-full" onClick={() => setLimit(limit + PAGE)}>
           Show {Math.min(PAGE, shown.length - limit)} more
@@ -402,119 +439,4 @@ export function CardGrid({ cards, icons, mine }: { cards: LibraryCard[]; icons: 
       )}
     </div>
   );
-}
-
-/**
- * The visitor's rows, changed here first and saved behind them: every tap lands in `pending`
- * (also in localStorage, so a reload or a closed tab loses nothing) and is sent as the row's
- * new numbers, retried until the database has it. Absolute numbers, so a retry of a save
- * that did arrive changes nothing.
- */
-function useCollection(mine: MyCollection) {
-  const [rows, setRowsState] = useState(() => new Map<string, Copies>(mine.owned.map((r) => [rowKey(r.printing_id, r.finish, r.condition, r.language), r])));
-  // Taps faster than React renders build on each other, not on a stale `rows`.
-  const latest = useRef(rows);
-  const setRows = useCallback((next: Map<string, Copies>) => {
-    latest.current = next;
-    setRowsState(next);
-  }, []);
-  const [status, setStatus] = useState("");
-  const [waiting, setWaiting] = useState(0);
-  const pending = useRef(new Map<string, Copies>());
-  const busy = useRef(false);
-  const attempt = useRef(0);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const storage = `riftbound-collection-pending:${mine.userId}`;
-
-  const remember = useCallback(() => {
-    setWaiting(pending.current.size);
-    try {
-      if (pending.current.size) localStorage.setItem(storage, JSON.stringify([...pending.current]));
-      else localStorage.removeItem(storage);
-    } catch {
-      // Private mode or a full quota: the taps are still saved while the page is open.
-    }
-  }, [storage]);
-
-  const flush = useCallback(async () => {
-    if (busy.current) return;
-    busy.current = true;
-    clearTimeout(timer.current);
-    const supabase = createClient();
-    while (pending.current.size) {
-      const [key, row] = pending.current.entries().next().value!;
-      setStatus(`Saving ${pending.current.size}…`);
-      const { printing_id, finish, condition, language } = parseKey(key);
-      const error = await supabase
-        .rpc("set_riftbound_copies", {
-          p_printing: printing_id,
-          p_finish: finish,
-          p_condition: condition,
-          p_language: language,
-          p_quantity: row.quantity,
-          p_for_trade: row.for_trade,
-          p_lendable: row.lendable,
-        })
-        .then(
-          (r) => r.error,
-          (err: unknown) => err as Error,
-        );
-      if (error) {
-        setStatus(`${pending.current.size} not saved yet, retrying (${error.message})`);
-        timer.current = setTimeout(() => void flush(), retryDelay(attempt.current++));
-        busy.current = false;
-        return;
-      }
-      attempt.current = 0;
-      // A newer tap on the same row stays queued.
-      if (pending.current.get(key) === row) pending.current.delete(key);
-      remember();
-    }
-    setStatus("All changes saved");
-    busy.current = false;
-  }, [remember]);
-
-  // Taps from an earlier visit that never reached the database.
-  useEffect(() => {
-    let saved: [string, Copies][] = [];
-    try {
-      saved = JSON.parse(localStorage.getItem(storage) ?? "[]");
-    } catch {}
-    if (!saved.length) return;
-    for (const [key, row] of saved) pending.current.set(key, row);
-    setRows(new Map([...latest.current, ...saved]));
-    remember();
-    void flush();
-  }, [storage, remember, flush, setRows]);
-
-  useEffect(() => {
-    const online = () => {
-      attempt.current = 0;
-      void flush();
-    };
-    window.addEventListener("online", online);
-    return () => window.removeEventListener("online", online);
-  }, [flush]);
-
-  const change = (key: string, update: (row: Copies) => Copies) => {
-    const row = update(latest.current.get(key) ?? NONE);
-    setRows(new Map(latest.current).set(key, row));
-    pending.current.set(key, row);
-    remember();
-    void flush();
-  };
-
-  const playset = async (set: string, printings: LibraryCard["printings"], language: Language, copies: number) => {
-    const what = copies === PLAYSET ? "a playset" : "2 playsets";
-    setStatus(`Adding ${what} of ${set}…`);
-    const { error } = await createClient().rpc("own_riftbound_playset", { p_set: set, p_language: language, p_copies: copies });
-    if (error) return setStatus(`Could not add ${what} (${error.message}). Try again.`);
-    setRows(applyPlayset(latest.current, printings, language, copies));
-    setStatus(`Added ${what} of ${set}`);
-  };
-
-  // Once per change, not once per card: the Copies owned sort asks for every card.
-  const perPrinting = useMemo(() => ownedByPrinting(rows), [rows]);
-
-  return { rows, status, waiting, change, playset, perPrinting };
 }
