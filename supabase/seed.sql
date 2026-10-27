@@ -295,10 +295,10 @@ begin
     values (users[1], users[2], '{en,fr}', today + 5, null, now() - interval '1 day'),
            (users[3], users[1], '{en}', null, 'For Nexus Night on Friday, I give it back on Sunday.', now() - interval '2 hours');
     insert into public.riftbound_borrow_request_cards (request_id, card_id, quantity)
-    select r.id, case when r.borrower_id = users[1] then 'nine-tailed-fox' else 'ahri-alluring' end, 1
-    from public.riftbound_borrow_requests r where r.borrower_id in (users[1], users[3]);
+    select br.id, case when br.borrower_id = users[1] then 'nine-tailed-fox' else 'ahri-alluring' end, 1
+    from public.riftbound_borrow_requests br where br.borrower_id in (users[1], users[3]);
     insert into public.riftbound_borrow_request_dms (request_id, recipient)
-    select r.id, 'lender' from public.riftbound_borrow_requests r where r.borrower_id in (users[1], users[3]);
+    select br.id, 'lender' from public.riftbound_borrow_requests br where br.borrower_id in (users[1], users[3]);
 
     -- Wishlist (#177): Anna answered the question with Shared. Her demo deck stays built, the
     -- Annie deck lends it cards, and she wants two cards by hand, one of them a printing.
