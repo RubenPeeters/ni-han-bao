@@ -1,6 +1,7 @@
 const CATALOGUE = [
   { href: "/cards", label: "Cards" },
   { href: "/decks", label: "Decks" },
+  { href: "/packs", label: "Open a pack" },
 ];
 const MINE = [
   { href: "/collection", label: "My collection" },

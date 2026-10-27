@@ -442,6 +442,28 @@
     ]
   },
   {
+    "name": "pack",
+    "description": "An unofficial booster simulation, for fun",
+    "admin": false,
+    "usages": [
+      {
+        "name": "pack open",
+        "description": "Open a simulated pack of a set: not a real pull, never added to your collection",
+        "options": [
+          {
+            "name": "set",
+            "description": "The set (Origins if left out)",
+            "type": "string",
+            "required": false,
+            "choices": [
+              "Origins"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
     "name": "collection",
     "description": "Your Riftbound collection",
     "admin": false,

@@ -172,6 +172,8 @@ import { applySetup, DEFAULT_SETTINGS, SETUP_COMMAND, setupChange, type GuildSet
 import { hiddenFor, setVisibility } from "./visibility.js";
 import { globalCommandsChanged, GLOBAL_COMMANDS, GUILD_COMMANDS } from "./commands.js";
 import { collectionShare, WISHLIST_COMMAND, wishlistShare } from "./profile-share.js";
+import { PACK_COMMAND, packMessage, packWaitText } from "./pack-reply.js";
+import { openPack, packWait } from "./packs.js";
 import { newMatches, tradeDm, type Candidate } from "./trades.js";
 import { postWelcome, welcomeChannel, welcomeText } from "./welcome.js";
 import { wishlist, type WishRow } from "./wishlist.js";
@@ -820,6 +822,32 @@ async function cardCommand(interaction: ChatInputCommandInteraction): Promise<vo
     }
   } catch (err) {
     log("error", "command_failed", { command: CARD_COMMAND.name, error: err });
+  }
+}
+
+// When each member last opened a pack: in memory, as the limit only keeps a channel from flooding.
+const lastPack = new Map<string, number>();
+
+/** /pack open: a simulated pack for the channel, one per member per minute. Nothing is stored. */
+async function packCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  const set = interaction.options.getString("set") ?? "OGN";
+  const now = Date.now();
+  const wait = packWait(lastPack.get(interaction.user.id), now);
+  try {
+    if (wait > 0) {
+      await interaction.reply({ content: packWaitText(wait), flags: MessageFlags.Ephemeral });
+      return;
+    }
+    const types = new Map(catalogue.cards.map((c) => [c.id, c.type]));
+    const pack = openPack(set, catalogue.printings.map((p) => ({ ...p, type: types.get(p.card_id) ?? null })), Math.random);
+    if (!pack?.length) {
+      await interaction.reply({ content: "No pack of that set yet. Try again in a minute.", flags: MessageFlags.Ephemeral });
+      return;
+    }
+    lastPack.set(interaction.user.id, now);
+    await interaction.reply({ ...feedback(packMessage(set, pack, catalogue.cards, callerName(interaction.member, interaction.user)), "pack"), allowedMentions: { parse: [] } });
+  } catch (err) {
+    log("error", "command_failed", { command: PACK_COMMAND.name, error: err });
   }
 }
 
@@ -1589,6 +1617,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
   if (interaction.commandName === SETUP_COMMAND.name) {
     await tracked("command", setupCommand(interaction));
+    return;
+  }
+  if (interaction.commandName === PACK_COMMAND.name) {
+    await tracked("command", packCommand(interaction));
     return;
   }
   if (interaction.commandName === ROLES_COMMAND.name) {
