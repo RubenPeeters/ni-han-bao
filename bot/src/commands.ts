@@ -6,6 +6,7 @@ import { FEEDBACK_COMMAND } from "./feedback-modal.js";
 import { FORGET_COMMAND } from "./forget.js";
 import { LEND_COMMAND, RETURN_COMMAND } from "./lending.js";
 import { LOL_COMMAND } from "./lol.js";
+import { PACK_COMMAND } from "./pack-reply.js";
 import { ROLES_COMMAND } from "./onboarding.js";
 import { PROFILE_COMMAND } from "./profile.js";
 import { RECAP_COMMAND } from "./recap.js";
@@ -29,6 +30,7 @@ export const COMMANDS = [
   STORE_COMMAND,
   EVENT_COMMAND,
   CARD_COMMAND,
+  PACK_COMMAND,
   COLLECTION_COMMAND,
   WISHLIST_COMMAND,
   DECK_COMMAND,
