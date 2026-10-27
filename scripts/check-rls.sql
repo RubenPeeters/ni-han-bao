@@ -5,7 +5,7 @@
 -- opened (#174), their versions with them (#176), and wishlists their profile (#177); that trade
 -- matches follow it too (#178), and decks not for lending hold their cards (#179); that borrow requests
 -- reach only lenders Who has it? shows (#299); that only public decks are teased logged
--- out (#175); then that /forget-me deletes
+-- out (#175); that the home feed follows decks and hidden members (#302); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`; migrate.yml runs it on the dev project after the seed.
 -- Run against a local Supabase or the dev project (never production); everything is rolled back.
@@ -867,6 +867,29 @@ begin
     exception when raise_exception then
         if sqlerrm <> 'not your deck' then raise; end if;
     end;
+end $$;
+
+-- The home feed (#302): a deck only for whoever may see it, never anything of a hidden member
+-- or of someone in no server with the visitor. rls-hidden shares rls-mine with the test user.
+set role postgres;
+do $$
+begin
+    insert into public.riftbound_decks (user_id, name, visibility) values ('rls-hidden', 'hidden-member', 'servers');
+    perform public.snapshot_riftbound_deck(id) from public.riftbound_decks where name = 'hidden-member';
+end $$;
+set local role authenticated;
+do $$
+begin
+    if (select array_agg(distinct f.data ->> 'name') from public.home_feed() f where f.kind = 'deck' and f.user_id like 'rls-%' and f.user_id <> 'rls-user')
+        <> array['servers-shared'] then
+        raise exception 'home_feed() shows a deck the visitor may not see or a hidden member''s, or misses a shared one';
+    end if;
+    if exists (select from public.home_feed() f where f.user_id in ('rls-hidden', 'rls-rls-other', 'rls-public')) then
+        raise exception 'home_feed() shows a hidden member or someone in no server with the visitor';
+    end if;
+    if not exists (select from public.home_feed() f where f.kind = 'lol_week' and f.user_id = 'rls-rls-mine' and f.guild_id = 'rls-mine') then
+        raise exception 'home_feed() misses the League week of a member of the visitor''s server';
+    end if;
 end $$;
 
 -- /forget-me (#72): no row about the user is left anywhere, and none can be written again

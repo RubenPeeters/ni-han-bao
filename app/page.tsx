@@ -3,10 +3,11 @@ import { Heatmap } from "@/components/channel-stats";
 import { TopEmoji } from "@/components/emoji-stats";
 import { HomeStats, HomeStatsSkeleton } from "@/components/home-stats";
 import { Board } from "@/components/leaderboard";
-import { MyServers } from "@/components/server-picker";
+import { HomeFeed } from "@/components/home-feed";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
 import { ServersButton } from "@/components/auth-button";
 import { Button } from "@/components/ui/button";
+import { parseFilter, parseShow } from "@/lib/feed";
 import { createClient } from "@/lib/supabase/server";
 import { hasEnvVars } from "@/lib/utils";
 import Link from "next/link";
@@ -53,29 +54,30 @@ const EXAMPLE_HEATMAP = Array.from({ length: 7 }, (_, d) =>
   ),
 );
 
-export default function Home() {
+export default function Home({ searchParams }: PageProps<"/">) {
   if (!hasEnvVars) return <Landing />;
   return (
-    <Suspense fallback={<StatsSkeleton cards={2} />}>
-      <HomeForVisitor />
+    <Suspense fallback={<StatsSkeleton cards={2} wide />}>
+      <HomeForVisitor searchParams={searchParams} />
     </Suspense>
   );
 }
 
-// Logged in: their servers first, not the pitch for the bot they already use.
-async function HomeForVisitor() {
+// Logged in: what is going on in their servers, not the pitch for the bot they already use.
+async function HomeForVisitor({ searchParams }: Pick<PageProps<"/">, "searchParams">) {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims) return <Landing />;
+  const { filter, show } = await searchParams;
   return (
     <>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <PageHeader title="Your servers" description="This week in the servers you are in." />
+        <PageHeader title="Home" description="What is going on in the servers you are in." />
         <Button asChild variant="outline" size="sm" className="self-start sm:self-auto">
           <a href={INSTALL_URL}>Add to Discord</a>
         </Button>
       </div>
-      <MyServers />
+      <HomeFeed filter={parseFilter(filter)} show={parseShow(show)} />
     </>
   );
 }
