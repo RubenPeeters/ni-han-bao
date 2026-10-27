@@ -2,6 +2,7 @@
 // with Accept and Decline, and the borrower once with the answer. A request is not a loan:
 // Accept records one through accept_riftbound_borrow_request(), with copies picked as /lend does.
 
+import { createHash } from "node:crypto";
 import { ButtonStyle, ComponentType, type APIButtonComponent } from "discord.js";
 import { languageName } from "./collection.js";
 import { type Emojis } from "./emojis.js";
@@ -77,14 +78,18 @@ export function declineReply(result: string): string {
   return "Declined. They get a message from me.";
 }
 
-const ACCEPT_ID = /^borrow-(accept|decline|confirm):(\d+)$/;
+const ACCEPT_ID = /^borrow-(accept|decline|confirm):(\d+)(?::([0-9a-f]+))?$/;
 const DECLINE_FORM_ID = /^borrow-decline-form:(\d+)$/;
 
-export const requestButtonId = (kind: "accept" | "decline" | "confirm", request: number) => `borrow-${kind}:${request}`;
-export function parseRequestButtonId(customId: string): { kind: "accept" | "decline" | "confirm"; request: number } | null {
+/** Confirm carries the previewed pick's key, so it records only the copies the lender saw. */
+export const requestButtonId = (kind: "accept" | "decline" | "confirm", request: number, pick?: string) =>
+  `borrow-${kind}:${request}${pick ? `:${pick}` : ""}`;
+export function parseRequestButtonId(customId: string): { kind: "accept" | "decline" | "confirm"; request: number; pick: string | null } | null {
   const m = ACCEPT_ID.exec(customId);
-  return m ? { kind: m[1] as "accept" | "decline" | "confirm", request: Number(m[2]) } : null;
+  return m ? { kind: m[1] as "accept" | "decline" | "confirm", request: Number(m[2]), pick: m[3] ?? null } : null;
 }
+/** A short fingerprint of the copies picked; pickCopies() orders them, so the same pick has the same key. */
+export const pickKey = (cards: LoanCard[]) => createHash("sha256").update(JSON.stringify(cards)).digest("hex").slice(0, 16);
 export const declineFormId = (request: number) => `borrow-decline-form:${request}`;
 export function parseDeclineFormId(customId: string): number | null {
   const m = DECLINE_FORM_ID.exec(customId);
@@ -124,18 +129,25 @@ export function requestDm(catalogue: Catalogue, emojis: Emojis, request: BorrowR
   );
 }
 
-/** What Accept shows the lender before the loan is recorded: the copies picked, and Confirm. */
-export function acceptPreview(catalogue: Catalogue, emojis: Emojis, request: BorrowRequest, picked: { cards: LoanCard[]; unmarked: number }): V2 {
+/** What Accept shows the lender before the loan is recorded: the copies picked, and Confirm. `changed`: Confirm found a different pick. */
+export function acceptPreview(
+  catalogue: Catalogue,
+  emojis: Emojis,
+  request: BorrowRequest,
+  picked: { cards: LoanCard[]; unmarked: number },
+  changed = false,
+): V2 {
   const languages = [...new Set(picked.cards.map((c) => c.language))].map(languageName).join(", ");
   return loanMessage(
     `### Lend these to <@${request.borrower}>?\nFor borrow request #${request.id}, in ${languages}`,
     loanCards(catalogue, emojis, { id: request.id, lender: request.lender, borrower: request.borrower, due: null, rows: picked.cards, deck: null }),
     [
+      changed && "Your copies changed since you pressed Accept, so nothing was recorded: these are the copies Confirm takes now.",
       picked.unmarked > 0 &&
         `Heads-up: ${picked.unmarked} of these copies ${picked.unmarked === 1 ? "is" : "are"} not marked to lend, or held by a deck not for lending.`,
       "Confirm records the loan; they confirm they got the cards, as after /lend.",
     ].filter((n): n is string => !!n),
-    [{ type: ComponentType.ActionRow, components: [button(requestButtonId("confirm", request.id), "Confirm", ButtonStyle.Success)] }],
+    [{ type: ComponentType.ActionRow, components: [button(requestButtonId("confirm", request.id, pickKey(picked.cards)), "Confirm", ButtonStyle.Success)] }],
   );
 }
 

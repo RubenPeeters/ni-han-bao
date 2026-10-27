@@ -131,6 +131,7 @@ import {
   declineReply,
   parseDeclineFormId,
   parseRequestButtonId,
+  pickKey,
   requestDm,
   type BorrowRequest,
 } from "./borrow-requests.js";
@@ -1284,9 +1285,9 @@ async function notifyBorrowRequests(): Promise<void> {
 
 /**
  * The lender's DM buttons: Accept shows the copies it would lend, Confirm records the loan with
- * copies picked afresh (the same pick, unless the collection changed), Decline asks a reason.
+ * copies picked afresh, or shows the new pick again if the collection changed, Decline asks a reason.
  */
-async function borrowRequestButton(interaction: ButtonInteraction, kind: "accept" | "decline" | "confirm", id: number): Promise<void> {
+async function borrowRequestButton(interaction: ButtonInteraction, kind: "accept" | "decline" | "confirm", id: number, pick: string | null): Promise<void> {
   if (kind === "decline") {
     // A form must be the first response, so it opens before the database is asked.
     await interaction.showModal(
@@ -1325,8 +1326,8 @@ async function borrowRequestButton(interaction: ButtonInteraction, kind: "accept
       await interaction.editReply(picked);
       return;
     }
-    if (kind === "accept") {
-      await interaction.editReply({ ...acceptPreview(catalogue, emojis, request, picked), allowedMentions: { parse: [] } });
+    if (kind === "accept" || pick !== pickKey(picked.cards)) {
+      await interaction.editReply({ ...acceptPreview(catalogue, emojis, request, picked, kind === "confirm"), allowedMentions: { parse: [] } });
       return;
     }
     const { data, error } = await db.rpc("accept_riftbound_borrow_request", {
@@ -1491,7 +1492,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
     const borrow = parseRequestButtonId(interaction.customId);
     if (borrow !== null) {
-      await tracked("command", borrowRequestButton(interaction, borrow.kind, borrow.request));
+      await tracked("command", borrowRequestButton(interaction, borrow.kind, borrow.request, borrow.pick));
       return;
     }
   }

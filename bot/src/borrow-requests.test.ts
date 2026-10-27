@@ -12,6 +12,7 @@ import {
   NOT_LENDER,
   parseDeclineFormId,
   parseRequestButtonId,
+  pickKey,
   requestButtonId,
   requestDm,
   type BorrowRequest,
@@ -91,7 +92,8 @@ describe("replies", () => {
   });
 
   it("round-trips the button and form ids", () => {
-    expect(parseRequestButtonId(requestButtonId("confirm", 12))).toEqual({ kind: "confirm", request: 12 });
+    expect(parseRequestButtonId(requestButtonId("accept", 12))).toEqual({ kind: "accept", request: 12, pick: null });
+    expect(parseRequestButtonId(requestButtonId("confirm", 12, "00ff"))).toEqual({ kind: "confirm", request: 12, pick: "00ff" });
     expect(parseRequestButtonId("loan-confirm:1:2")).toBeNull();
     expect(parseDeclineFormId(declineFormId(12))).toBe(12);
   });
@@ -116,7 +118,15 @@ describe("messages", () => {
     const all = texts(acceptPreview(catalogue, none, request, { cards, unmarked: 1 }));
     expect(all).toContain("in French");
     expect(all).toContain("1 of these copies is not marked to lend");
-    expect(all).toContain("borrow-confirm:4");
+    expect(all).toContain(`borrow-confirm:4:${pickKey(cards)}`);
+    expect(all).not.toContain("changed since");
+    expect(texts(acceptPreview(catalogue, none, request, { cards, unmarked: 0 }, true))).toContain("changed since you pressed Accept");
+  });
+
+  it("keys a pick by its copies, so Confirm notices a changed one", () => {
+    const cards = [{ printing_id: "ogn-255-298", finish: "normal", condition: "NM", language: "fr", quantity: 1 }];
+    expect(pickKey(cards)).toBe(pickKey(structuredClone(cards)));
+    expect(pickKey(cards)).not.toBe(pickKey([{ ...cards[0], finish: "foil" }]));
   });
 
   it("tells the borrower the answer: the loan, or the reason", () => {

@@ -106,7 +106,15 @@ begin
     end if;
     if exists (
         select from jsonb_to_recordset(p_cards) as c (card_id text, quantity integer)
-        where c.quantity is null or c.quantity < 1 or c.quantity > coalesce((
+        where c.quantity is null or c.quantity < 1
+    ) or exists (
+        -- Summed per card, as inserted below: two entries of one card count together.
+        select from (
+            select c.card_id, sum(c.quantity) as quantity
+            from jsonb_to_recordset(p_cards) as c (card_id text, quantity integer)
+            group by c.card_id
+        ) c
+        where c.quantity > coalesce((
             select max(x.n) from (
                 select sum((j ->> 'copies')::bigint) as n
                 from public.riftbound_card_lenders(array[c.card_id]) l
