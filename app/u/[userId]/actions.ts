@@ -26,6 +26,16 @@ export async function setLending(formData: FormData) {
   revalidatePath("/settings");
 }
 
+/** Languages I accept when borrowing, on /settings; the database rejects none or an unknown one. */
+export async function setBorrowLanguages(formData: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_borrow_languages", { p_languages: formData.getAll("languages").map(String) });
+  if (error) throw new Error(`set_borrow_languages failed: ${error.message}`);
+  revalidatePath("/cards/[cardId]", "page");
+  revalidatePath("/decks/[deckId]", "page");
+  revalidatePath("/settings");
+}
+
 /** The once-asked question of how decks count on the wishlist; preset on new decks. */
 export async function setWishlistMode(formData: FormData) {
   const supabase = await createClient();

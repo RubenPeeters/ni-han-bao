@@ -23,6 +23,7 @@ import {
   type Wanted,
 } from "./lending.js";
 import { ComponentType } from "discord.js";
+import { heldByLanguage } from "./lend-copies.js";
 import { choiceLabel, type Catalogue } from "./riftbound.js";
 
 const catalogue = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8")) as Catalogue;
@@ -85,7 +86,7 @@ describe("pickCopies", () => {
     quantity: 2,
     lendable: 0,
     lent: 0,
-    held: 0,
+    holds: [],
     ...over,
   });
 
@@ -105,11 +106,25 @@ describe("pickCopies", () => {
   });
 
   it("counts copies a deck not for lending holds as not available to lend, whatever the per-card counts say", () => {
-    const rows = [row({ finish: "foil", quantity: 2, lendable: 2, held: 3 }), row({ quantity: 2, lendable: 2, held: 3 })];
+    const holds = [{ language: "en", copies: 3 }];
+    const rows = [row({ finish: "foil", quantity: 2, lendable: 2, holds }), row({ quantity: 2, lendable: 2, holds })];
     // 4 in hand, 3 held: 1 is still available to lend.
     expect(pickCopies(rows, [{ card: unit, count: 1 }])).toMatchObject({ unmarked: 0 });
     expect(pickCopies(rows, [{ card: unit, count: 3 }])).toMatchObject({ unmarked: 2 });
-    expect(pickCopies([row({ lendable: 2, held: 9 })], [{ card: unit, count: 1 }])).toMatchObject({ unmarked: 1 });
+    expect(pickCopies([row({ lendable: 2, holds: [{ language: "en", copies: 9 }] })], [{ card: unit, count: 1 }])).toMatchObject({ unmarked: 1 });
+  });
+
+  it("lends the copies in a language the decks not for lending do not hold first", () => {
+    // 2 EN and 1 FR, all to lend, an English deck holds 1: the free ones are 1 EN and the FR.
+    const holds = [{ language: "en", copies: 1 }];
+    const rows = [row({ language: "en", lendable: 2, holds }), row({ language: "fr", quantity: 1, lendable: 1, holds })];
+    expect(pickCopies(rows, [{ card: unit, count: 2 }])).toEqual({
+      cards: [
+        { printing_id: "ogn-066-298", finish: "normal", condition: "NM", language: "en", quantity: 1 },
+        { printing_id: "ogn-066-298", finish: "normal", condition: "NM", language: "fr", quantity: 1 },
+      ],
+      unmarked: 0,
+    });
   });
 
   it("refuses copies the lender does not have in hand", () => {
@@ -121,6 +136,26 @@ describe("pickCopies", () => {
     const rows = [row({ printing_id: "a" }), row({ printing_id: "b" })];
     expect(pickCopies(rows, [{ card: unit, count: 1, printing: "b" }])).toMatchObject({ cards: [{ printing_id: "b", quantity: 1 }] });
     expect(pickCopies(rows, [{ card: unit, count: 3, printing: "b" }])).toContain("in the deck's printing");
+  });
+});
+
+describe("heldByLanguage", () => {
+  it("holds a deck's copies in its own language first", () => {
+    // Firestorm (#296): 2 EN and 1 FR, an English deck holds 1.
+    expect(heldByLanguage({ en: 2, fr: 1 }, [{ language: "en", copies: 1 }])).toEqual({ en: 1 });
+    expect(heldByLanguage({ en: 2, fr: 1 }, [{ language: "fr", copies: 1 }])).toEqual({ fr: 1 });
+  });
+
+  it("holds the rest in en, fr, zh-Hans order once the deck's own language runs out", () => {
+    expect(heldByLanguage({ "zh-Hans": 2, fr: 2, en: 1 }, [{ language: "zh-Hans", copies: 4 }])).toEqual({ "zh-Hans": 2, en: 1, fr: 1 });
+    // A deck in a language the owner has no copies of.
+    expect(heldByLanguage({ fr: 1, "zh-Hans": 3 }, [{ language: "en", copies: 2 }])).toEqual({ en: 0, fr: 1, "zh-Hans": 1 });
+  });
+
+  it("serves every deck's own language before any spills over, and never holds more than in hand", () => {
+    expect(heldByLanguage({ en: 1, fr: 1 }, [{ language: "en", copies: 2 }, { language: "fr", copies: 1 }])).toEqual({ en: 1, fr: 1 });
+    expect(heldByLanguage({ en: 1 }, [{ language: "en", copies: 5 }])).toEqual({ en: 1 });
+    expect(heldByLanguage({ en: 2 }, [])).toEqual({});
   });
 });
 

@@ -51,12 +51,13 @@ export function RankList({ children }: { children: ReactNode }) {
   return <ol className="flex flex-col divide-y">{children}</ol>;
 }
 
-export function RankRow({ rank, value, children }: { rank: number; value: string; children: ReactNode }) {
+export function RankRow({ rank, value, action, children }: { rank: number; value: string; action?: ReactNode; children: ReactNode }) {
   return (
     <li className="flex items-center gap-3 py-2 text-sm first:pt-0 last:pb-0">
       <span className="w-6 shrink-0 text-right tabular-nums text-gold">{rank}</span>
       {children}
       <span className="min-w-12 shrink-0 text-right font-medium tabular-nums">{value}</span>
+      {action}
     </li>
   );
 }
@@ -69,6 +70,7 @@ export function MemberRankRow({
   value,
   href,
   detail,
+  action,
 }: {
   rank: number;
   name: string;
@@ -77,9 +79,11 @@ export function MemberRankRow({
   href?: string;
   /** A second, smaller line under the name. */
   detail?: ReactNode;
+  /** A button after the value. */
+  action?: ReactNode;
 }) {
   return (
-    <RankRow rank={rank} value={value}>
+    <RankRow rank={rank} value={value} action={action}>
       {avatarUrl ? (
         // Discord CDN avatars are already small; next/image would need a remote
         // pattern and optimisation quota for no visible gain.

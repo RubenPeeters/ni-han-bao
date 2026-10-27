@@ -191,7 +191,7 @@ export function loanCards(catalogue: Catalogue, emojis: Emojis, loan: LoanView):
   return list.map((c) => withThumbnail(line(c), c.card ? imageOf(catalogue, c.card, 160, c.printing) : null, c.name));
 }
 
-function loanMessage(heading: string, cards: (APISectionComponent | APITextDisplayComponent)[], notes: string[], buttons: APIActionRowComponent<APIButtonComponent>[] = []): V2 {
+export function loanMessage(heading: string, cards: (APISectionComponent | APITextDisplayComponent)[], notes: string[], buttons: APIActionRowComponent<APIButtonComponent>[] = []): V2 {
   return {
     components: [{ type: ComponentType.Container, components: [text(heading), ...cards, ...notes.map(text)] }, ...buttons],
     flags: MessageFlags.IsComponentsV2,

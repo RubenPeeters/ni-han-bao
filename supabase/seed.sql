@@ -53,6 +53,7 @@ begin
     delete from public.activity_seconds where user_id = any (users);
     -- The lending ledger is append-only (#172) except when a person's loans are erased.
     perform set_config('ni_han_bao.erase_loans', 'on', true);
+    delete from public.riftbound_borrow_requests where lender_id = any (users) or borrower_id = any (users);
     delete from public.riftbound_loans where lender_id = any (users) or borrower_id = any (users);
     perform set_config('ni_han_bao.erase_loans', 'off', true);
     delete from public.riftbound_collection where user_id = any (users);
@@ -182,6 +183,11 @@ begin
         from public.riftbound_printings p, generate_series(1, 6) i
         where p.id = 'ogn-255-298' and i in (2, 3, 4) or abs(hashtext('c' || users[i] || p.id)) % 3 = 0;
     update public.riftbound_collection set lendable = 1 where user_id = users[3] and printing_id = 'ogn-255-298';
+    -- Bram's are 3 English and 1 French (#296): one English is lent below, one held by his deck
+    -- not for lending, so Who has it? shows EN 1 · FR 1 for him.
+    update public.riftbound_collection set quantity = 3 where user_id = users[2] and printing_id = 'ogn-255-298';
+    insert into public.riftbound_collection (user_id, printing_id, finish, condition, language, quantity)
+    values (users[2], 'ogn-255-298', 'normal', 'NM', 'fr', 1);
 
     -- Loans (#172), all Anna's: Bram's cards she has (confirmed), hers with Chloé (unconfirmed)
     -- and Finn (disputed), and two Elise gave back. Two copies each, from the lender's own
@@ -272,8 +278,25 @@ begin
         from ((select * from public.riftbound_collection c where c.user_id = users[2]
                order by c.printing_id, c.language offset 2 limit 2)
               union all
-              (select * from public.riftbound_collection c where c.user_id = users[2] and c.printing_id = 'ogn-255-298' limit 1)) c),
+              (select * from public.riftbound_collection c where c.user_id = users[2] and c.printing_id = 'ogn-255-298'
+               order by c.language limit 1)) c),
         '00000000-0000-4000-8000-0000000d0004');
+    -- Bram's English deck not for lending, which holds one of his Nine-Tailed Fox (#296).
+    insert into public.riftbound_decks (id, user_id, name, legend_id, visibility, language, not_for_lending)
+    values ('00000000-0000-4000-8000-0000000d0005', users[2], 'Bram''s Ahri at home', 'nine-tailed-fox', 'private', 'en', true);
+    perform public.snapshot_riftbound_deck('00000000-0000-4000-8000-0000000d0005');
+
+    -- Borrow requests (#299), for /loans: Anna asked Bram for his Nine-Tailed Fox in English or
+    -- French, and Chloé asks Anna for the demo deck's pinned Ahri, with a note; both open, and
+    -- Anna's DM to Bram already sent. Written as the bot would, past ask_to_borrow()'s checks.
+    insert into public.riftbound_borrow_requests (borrower_id, lender_id, languages, wanted_by, note, created_at)
+    values (users[1], users[2], '{en,fr}', today + 5, null, now() - interval '1 day'),
+           (users[3], users[1], '{en}', null, 'For Nexus Night on Friday, I give it back on Sunday.', now() - interval '2 hours');
+    insert into public.riftbound_borrow_request_cards (request_id, card_id, quantity)
+    select r.id, case when r.borrower_id = users[1] then 'nine-tailed-fox' else 'ahri-alluring' end, 1
+    from public.riftbound_borrow_requests r where r.borrower_id in (users[1], users[3]);
+    insert into public.riftbound_borrow_request_dms (request_id, recipient)
+    select r.id, 'lender' from public.riftbound_borrow_requests r where r.borrower_id in (users[1], users[3]);
 
     -- Wishlist (#177): Anna answered the question with Shared. Her demo deck stays built, the
     -- Annie deck lends it cards, and she wants two cards by hand, one of them a printing.

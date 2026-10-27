@@ -1,5 +1,6 @@
 import { createDeck } from "@/app/decks/actions";
 import { riftboundIcons } from "@/components/card-library";
+import { AskToBorrow } from "@/components/borrow-request";
 import { CardThumb } from "@/components/card-thumb";
 import { cardImage } from "@/components/deck-cards";
 import { DeckEditor, RestoreVersion, type Deck, type VersionListed } from "@/components/deck-editor";
@@ -13,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import type { Card, Printing } from "@/bot/src/card-match";
 import { missingCards, type OwnedCopy } from "@/bot/src/deck-match";
 import { deckWanted } from "@/bot/src/lend-copies";
-import { languageName } from "@/lib/collection";
+import { askAllMissing, borrowCopies, borrowLanguages } from "@/lib/collection";
 import { allPages, deckChanges, SECTIONS, VISIBILITIES, type Entry, type Pin } from "@/lib/decks";
 import { formatExact } from "@/lib/time";
 import { createClient } from "@/lib/supabase/server";
@@ -259,12 +260,12 @@ export async function DeckDetail({ id }: { id: string }) {
     if (error) console.error("open_riftbound_deck failed:", error.message);
   }
   const missing = missingCards(rest, entries.data as Entry[], owned.data).rows.filter((r) => r.owned < r.quantity);
-  const [lenders, members] = await Promise.all([
+  const [lenders, members, profile] = await Promise.all([
+    // Every language: those the visitor does not take fold into "also" rather than disappear.
     missing.length
       ? supabase.rpc("riftbound_card_lenders", {
           p_cards: [...new Set(missing.filter((r) => !r.printing_id).map((r) => r.card_id))],
           p_printings: [...new Set(missing.flatMap((r) => r.printing_id ?? []))],
-          p_language: rest.allow_other_languages ? null : rest.language,
         })
       : { data: [], error: null },
     // Whom the owner can lend to: their servers' members (RLS), not those hidden with /hide-me.
@@ -273,8 +274,10 @@ export async function DeckDetail({ id }: { id: string }) {
           supabase.from("members").select("user_id, display_name").eq("hidden", false).neq("user_id", me.data).order("guild_id").order("user_id").range(from, to),
         )
       : { data: [], error: null },
+    supabase.from("profiles").select("borrow_languages").eq("user_id", me.data ?? "").maybeSingle(),
   ]);
-  // The deck still opens without them, and each says it could not load.
+  // The deck still opens without them, and each says it could not load; without the setting, the default.
+  if (profile.error) console.error("profiles failed:", profile.error.message);
   if (lenders.error) console.error("riftbound_card_lenders failed:", lenders.error.message);
   if (members.error) console.error("members failed:", members.error.message);
   const names = new Map((cards.data as Card[]).map((c) => [c.id, c.name]));
@@ -310,6 +313,7 @@ export async function DeckDetail({ id }: { id: string }) {
           <WhoHasMissing
             missing={[...short.values()]}
             lenders={lenders.error ? null : (lenders.data as CardLender[])}
+            languages={borrowLanguages(profile.data?.borrow_languages ?? ["en"], rest)}
           />
           {mine && (
             <DeckLending
@@ -371,8 +375,8 @@ interface CardLender {
   user_id: string;
   display_name: string;
   avatar_url: string | null;
-  copies: number;
-  languages: string[] | null;
+  /** Per language, after decks not for lending hold theirs. */
+  copies: { language: string; copies: number }[];
 }
 
 interface MissingCard {
@@ -385,17 +389,20 @@ interface MissingCard {
 
 /**
  * Who has my missing cards?: for each card the visitor is short of, who in their servers has
- * copies to lend, of the pinned printing and in the deck's language if it takes no other.
- * riftbound_card_lenders() leaves out copies not available, and whoever may not show.
+ * copies to lend, of the pinned printing; copies outside `languages` (borrowLanguages()) fold
+ * into "also". riftbound_card_lenders() leaves out copies not available, and whoever may not show.
  */
 function WhoHasMissing({
   missing,
   lenders,
+  languages,
 }: {
   missing: MissingCard[];
   lenders: CardLender[] | null;
+  languages: string[];
 }) {
   if (missing.length === 0) return null;
+  const asks = lenders ? askAllMissing(missing, lenders, languages) : [];
   return (
     <StatCard title="Who has my missing cards?" description="Members of your servers with copies to lend">
       {lenders === null ? (
@@ -404,7 +411,10 @@ function WhoHasMissing({
         <ul className="flex flex-col divide-y">
           {missing.map((m) => {
             // One row per member, though they may share several servers with the visitor.
-            const who = [...new Map(lenders.filter((l) => l.card_id === m.card_id && l.printing_id === m.printing_id).map((l) => [l.user_id, l])).values()];
+            const who = [...new Map(lenders.filter((l) => l.card_id === m.card_id && l.printing_id === m.printing_id).map((l) => [l.user_id, l])).values()]
+              .map((l) => ({ l, c: borrowCopies(l.copies, languages) }))
+              // Stable: within each group, the database's order (most copies first).
+              .toSorted((a, b) => Number(b.c.matches > 0) - Number(a.c.matches > 0));
             return (
               <li key={`${m.card_id} ${m.printing_id ?? ""}`} className="flex flex-col gap-2 py-3 text-sm first:pt-0 last:pb-0">
                 <span className="flex min-w-0 items-center justify-between gap-3">
@@ -420,14 +430,14 @@ function WhoHasMissing({
                   <p className="text-xs text-muted-foreground">Nobody in your servers lends it yet.</p>
                 ) : (
                   <RankList>
-                    {who.map((l, i) => (
+                    {who.map(({ l, c }, i) => (
                       <MemberRankRow
                         key={l.user_id}
                         rank={i + 1}
                         name={l.display_name}
                         avatarUrl={l.avatar_url}
-                        value={`${l.copies} to lend`}
-                        detail={(l.languages ?? []).map(languageName).join(", ")}
+                        value={c.value}
+                        detail={c.also}
                         href={`/u/${l.user_id}`}
                       />
                     ))}
@@ -437,6 +447,26 @@ function WhoHasMissing({
             );
           })}
         </ul>
+      )}
+      {asks.length > 0 && (
+        <div className="flex flex-col gap-2 border-t pt-4">
+          <h3 className="text-sm font-medium">Ask one member for all they lend of these</h3>
+          <RankList>
+            {asks.map(({ lender, cards }, i) => (
+              <MemberRankRow
+                key={lender.user_id}
+                rank={i + 1}
+                name={lender.display_name}
+                avatarUrl={lender.avatar_url}
+                value={`${cards.length} ${cards.length === 1 ? "card" : "cards"}`}
+                href={`/u/${lender.user_id}`}
+                action={
+                  <AskToBorrow lender={{ id: lender.user_id, name: lender.display_name }} cards={cards} languages={languages} label="Ask for all missing" />
+                }
+              />
+            ))}
+          </RankList>
+        </div>
       )}
     </StatCard>
   );

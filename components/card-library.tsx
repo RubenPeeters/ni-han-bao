@@ -1,11 +1,13 @@
 import { byPrinting } from "@/bot/src/card-match";
 import { AddToDeck, type MyDeck } from "@/components/add-to-deck";
+import { AskToBorrow } from "@/components/borrow-request";
 import { CardGrid, type LibraryCard } from "@/components/card-grid";
 import { CardThumb } from "@/components/card-thumb";
 import { DomainIcon, RarityIcon, RulesText, SupertypeIcon, TypeIcon, type RiftboundIcon } from "@/components/riftbound-icons";
 import { LogInPrompt } from "@/components/server-picker";
+import { CardCopies } from "@/components/your-copies";
 import { EmptyState, ErrorState, MemberRankRow, RankList, StatCard } from "@/components/stat-ui";
-import { languageName, type Language, type OwnedRow } from "@/lib/collection";
+import { borrowCopies, totalCopies, type Language, type OwnedRow } from "@/lib/collection";
 import { allPages } from "@/lib/decks";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
@@ -150,11 +152,22 @@ export async function CardDetail({ id }: { id: string }) {
     supabase.rpc("current_discord_id"),
     riftboundIcons(supabase),
   ]);
-  // Like Who has it?, a failed lookup drops Add to deck, not the card.
-  const decks = me.data ? await myDecks(supabase, me.data as string) : null;
   if (error) return <ErrorState title="Could not load this card">Try again in a minute.</ErrorState>;
   if (!data) notFound();
   const printings = data.printings.toSorted(byPrinting);
+  // Like Who has it?, a failed lookup drops Add to deck or Your copies, not the card.
+  const [decks, mine, profile] = me.data
+    ? await Promise.all([
+        myDecks(supabase, me.data as string),
+        // RLS returns the visitor's own rows only.
+        supabase
+          .from("riftbound_collection")
+          .select("printing_id, finish, condition, language, quantity, for_trade, lendable")
+          .in("printing_id", printings.map((p) => p.id))
+          .returns<OwnedRow[]>(),
+        supabase.from("profiles").select("lend_all, card_language, borrow_languages").eq("user_id", me.data).maybeSingle(),
+      ])
+    : [null, null, null];
   const dash = (n: number | null) => (n === null ? "-" : String(n));
   const rarities = [...new Set(printings.flatMap((p) => (p.rarity ? [p.rarity] : [])))];
   const listed = (items: ReactNode[]) =>
@@ -203,6 +216,18 @@ export async function CardDetail({ id }: { id: string }) {
           {decks && !decks.error && <AddToDeck card={{ id: data.id, name: data.name }} decks={decks.data} />}
         </div>
       </div>
+      {me.data && mine && !mine.error && profile && !profile.error && (
+        <StatCard title="Your copies" description="Every language, finish and condition you own">
+          <CardCopies
+            cardId={data.id}
+            cardName={data.name}
+            printings={printings.map(({ id, collector_code }) => ({ id, collector_code }))}
+            mine={{ userId: me.data as string, owned: mine.data }}
+            lendAll={profile.data?.lend_all ?? false}
+            language={(profile.data?.card_language ?? "en") as Language}
+          />
+        </StatCard>
+      )}
       <StatCard
         title="Printings"
         description={`${printings.length.toLocaleString("en-US")} ${printings.length === 1 ? "printing" : "printings"}`}
@@ -225,7 +250,9 @@ export async function CardDetail({ id }: { id: string }) {
         </ul>
       </StatCard>
       {/* Decoration of the card page: a failed lookup drops the section, not the card. */}
-      {!lenders.error && <WhoHasIt lenders={lenders.data as Lender[]} />}
+      {!lenders.error && (
+        <WhoHasIt card={{ id: data.id, name: data.name }} lenders={lenders.data as Lender[]} languages={profile?.data?.borrow_languages ?? ["en"]} />
+      )}
     </>
   );
 }
@@ -236,12 +263,14 @@ interface Lender {
   user_id: string;
   display_name: string;
   avatar_url: string | null;
-  copies: number;
-  languages: string[];
+  copies: { language: string; copies: number }[];
 }
 
-/** Per server the visitor is in, who has copies to lend; card_lenders() decides who may show. */
-function WhoHasIt({ lenders }: { lenders: Lender[] }) {
+/**
+ * Per server the visitor is in, who has copies to lend; card_lenders() decides who may show.
+ * Copies in the visitor's borrow languages first, the rest folded into "also". Ask to borrow on each.
+ */
+function WhoHasIt({ card, lenders, languages }: { card: { id: string; name: string }; lenders: Lender[]; languages: string[] }) {
   const guilds = [...new Map(lenders.map((l) => [l.guild_id, l.guild_name])).entries()];
   return (
     <StatCard title="Who has it?" description="Members of your servers with copies to lend">
@@ -254,15 +283,25 @@ function WhoHasIt({ lenders }: { lenders: Lender[] }) {
             <RankList>
               {lenders
                 .filter((l) => l.guild_id === guildId)
-                .map((l, i) => (
+                .map((l) => ({ l, c: borrowCopies(l.copies, languages) }))
+                // Stable: within each group, the database's order (most copies first).
+                .toSorted((a, b) => Number(b.c.matches > 0) - Number(a.c.matches > 0))
+                .map(({ l, c }, i) => (
                   <MemberRankRow
                     key={l.user_id}
                     rank={i + 1}
                     name={l.display_name}
                     avatarUrl={l.avatar_url}
-                    value={`${l.copies} to lend`}
-                    detail={l.languages.map(languageName).join(", ")}
+                    value={c.value}
+                    detail={c.also}
                     href={`/u/${l.user_id}`}
+                    action={
+                      <AskToBorrow
+                        lender={{ id: l.user_id, name: l.display_name }}
+                        cards={[{ card_id: card.id, name: card.name, count: 1, max: totalCopies(l.copies) }]}
+                        languages={languages}
+                      />
+                    }
                   />
                 ))}
             </RankList>

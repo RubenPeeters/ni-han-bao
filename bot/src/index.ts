@@ -121,6 +121,20 @@ import {
   type LoanView,
   type Wanted,
 } from "./lending.js";
+import {
+  acceptError,
+  acceptPick,
+  acceptPreview,
+  answerDm,
+  cannotAnswer,
+  declineFormId,
+  declineReply,
+  parseDeclineFormId,
+  parseRequestButtonId,
+  pickKey,
+  requestDm,
+  type BorrowRequest,
+} from "./borrow-requests.js";
 import { CARD_COMMAND, cardChoices, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
 import { callerName, cardMessage, PAGING_MS, PAGING_OVER, parsePageButtonId, shownPage, type V2 } from "./riftbound-reply.js";
 import { emojiImage, emojiPlan, wantedEmojis, type Emojis } from "./emojis.js";
@@ -155,6 +169,7 @@ const REPORT_CHECK_MS = 60_000;
 const RANKS_MS = 3 * 60 * 60_000;
 const MATCHES_MS = 6 * 60 * 60_000;
 const NUDGE_MS = 60 * 60_000;
+const BORROW_REQUESTS_MS = 60_000;
 const TRADES_MS = 60 * 60_000;
 const FEED_CHECK_MS = 24 * 60 * 60_000;
 const STORE_IMAGES_MS = 24 * 60 * 60_000;
@@ -1213,6 +1228,146 @@ async function nudgeDueLoans(): Promise<void> {
   }
 }
 
+/** A borrow request (#299) with its cards and answer; null if gone (a party was forgotten). */
+async function readBorrowRequest(id: number): Promise<BorrowRequest | null> {
+  const { data, error } = await db
+    .from("riftbound_borrow_requests")
+    .select("id, borrower_id, lender_id, languages, wanted_by, note, cards:riftbound_borrow_request_cards(card_id, quantity), answer:riftbound_borrow_request_answers(kind, loan_id, note)")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(`riftbound_borrow_requests select: ${error.message}`);
+  if (!data) return null;
+  // One-to-one, so PostgREST gives an object; an array if it cannot tell.
+  const answer = (Array.isArray(data.answer) ? data.answer[0] : data.answer) as { kind: BorrowRequest["state"]; loan_id: number | null; note: string | null } | null;
+  return {
+    id: data.id,
+    borrower: data.borrower_id,
+    lender: data.lender_id,
+    languages: data.languages,
+    wanted_by: data.wanted_by,
+    note: data.note,
+    cards: data.cards,
+    state: answer?.kind ?? "open",
+    loan_id: answer?.loan_id ?? null,
+    answer_note: answer?.note ?? null,
+  };
+}
+
+/** The lender's DM for each new request, the borrower's for each answer: claimed first, so each is sent at most once. */
+async function notifyBorrowRequests(): Promise<void> {
+  try {
+    const { data, error } = await db.rpc("claim_borrow_request_dms");
+    if (error) throw new Error(`claim_borrow_request_dms: ${error.message}`);
+    for (const { request_id, recipient } of data as { request_id: number; recipient: "lender" | "borrower" }[]) {
+      const request = await readBorrowRequest(request_id);
+      if (!request) continue;
+      const message = recipient === "lender" ? requestDm(catalogue, emojis, request) : answerDm(catalogue, emojis, request, config.siteUrl);
+      const sent = await client.users
+        .send(recipient === "lender" ? request.lender : request.borrower, { ...message, allowedMentions: { parse: [] } })
+        .then(() => true)
+        .catch((err: unknown) => {
+          log("info", "borrow_request_dm_not_sent", { request: request_id, recipient, error: err });
+          return false;
+        });
+      if (sent) continue;
+      // Recorded, never retried: the lender still answers on their loans page.
+      const failed = await db
+        .from("riftbound_borrow_request_dms")
+        .update({ failed_at: new Date().toISOString() })
+        .eq("request_id", request_id)
+        .eq("recipient", recipient);
+      if (failed.error) throw new Error(`riftbound_borrow_request_dms update: ${failed.error.message}`);
+    }
+  } catch (err) {
+    log("error", "borrow_request_dms_failed", { error: err });
+  }
+}
+
+/**
+ * The lender's DM buttons: Accept shows the copies it would lend, Confirm records the loan with
+ * copies picked afresh, or shows the new pick again if the collection changed, Decline asks a reason.
+ */
+async function borrowRequestButton(interaction: ButtonInteraction, kind: "accept" | "decline" | "confirm", id: number, pick: string | null): Promise<void> {
+  if (kind === "decline") {
+    // A form must be the first response, so it opens before the database is asked.
+    await interaction.showModal(
+      new ModalBuilder()
+        .setCustomId(declineFormId(id))
+        .setTitle(`Decline borrow request #${id}`)
+        .addComponents(
+          new ActionRowBuilder<TextInputBuilder>().addComponents(
+            new TextInputBuilder()
+              .setCustomId("note")
+              .setLabel("Why not? Optional; they see this.")
+              .setStyle(TextInputStyle.Paragraph)
+              .setMaxLength(300)
+              .setRequired(false),
+          ),
+        ),
+    );
+    return;
+  }
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  try {
+    const request = await readBorrowRequest(id);
+    if (!request) {
+      await interaction.editReply("This request is gone.");
+      return;
+    }
+    const no = cannotAnswer(request, interaction.user.id);
+    if (no) {
+      await interaction.editReply(no);
+      return;
+    }
+    const options = await db.rpc("riftbound_lend_options", { p_lender: request.lender, p_cards: request.cards.map((c) => c.card_id), p_fixes: null });
+    if (options.error) throw new Error(`riftbound_lend_options: ${options.error.message}`);
+    const picked = acceptPick(catalogue, request, interaction.user.id, options.data as CopyRow[]);
+    if (typeof picked === "string") {
+      await interaction.editReply(picked);
+      return;
+    }
+    if (kind === "accept" || pick !== pickKey(picked.cards)) {
+      await interaction.editReply({ ...acceptPreview(catalogue, emojis, request, picked, kind === "confirm"), allowedMentions: { parse: [] } });
+      return;
+    }
+    const { data, error } = await db.rpc("accept_riftbound_borrow_request", {
+      p_member: interaction.user.id,
+      p_request: id,
+      p_due: null,
+      p_cards: picked.cards,
+    });
+    if (error) {
+      const reason = acceptError(error.message);
+      if (!reason) throw new Error(`accept_riftbound_borrow_request: ${error.message}`);
+      await interaction.editReply(reason);
+      return;
+    }
+    await interaction.editReply({
+      ...lendReceipt(catalogue, emojis, { id: data as number, lender: request.lender, borrower: request.borrower, due: null, rows: picked.cards, deck: null }, picked.unmarked, null),
+      allowedMentions: { parse: [] },
+    });
+  } catch (err) {
+    log("error", "command_failed", { command: `borrow-${kind}`, error: err });
+    await interaction.editReply(FAILED);
+  }
+}
+
+async function borrowDeclineForm(interaction: ModalSubmitInteraction, id: number): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  try {
+    const { data, error } = await db.rpc("decline_riftbound_borrow_request", {
+      p_member: interaction.user.id,
+      p_request: id,
+      p_note: interaction.fields.getTextInputValue("note") || null,
+    });
+    if (error) throw new Error(`decline_riftbound_borrow_request: ${error.message}`);
+    await interaction.editReply(declineReply(data as string));
+  } catch (err) {
+    log("error", "command_failed", { command: "borrow-decline", error: err });
+    await interaction.editReply(FAILED);
+  }
+}
+
 /** One DM per member for the trade matches found since their last, if they accept DMs from the bot. */
 async function notifyTradeMatches(): Promise<void> {
   try {
@@ -1333,6 +1488,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const cardPage = parsePageButtonId(interaction.customId);
     if (cardPage !== null) {
       await tracked("command", cardPageButton(interaction, cardPage.cardId, cardPage.index));
+      return;
+    }
+    const borrow = parseRequestButtonId(interaction.customId);
+    if (borrow !== null) {
+      await tracked("command", borrowRequestButton(interaction, borrow.kind, borrow.request, borrow.pick));
+      return;
+    }
+  }
+  if (interaction.isModalSubmit()) {
+    const declined = parseDeclineFormId(interaction.customId);
+    if (declined !== null) {
+      await tracked("command", borrowDeclineForm(interaction, declined));
       return;
     }
   }
@@ -2814,6 +2981,7 @@ client.once(Events.ClientReady, async (c) => {
   setInterval(() => void refreshRanks(), RANKS_MS);
   setInterval(() => void refreshAllMatches(), MATCHES_MS);
   setInterval(() => void nudgeDueLoans(), NUDGE_MS);
+  setInterval(() => void notifyBorrowRequests(), BORROW_REQUESTS_MS);
   // On start too: deploys restart the bot more often than once a day.
   void tracked("store_images", refreshStoreImages());
   setInterval(() => void tracked("store_images", refreshStoreImages()), STORE_IMAGES_MS);
