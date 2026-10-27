@@ -1,5 +1,6 @@
 "use server";
 
+import { loadChampions } from "@/lib/champion-icons";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 
@@ -9,6 +10,18 @@ export async function setVisibility(formData: FormData) {
   // The table's check constraint rejects anything but the three values.
   const { error } = await supabase.rpc("set_profile_visibility", { v: String(formData.get("visibility")) });
   if (error) throw new Error(`set_profile_visibility failed: ${error.message}`);
+  revalidatePath("/u/[userId]", "page");
+  revalidatePath("/settings");
+}
+
+/** The favourite champion on /settings, by Data Dragon id; null clears it. Only a real champion, as others see it. */
+export async function setFavouriteChampion(champion: string | null) {
+  if (champion !== null && !(await loadChampions()).some((c) => c.id === champion)) {
+    throw new Error(`unknown champion: ${champion}`);
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_favourite_champion", { p_champion: champion });
+  if (error) throw new Error(`set_favourite_champion failed: ${error.message}`);
   revalidatePath("/u/[userId]", "page");
   revalidatePath("/settings");
 }

@@ -109,7 +109,7 @@ import {
 } from "./stores.js";
 import { isDiscordUrl, storeImage } from "./store-image.js";
 import { challengeText, GAME, LOL_COMMAND, startLink, verifyLink, type Platform, type RiotLookup } from "./lol.js";
-import { PROFILE_COMMAND, setProfileVisibility } from "./profile.js";
+import { type Champion, championChoices, PROFILE_COMMAND, setFavouriteChampion, setProfileVisibility } from "./profile.js";
 import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type Match, type MatchRow } from "./matches.js";
 import { rankChanges, rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
@@ -1469,6 +1469,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
     );
     return;
   }
+  if (interaction.isAutocomplete() && interaction.commandName === PROFILE_COMMAND.name) {
+    await tracked(
+      "command",
+      leagueChampions()
+        .then((champions) => interaction.respond(championChoices(champions, interaction.options.getFocused())))
+        .catch((err: unknown) => log("error", "autocomplete_failed", { command: interaction.commandName, error: err })),
+    );
+    return;
+  }
   if (interaction.isAutocomplete() && interaction.commandName === LEND_COMMAND.name) {
     const focused = interaction.options.getFocused(true);
     await tracked(
@@ -1722,9 +1731,32 @@ async function forgetCommand(interaction: ChatInputCommandInteraction<"cached">)
   await interaction.editReply({ content: reply, components: [] });
 }
 
-/** /profile visibility: who can see the caller's /u/[userId] page. */
+/** /profile visibility: who can see the caller's /u/[userId] page; /profile champion: their favourite. */
 async function profileCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  if (interaction.options.getSubcommand() === "champion") {
+    const typed = interaction.options.getString("champion");
+    await interaction.editReply(
+      await setFavouriteChampion(
+        {
+          async setChampion(userId, champion) {
+            const { data, error } = await db
+              .from("profiles")
+              .upsert({ user_id: userId, favourite_champion: champion, updated_at: new Date().toISOString() }, { onConflict: "user_id" })
+              .select("user_id");
+            if (error) throw new Error(`profiles upsert: ${error.message}`);
+            return data.length > 0;
+          },
+        },
+        // Clearing needs no list, so Data Dragon being down does not block it.
+        typed === null ? [] : await leagueChampions().catch(() => []),
+        interaction.user.id,
+        typed,
+        config.siteUrl,
+      ),
+    );
+    return;
+  }
   const reply = await setProfileVisibility(
     {
       async setVisibility(userId, visibility) {
@@ -1756,6 +1788,26 @@ function riotLookup(api: RiotApi): RiotLookup {
       (await api.get<{ profileIconId: number }>(platform, `/lol/summoner/v4/summoners/by-puuid/${encodeURIComponent(puuid)}`))
         ?.profileIconId ?? null,
   };
+}
+
+let champions: { at: number; list: Promise<Champion[]> } | null = null;
+
+/** The latest patch's champions from Data Dragon, kept for 6 hours; a failed fetch is retried next time. */
+function leagueChampions(): Promise<Champion[]> {
+  if (!champions || Date.now() - champions.at > 6 * 3600_000) {
+    const list = (async () => {
+      const opts = { signal: AbortSignal.timeout(5_000) };
+      const [version] = (await (await fetch("https://ddragon.leagueoflegends.com/api/versions.json", opts)).json()) as string[];
+      const res = await fetch(`https://ddragon.leagueoflegends.com/cdn/${version}/data/en_US/champion.json`, opts);
+      const { data } = (await res.json()) as { data: Record<string, Champion> };
+      return Object.values(data).map(({ id, name }) => ({ id, name }));
+    })();
+    champions = { at: Date.now(), list };
+    list.catch(() => {
+      if (champions?.list === list) champions = null;
+    });
+  }
+  return champions.list;
 }
 
 /** The icon's picture from Data Dragon, Riot's public CDN; null if its version list is down. */

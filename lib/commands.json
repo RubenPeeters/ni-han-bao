@@ -56,6 +56,19 @@
             ]
           }
         ]
+      },
+      {
+        "name": "profile champion",
+        "description": "Your favourite League champion on your profile; leave it out to clear it",
+        "options": [
+          {
+            "name": "champion",
+            "description": "The champion",
+            "type": "string",
+            "required": false,
+            "choices": []
+          }
+        ]
       }
     ]
   },
