@@ -1,4 +1,4 @@
-import { setBorrowLanguages, setLending, setVisibility, setWishlistMode } from "@/app/u/[userId]/actions";
+import { setBorrowLanguages, setFeedCollection, setLending, setVisibility, setWishlistMode } from "@/app/u/[userId]/actions";
 import { VISIBILITIES } from "@/components/profile-stats";
 import { LogInPrompt } from "@/components/server-picker";
 import { Checkboxes, Options, SettingsForm, ThemeSettings } from "@/components/settings-form";
@@ -54,6 +54,7 @@ interface MySettings {
   lend_all: boolean;
   wishlist_mode: string | null;
   borrow_languages: string[];
+  feed_collection: boolean;
 }
 
 async function Settings() {
@@ -63,7 +64,7 @@ async function Settings() {
   const me = await supabase.rpc("current_discord_id");
   const [profile, servers, accounts] = await Promise.all([
     // The caller's own row is always visible to them (can_see_profile()); no row is the defaults.
-    supabase.from("profiles").select("visibility, lends_cards, lend_all, wishlist_mode, borrow_languages").eq("user_id", me.data ?? "").maybeSingle<MySettings>(),
+    supabase.from("profiles").select("visibility, lends_cards, lend_all, wishlist_mode, borrow_languages, feed_collection").eq("user_id", me.data ?? "").maybeSingle<MySettings>(),
     supabase.rpc("my_server_visibility"),
     supabase.rpc("my_game_accounts"),
   ]);
@@ -101,7 +102,7 @@ async function Settings() {
         </SettingsForm>
       </Section>
 
-      <Section id="riftbound" failed={profileFailed} description="Lending, borrowing, and how your decks count on your wishlist.">
+      <Section id="riftbound" failed={profileFailed} description="Lending, borrowing, how your decks count on your wishlist, and the home feed.">
         <SettingsForm action={setLending}>
           <label className="flex min-h-11 items-start gap-3 py-1 text-sm">
             <input type="checkbox" name="lends" defaultChecked={mine?.lends_cards ?? false} className="mt-0.5 size-4 shrink-0 accent-primary" />
@@ -138,6 +139,18 @@ async function Settings() {
             <Options name="mode" options={WISHLIST_MODES} value={mine?.wishlist_mode ?? "shared"} />
           </fieldset>
           <Help>Decks you have now stay as they are: change one in its editor.</Help>
+        </SettingsForm>
+        <hr />
+        <SettingsForm action={setFeedCollection}>
+          <label className="flex min-h-11 items-start gap-3 py-1 text-sm">
+            <input type="checkbox" name="feed" defaultChecked={mine?.feed_collection ?? true} className="mt-0.5 size-4 shrink-0 accent-primary" />
+            <span className="flex flex-col">
+              <span className="font-medium">Show my collection activity in the feed</span>
+              <span className="text-muted-foreground">
+                Members who may see your profile see how many cards you added each day. Off: nobody does, from earlier days too.
+              </span>
+            </span>
+          </label>
         </SettingsForm>
       </Section>
 

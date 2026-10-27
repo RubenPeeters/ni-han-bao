@@ -37,6 +37,7 @@ const FILTER_OF: Record<string, Filter> = {
   deck: "riftbound",
   deck_shared: "riftbound",
   catalogue: "riftbound",
+  collection: "riftbound",
   rank: "league",
   lol_week: "league",
   recap: "server",
@@ -115,7 +116,7 @@ export function toItem(row: FeedRow & { count: number }): FeedItem {
   const d = row.data;
   const g = row.guild_id;
   const item = (text: string, href: string, detail: string | null = null): FeedItem => ({
-    key: [row.kind, g, row.user_id, d.deck ?? d.queue ?? d.starts_at ?? d.month ?? d.week ?? "", row.happened_at].join("|"),
+    key: [row.kind, g, row.user_id, d.deck ?? d.queue ?? d.starts_at ?? d.month ?? d.week ?? d.day ?? "", row.happened_at].join("|"),
     at: row.happened_at,
     guild: g && row.guild_name ? { id: g, name: row.guild_name } : null,
     text,
@@ -151,6 +152,8 @@ export function toItem(row: FeedRow & { count: number }): FeedItem {
       );
     case "deck_shared":
       return item(`${who} shared a deck, ${d.name}`, `/decks/${d.deck}`);
+    case "collection":
+      return item(`${who} added ${plural(d.cards, "card")}`, `/u/${row.user_id}/collection`);
     case "catalogue":
       return item(`${plural(d.cards, "new card")} in the catalogue`, "/cards");
     case "recap":

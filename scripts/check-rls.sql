@@ -5,7 +5,8 @@
 -- opened (#174), their versions with them (#176), and wishlists their profile (#177); that trade
 -- matches follow it too (#178), and decks not for lending hold their cards (#179); that borrow requests
 -- reach only lenders Who has it? shows (#299); that only public decks are teased logged
--- out (#175); that the home feed follows decks, profiles, loan parties and hidden members (#302); then that /forget-me deletes
+-- out (#175); that the home feed follows decks, profiles, loan parties and hidden members (#302), and collection
+-- activity sums a day and follows its setting (#303); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`; migrate.yml runs it on the dev project after the seed.
 -- Run against a local Supabase or the dev project (never production); everything is rolled back.
@@ -928,6 +929,18 @@ begin
     if exists (select from public.home_feed('league') f where f.kind not in ('rank', 'lol_week', 'request', 'confirm', 'overdue', 'trade')) then
         raise exception 'home_feed(''league'') returns rows of another filter';
     end if;
+    -- Collection activity (#303): the test user's 2 seeded copies, then +2, +1, +3 (a playset) and +3
+    -- (two playsets) in the collection checks are one item with the sum; removals count nothing.
+    -- rls-rls-mine's 2 and 1 French show, rls-hidden's (hidden) and rls-rls-other's (no shared server) do not.
+    if (select array_agg(f.user_id || ':' || (f.data ->> 'cards') order by f.user_id) from public.home_feed('riftbound') f
+        where f.kind = 'collection' and f.user_id like 'rls-%') <> array['rls-rls-mine:3', 'rls-user:11'] then
+        raise exception 'home_feed() does not sum a day''s added copies into one item, or shows someone it may not';
+    end if;
+    perform public.set_feed_collection(false);
+    if exists (select from public.home_feed() f where f.kind = 'collection' and f.user_id = 'rls-user') then
+        raise exception 'home_feed() shows collection activity of a member who turned it off';
+    end if;
+    perform public.set_feed_collection(true);
 end $$;
 
 -- /forget-me (#72): no row about the user is left anywhere, and none can be written again
