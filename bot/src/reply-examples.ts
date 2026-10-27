@@ -8,6 +8,7 @@ import { goingMessage } from "./events.js";
 import { FORGET_PROMPT } from "./forget.js";
 import { lendAnnouncement } from "./lending.js";
 import { challengeText } from "./lol.js";
+import { diffText, onboardingDm, rolesReply } from "./onboarding.js";
 import { recapMessage } from "./recap.js";
 import { reportEmbed } from "./report.js";
 import { type Catalogue } from "./riftbound.js";
@@ -82,13 +83,23 @@ export function replyExamples(): Record<string, ReplyExample> {
   const people = Object.fromEntries(rows.map((r) => [r.user_id, r.display_name]));
   const nexusNight = { place_kind: "event" as const, event_name: "Riftbound Nexus Night", starts_at: SATURDAY, store_name: "The Card Corner", store_city: "Leuven" };
   const regulars = { ...nexusNight, place_kind: "regulars" as const, event_name: null, starts_at: null };
+  // Demo role ids: the real ones are the server's.
+  const positions = ["Top", "Jungle", "Mid", "Bot", "Support"].map((label, i) => ({ role_id: `90000000000000040${i}`, label }));
   return {
     welcome: reply(null, { content: welcomeText(SITE, GUILD) }),
     leaderboard: reply("/leaderboard", { embeds: [leaderboardEmbed("week", rows, "2026-10-12", SITE, ZONE)] }),
     setup: reply(
       "/setup show",
-      { content: settingsText({ report_channel_id: REPORT_CHANNEL, timezone: ZONE, public_totals_opt_out: true, rank_roles: false }) },
+      { content: settingsText({ report_channel_id: REPORT_CHANNEL, timezone: ZONE, public_totals_opt_out: true, rank_roles: false, onboarding: true }, positions) },
       { ephemeral: true, channels: { [REPORT_CHANNEL]: "weekly-report" } },
+    ),
+    // The new member's DM.
+    "onboarding-dm": reply(null, onboardingDm({ id: GUILD, name: "Demo server" }, positions, new Set(), SITE)),
+    roles: reply("/roles", rolesReply(GUILD, positions, new Set([positions[2].role_id])), { ephemeral: true }),
+    "roles-picked": reply(
+      "/roles",
+      { content: diffText({ add: [positions[0].role_id], remove: [positions[2].role_id] }, new Map(positions.map((p) => [p.role_id, p.label]))) },
+      { ephemeral: true },
     ),
     report: reply(null, {
       embeds: [

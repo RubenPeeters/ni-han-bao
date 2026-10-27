@@ -108,6 +108,18 @@
     ]
   },
   {
+    "name": "roles",
+    "description": "Pick the roles this server offers",
+    "admin": false,
+    "usages": [
+      {
+        "name": "roles",
+        "description": "Pick the roles this server offers",
+        "options": []
+      }
+    ]
+  },
+  {
     "name": "leaderboard",
     "description": "Top 10 members by messages",
     "admin": false,
@@ -219,6 +231,55 @@
               "on",
               "off"
             ]
+          }
+        ]
+      },
+      {
+        "name": "setup onboarding state",
+        "description": "On sends the DM to each member who joins, once",
+        "options": [
+          {
+            "name": "state",
+            "description": "Off by default",
+            "type": "string",
+            "required": true,
+            "choices": [
+              "on",
+              "off"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "setup onboarding role-add",
+        "description": "Offer a role in the picker, at most 25",
+        "options": [
+          {
+            "name": "role",
+            "description": "A role without moderation permissions, below mine",
+            "type": "role",
+            "required": true,
+            "choices": []
+          },
+          {
+            "name": "label",
+            "description": "Shown in the picker; the role's name by default",
+            "type": "string",
+            "required": false,
+            "choices": []
+          }
+        ]
+      },
+      {
+        "name": "setup onboarding role-remove",
+        "description": "Stop offering a role; members who have it keep it",
+        "options": [
+          {
+            "name": "role",
+            "description": "A role offered now",
+            "type": "role",
+            "required": true,
+            "choices": []
           }
         ]
       },

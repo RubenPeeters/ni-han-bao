@@ -22,6 +22,8 @@ import {
   type PartialMessageReaction,
   type PartialUser,
   PermissionFlagsBits,
+  type Role,
+  type StringSelectMenuInteraction,
   Team,
   type TextChannel,
   TextInputBuilder,
@@ -52,6 +54,22 @@ import { FEEDBACK_COMMAND, feedbackContext, feedbackId, feedbackModal, parseFeed
 import { countsLive, loadBeforeId } from "./history.js";
 import { createLogger } from "./log.js";
 import { keyedQueue, memberFetchRetryMs, readAll, syncMembers } from "./membership.js";
+import {
+  addRole,
+  diffText,
+  NO_ROLES,
+  NO_THANKS,
+  NOT_A_MEMBER,
+  onboardingDm,
+  onboardingText,
+  type OfferedRole,
+  parseOnboardingId,
+  removeRole,
+  roleDiff,
+  roleProblem,
+  ROLES_COMMAND,
+  rolesReply,
+} from "./onboarding.js";
 import { dueRecapMonth, isRecapFor, lastMonth, RECAP_COMMAND, recapMessage, recapNonce, recapSlot, recapUrls } from "./recap.js";
 import { nextPresence, PRESENCE_PHRASES } from "./presence.js";
 import { emojiRow, receivesReaction } from "./reactions.js";
@@ -493,6 +511,7 @@ client.on(Events.GuildMemberAdd, (member) => {
   servers.get(member.guild.id)?.timeline.addJoin(new Date());
   if (!member.user.bot) {
     void tracked("member_add", membership(member.guild.id, () => addMembers(member.guild.id, [member.id])));
+    void tracked("onboarding", onboard(member));
   }
 });
 
@@ -1503,6 +1522,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
   }
+  // The onboarding DM's picker and No thanks; /roles' picker too, which carries the same server id.
+  const onboarding = (interaction.isStringSelectMenu() || interaction.isButton()) && parseOnboardingId(interaction.customId);
+  if (onboarding) {
+    if (interaction.isStringSelectMenu()) await tracked("command", pickRoles(interaction, onboarding.guildId));
+    else if (interaction.isButton()) await tracked("command", noThanks(interaction, onboarding.guildId));
+    return;
+  }
   // GLOBAL_COMMANDS: also in DMs, where interaction.guild is null, so before the server-only handlers below.
   if (interaction.isChatInputCommand() && interaction.commandName === CARD_COMMAND.name) {
     await tracked("command", cardCommand(interaction));
@@ -1563,6 +1589,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
   if (interaction.commandName === SETUP_COMMAND.name) {
     await tracked("command", setupCommand(interaction));
+    return;
+  }
+  if (interaction.commandName === ROLES_COMMAND.name) {
+    await tracked("command", rolesCommand(interaction));
     return;
   }
   if (interaction.commandName === RECAP_COMMAND.name) {
@@ -1790,8 +1820,13 @@ async function setupCommand(interaction: ChatInputCommandInteraction<"cached">):
   const guildId = interaction.guildId;
   const channel = interaction.options.getChannel("channel");
   const me = interaction.guild.members.me;
-  const subcommand = interaction.options.getSubcommand();
+  const group = interaction.options.getSubcommandGroup();
+  const subcommand = group ? `${group} ${interaction.options.getSubcommand()}` : interaction.options.getSubcommand();
   const state = interaction.options.getString("state");
+  if (subcommand === "onboarding role-add" || subcommand === "onboarding role-remove") {
+    await interaction.editReply(await onboardingRoleCommand(interaction, subcommand === "onboarding role-add"));
+    return;
+  }
   const change = setupChange({
     subcommand,
     channelId: channel?.id ?? null,
@@ -1815,11 +1850,132 @@ async function setupCommand(interaction: ChatInputCommandInteraction<"cached">):
     },
     settingsFor(guildId),
     change,
+    // Read for the settings text only; a failed read shows none rather than failing the change.
+    await offeredRoles(guildId).catch((err: unknown) => {
+      log("error", "onboarding_roles_read_failed", { guild: guildId, error: err });
+      return [];
+    }),
   );
   settings.set(guildId, next);
   if (change && typeof change === "object") log("info", "setup_changed", { guild: guildId, ...change });
   await interaction.editReply(reply);
   if (change && typeof change === "object" && change.rank_roles) void tracked("rank_roles", syncRankRoles(interaction.guild));
+}
+
+async function offeredRoles(guildId: string): Promise<OfferedRole[]> {
+  const { data, error } = await db.from("onboarding_roles").select("role_id, label").eq("guild_id", guildId).order("created_at");
+  if (error) throw new Error(`onboarding_roles: ${error.message}`);
+  return data;
+}
+
+/** Why the bot may not hand out this role now: permissions and role order may have changed since role-add. */
+function onboardingRoleProblem(guild: Guild, role: Role): string | null {
+  const me = guild.members.me;
+  return roleProblem(
+    { name: role.name, position: role.position, managed: role.managed, everyone: role.id === guild.id, permissions: role.permissions.bitfield },
+    { canManageRoles: !!me?.permissions.has(PermissionFlagsBits.ManageRoles), position: me?.roles.highest.position ?? 0 },
+  );
+}
+
+/** The offered roles the bot may still hand out; a deleted or since-empowered role is left out. */
+async function eligibleRoles(guild: Guild): Promise<OfferedRole[]> {
+  return (await offeredRoles(guild.id)).filter((r) => {
+    const role = guild.roles.cache.get(r.role_id);
+    return role && !onboardingRoleProblem(guild, role);
+  });
+}
+
+/** /setup onboarding role-add and role-remove: the reply. */
+async function onboardingRoleCommand(interaction: ChatInputCommandInteraction<"cached">, adding: boolean): Promise<string> {
+  const guild = interaction.guild;
+  const role = interaction.options.getRole("role", true);
+  try {
+    const current = await offeredRoles(guild.id);
+    const next = adding
+      ? addRole(current, role, interaction.options.getString("label"), onboardingRoleProblem(guild, role))
+      : removeRole(current, role);
+    if (typeof next === "string") return next;
+    const offered = next.find((r) => r.role_id === role.id);
+    const { error } = offered
+      ? await db.from("onboarding_roles").upsert({ guild_id: guild.id, ...offered }, { onConflict: "guild_id,role_id" })
+      : await db.from("onboarding_roles").delete().eq("guild_id", guild.id).eq("role_id", role.id);
+    if (error) throw new Error(`onboarding_roles write: ${error.message}`);
+    log("info", "onboarding_roles_changed", { guild: guild.id, role: role.id, offered: !!offered });
+    return `Saved.\n${onboardingText(settingsFor(guild.id).onboarding, next)}`;
+  } catch (err) {
+    log("error", "command_failed", { command: "setup onboarding", error: err });
+    return "Something went wrong, nothing was changed. Please try again later.";
+  }
+}
+
+async function setOnboardingState(guildId: string, userId: string, state: "dms_closed" | "answered" | "declined"): Promise<void> {
+  const { error } = await db
+    .from("onboarding_dms")
+    .update({ state, updated_at: new Date().toISOString() })
+    .eq("guild_id", guildId)
+    .eq("user_id", userId);
+  if (error) throw new Error(`onboarding_dms update: ${error.message}`);
+}
+
+/** The one onboarding DM to a member who joined, claimed first: a rejoin or a forgotten user gets none. */
+async function onboard(member: GuildMember): Promise<void> {
+  const guild = member.guild;
+  if (!settingsFor(guild.id).onboarding) return;
+  const roles = await eligibleRoles(guild);
+  if (!roles.length) return;
+  // skip_forgotten() drops a forgotten user's row, and a rejoin conflicts: either way no row comes back.
+  const { data, error } = await db
+    .from("onboarding_dms")
+    .upsert({ guild_id: guild.id, user_id: member.id }, { onConflict: "guild_id,user_id", ignoreDuplicates: true })
+    .select("user_id");
+  if (error) throw new Error(`onboarding_dms claim: ${error.message}`);
+  if (!data.length) return;
+  const sent = await member
+    .send({ ...onboardingDm(guild, roles, new Set(member.roles.cache.keys()), config.siteUrl), allowedMentions: { parse: [] } })
+    .then(() => true)
+    .catch((err: unknown) => {
+      log("info", "onboarding_dm_not_sent", { guild: guild.id, error: err });
+      return false;
+    });
+  // Recorded, never retried, and nothing is posted in a channel instead: /roles is there.
+  if (!sent) await setOnboardingState(guild.id, member.id, "dms_closed");
+}
+
+/** /roles: the onboarding picker, only for the member who asked. */
+async function rolesCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const roles = await eligibleRoles(interaction.guild);
+  await interaction.editReply(roles.length ? rolesReply(interaction.guildId, roles, new Set(interaction.member.roles.cache.keys())) : NO_ROLES);
+}
+
+/** A pick from the DM or /roles: the chosen offered roles added, the others offered taken away. */
+async function pickRoles(interaction: StringSelectMenuInteraction, guildId: string): Promise<void> {
+  await interaction.deferUpdate();
+  const guild = client.guilds.cache.get(guildId);
+  // The member cache is complete (see UserUpdate), so a miss means they left.
+  const member = guild?.members.cache.get(interaction.user.id);
+  let content: string;
+  if (!guild || !member) {
+    content = NOT_A_MEMBER;
+  } else {
+    const roles = await eligibleRoles(guild);
+    const diff = roleDiff(roles.map((r) => r.role_id), interaction.values, new Set(member.roles.cache.keys()));
+    try {
+      if (diff.add.length) await member.roles.add(diff.add, "nexus onboarding: picked by the member");
+      if (diff.remove.length) await member.roles.remove(diff.remove, "nexus onboarding: unticked by the member");
+      content = diffText(diff, new Map(roles.map((r) => [r.role_id, r.label])));
+    } catch (err) {
+      log("error", "onboarding_roles_failed", { guild: guildId, error: err });
+      content = "I could not change your roles. Please try again later, or ask an admin to check my role.";
+    }
+    await setOnboardingState(guildId, interaction.user.id, "answered");
+  }
+  await interaction.editReply({ content, components: [] });
+}
+
+async function noThanks(interaction: ButtonInteraction, guildId: string): Promise<void> {
+  await interaction.update({ content: NO_THANKS, components: [] });
+  await setOnboardingState(guildId, interaction.user.id, "declined");
 }
 
 async function guildStores(guildId: string): Promise<Store[]> {
@@ -3082,7 +3238,7 @@ for (const b of boundaries) servers.set(b.guild_id, newServer(b.guild_id, b.befo
 // shortcut: PostgREST returns at most 1000 rows; beyond that many servers, page this.
 const { data: savedSettings, error: settingsError } = await db
   .from("guild_settings")
-  .select("guild_id, report_channel_id, timezone, public_totals_opt_out, rank_roles");
+  .select("guild_id, report_channel_id, timezone, public_totals_opt_out, rank_roles, onboarding");
 if (settingsError) throw new Error(`guild_settings: ${settingsError.message}`);
 for (const { guild_id, ...row } of savedSettings) settings.set(guild_id, row);
 await client.login(config.discordToken);
