@@ -3,7 +3,8 @@
 -- servers only; that profiles follow their visibility (#100); that the lending ledger holds
 -- (#172); that decks follow their visibility (#173) and only public ones are remembered as
 -- opened (#174), their versions with them (#176), and wishlists their profile (#177); that trade
--- matches follow it too (#178), and decks not for lending hold their cards (#179); that only public decks are teased logged
+-- matches follow it too (#178), and decks not for lending hold their cards (#179); that borrow requests
+-- reach only lenders Who has it? shows (#299); that only public decks are teased logged
 -- out (#175); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`; migrate.yml runs it on the dev project after the seed.
@@ -150,6 +151,10 @@ begin
     if exists (select from public.riftbound_loans) or exists (select from public.riftbound_loan_cards)
         or exists (select from public.riftbound_loan_entries) then
         raise exception 'anon reads a loan';
+    end if;
+    if exists (select from public.riftbound_borrow_requests) or exists (select from public.riftbound_borrow_request_cards)
+        or exists (select from public.riftbound_borrow_request_answers) or exists (select from public.riftbound_borrow_request_dms) then
+        raise exception 'anon reads a borrow request';
     end if;
     if exists (select from public.riftbound_decks) or exists (select from public.riftbound_deck_cards) then
         raise exception 'anon reads a deck, even a public one';
@@ -311,6 +316,43 @@ begin
         or (select count(*) from public.profile_loans('rls-rls-mine')) <> 1
         or exists (select from public.profile_loans('rls-public')) or exists (select from public.profile_loans('rls-rls-other')) then
         raise exception 'profile_loans() shows loans the visitor is not a party to';
+    end if;
+    -- Borrow requests (#299): only of a lender Who has it? shows, for copies they have to lend
+    -- in the languages asked, one open per card; read by the parties through my_borrow_requests().
+    begin
+        perform public.ask_to_borrow('rls-rls-mine', '[{"card_id": "rls-card", "quantity": 1}]', '{fr}', null, null);
+        raise exception 'a request asks for copies the lender does not have in those languages';
+    exception when raise_exception then
+        if sqlerrm like 'a request%' then raise; end if;
+    end;
+    begin
+        perform public.ask_to_borrow('rls-hidden', '[{"card_id": "rls-card", "quantity": 1}]', '{en}', null, null);
+        raise exception 'a hidden member can be asked to lend';
+    exception when raise_exception then
+        if sqlerrm like 'a hidden%' then raise; end if;
+    end;
+    -- rls-rls-mine has one copy to lend: two entries of one each are two.
+    begin
+        perform public.ask_to_borrow('rls-rls-mine', '[{"card_id": "rls-card", "quantity": 1}, {"card_id": "rls-card", "quantity": 1}]', '{en}', null, null);
+        raise exception 'a request asks for more copies than the lender has, split over two entries';
+    exception when raise_exception then
+        if sqlerrm like 'a request%' then raise; end if;
+    end;
+    perform public.ask_to_borrow('rls-rls-mine', '[{"card_id": "rls-card", "quantity": 1}]', '{en}', null, 'please');
+    begin
+        perform public.ask_to_borrow('rls-rls-mine', '[{"card_id": "rls-card", "quantity": 1}]', '{en}', null, null);
+        raise exception 'two open requests for one card';
+    exception when raise_exception then
+        if sqlerrm like 'two open%' then raise; end if;
+    end;
+    if exists (select from public.riftbound_borrow_requests) or exists (select from public.riftbound_borrow_request_cards) then
+        raise exception 'a member reads borrow requests directly';
+    end if;
+    if (select array_agg(other_id || ':' || asked || ':' || state) from public.my_borrow_requests()) <> array['rls-rls-mine:true:open']
+        or public.decline_my_borrow_request((select id from public.my_borrow_requests()), null) <> 'not_lender'
+        or public.cancel_borrow_request((select id from public.my_borrow_requests())) <> 'ok'
+        or public.cancel_borrow_request((select id from public.my_borrow_requests())) <> 'closed' then
+        raise exception 'my_borrow_requests() or Cancel does not follow the parties';
     end if;
     if not exists (select from public.profile_collection('rls-rls-mine')) or exists (select from public.profile_collection('rls-rls-other'))
         or exists (select from public.profile_collection('rls-hidden')) then
@@ -629,6 +671,69 @@ begin
     if public.riftbound_loan_state(fixed) <> 'written_off' then raise exception 'a write-off does not close the loan'; end if;
 end $$;
 
+-- Borrow requests (#299), as the bot answers them: Accept records the loan through
+-- lend_riftbound_cards() and answers once, Decline once, and each DM is claimed once. Every
+-- loan above is closed; the one accepted here is returned at the end, for the checks below.
+set role postgres;
+do $$
+declare cards constant jsonb := '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"en","quantity":1}]';
+    asked bigint; declined bigint; loan bigint;
+begin
+    insert into public.riftbound_borrow_requests (borrower_id, lender_id, languages) values ('rls-user', 'rls-rls-mine', '{en}')
+    returning id into asked;
+    insert into public.riftbound_borrow_requests (borrower_id, lender_id, languages) values ('rls-user', 'rls-rls-mine', '{en}')
+    returning id into declined;
+    insert into public.riftbound_borrow_request_cards (request_id, card_id, quantity) values (asked, 'rls-card', 1), (declined, 'rls-card', 1);
+    if (select array_agg(request_id || ':' || recipient order by request_id) from public.claim_borrow_request_dms()
+        where request_id in (asked, declined)) is distinct from array[asked || ':lender', declined || ':lender'] then
+        raise exception 'claim_borrow_request_dms() does not hand out the lender''s DMs';
+    end if;
+    if exists (select from public.claim_borrow_request_dms() where request_id in (asked, declined)) then
+        raise exception 'claim_borrow_request_dms() hands out the lender''s DMs twice';
+    end if;
+    begin
+        perform public.accept_riftbound_borrow_request('rls-user', asked, null, cards);
+        raise exception 'the borrower accepts their own request';
+    exception when raise_exception then
+        if sqlerrm <> 'not_lender' then raise; end if;
+    end;
+    begin
+        perform public.accept_riftbound_borrow_request('rls-rls-mine', asked, null, jsonb_set(cards, '{0,quantity}', '2'));
+        raise exception 'Accept lends other copies than the request asks for';
+    exception when raise_exception then
+        if sqlerrm <> 'not_the_request' then raise; end if;
+    end;
+    loan := public.accept_riftbound_borrow_request('rls-rls-mine', asked, null, cards);
+    if not exists (select from public.riftbound_loans l where l.id = loan and l.lender_id = 'rls-rls-mine' and l.borrower_id = 'rls-user')
+        or not exists (select from public.riftbound_borrow_request_answers a where a.request_id = asked and a.kind = 'accepted' and a.loan_id = loan) then
+        raise exception 'Accept does not record the loan, or the answer pointing at it';
+    end if;
+    begin
+        perform public.accept_riftbound_borrow_request('rls-rls-mine', asked, null, cards);
+        raise exception 'a request is accepted twice';
+    exception when raise_exception then
+        if sqlerrm <> 'closed' then raise; end if;
+    end;
+    if public.decline_riftbound_borrow_request('rls-user', declined, null) <> 'not_lender'
+        or public.decline_riftbound_borrow_request('rls-rls-mine', declined, ' Lent out ') <> 'ok'
+        or public.decline_riftbound_borrow_request('rls-rls-mine', declined, null) <> 'closed' then
+        raise exception 'decline_riftbound_borrow_request() lets someone else decline, or does not decline once';
+    end if;
+    if (select note from public.riftbound_borrow_request_answers where request_id = declined and kind = 'declined') is distinct from 'Lent out' then
+        raise exception 'Decline does not keep the reason';
+    end if;
+    if (select array_agg(request_id || ':' || recipient order by request_id) from public.claim_borrow_request_dms()
+        where request_id in (asked, declined)) is distinct from array[asked || ':borrower', declined || ':borrower'] then
+        raise exception 'claim_borrow_request_dms() does not hand out the borrower''s DMs';
+    end if;
+    if exists (select from public.claim_borrow_request_dms() where request_id in (asked, declined)) then
+        raise exception 'claim_borrow_request_dms() hands out the borrower''s DMs twice';
+    end if;
+    if (select array_agg(loan_id) from public.close_riftbound_loans('rls-rls-mine', 'rls-user', 'returned', null)) <> array[loan] then
+        raise exception 'the accepted loan cannot be returned';
+    end if;
+end $$;
+
 -- Decks and lending (#179): a deck not for lending holds its cards back from lending, a deck is
 -- lent whole as one loan that names it, and the site takes only the borrower's answers. Every
 -- loan above is closed, so rls-rls-mine has both copies in hand.
@@ -784,6 +889,9 @@ begin
     if exists (select from public.riftbound_loans where 'rls-user' in (lender_id, borrower_id))
         or exists (select from public.riftbound_loans where borrower_id = 'rls-public' and lender_id = 'rls-rls-mine' and replaces is not null) then
         raise exception 'forget_user() leaves the user''s loans';
+    end if;
+    if exists (select from public.riftbound_borrow_requests where 'rls-user' in (lender_id, borrower_id)) then
+        raise exception 'forget_user() leaves the user''s borrow requests';
     end if;
     if public.lend_riftbound_cards('rls-rls-mine', 'rls-user', null, null,
         '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"en","quantity":1}]') is not null then

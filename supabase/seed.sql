@@ -53,6 +53,7 @@ begin
     delete from public.activity_seconds where user_id = any (users);
     -- The lending ledger is append-only (#172) except when a person's loans are erased.
     perform set_config('ni_han_bao.erase_loans', 'on', true);
+    delete from public.riftbound_borrow_requests where lender_id = any (users) or borrower_id = any (users);
     delete from public.riftbound_loans where lender_id = any (users) or borrower_id = any (users);
     perform set_config('ni_han_bao.erase_loans', 'off', true);
     delete from public.riftbound_collection where user_id = any (users);
@@ -284,6 +285,18 @@ begin
     insert into public.riftbound_decks (id, user_id, name, legend_id, visibility, language, not_for_lending)
     values ('00000000-0000-4000-8000-0000000d0005', users[2], 'Bram''s Ahri at home', 'nine-tailed-fox', 'private', 'en', true);
     perform public.snapshot_riftbound_deck('00000000-0000-4000-8000-0000000d0005');
+
+    -- Borrow requests (#299), for /loans: Anna asked Bram for his Nine-Tailed Fox in English or
+    -- French, and Chloé asks Anna for the demo deck's pinned Ahri, with a note; both open, and
+    -- Anna's DM to Bram already sent. Written as the bot would, past ask_to_borrow()'s checks.
+    insert into public.riftbound_borrow_requests (borrower_id, lender_id, languages, wanted_by, note, created_at)
+    values (users[1], users[2], '{en,fr}', today + 5, null, now() - interval '1 day'),
+           (users[3], users[1], '{en}', null, 'For Nexus Night on Friday, I give it back on Sunday.', now() - interval '2 hours');
+    insert into public.riftbound_borrow_request_cards (request_id, card_id, quantity)
+    select r.id, case when r.borrower_id = users[1] then 'nine-tailed-fox' else 'ahri-alluring' end, 1
+    from public.riftbound_borrow_requests r where r.borrower_id in (users[1], users[3]);
+    insert into public.riftbound_borrow_request_dms (request_id, recipient)
+    select r.id, 'lender' from public.riftbound_borrow_requests r where r.borrower_id in (users[1], users[3]);
 
     -- Wishlist (#177): Anna answered the question with Shared. Her demo deck stays built, the
     -- Annie deck lends it cards, and she wants two cards by hand, one of them a printing.

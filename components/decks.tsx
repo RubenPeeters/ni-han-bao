@@ -1,5 +1,6 @@
 import { createDeck } from "@/app/decks/actions";
 import { riftboundIcons } from "@/components/card-library";
+import { AskToBorrow } from "@/components/borrow-request";
 import { CardThumb } from "@/components/card-thumb";
 import { cardImage } from "@/components/deck-cards";
 import { DeckEditor, RestoreVersion, type Deck, type VersionListed } from "@/components/deck-editor";
@@ -13,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import type { Card, Printing } from "@/bot/src/card-match";
 import { missingCards, type OwnedCopy } from "@/bot/src/deck-match";
 import { deckWanted } from "@/bot/src/lend-copies";
-import { borrowCopies, borrowLanguages } from "@/lib/collection";
+import { askAllMissing, borrowCopies, borrowLanguages } from "@/lib/collection";
 import { allPages, deckChanges, SECTIONS, VISIBILITIES, type Entry, type Pin } from "@/lib/decks";
 import { formatExact } from "@/lib/time";
 import { createClient } from "@/lib/supabase/server";
@@ -401,6 +402,7 @@ function WhoHasMissing({
   languages: string[];
 }) {
   if (missing.length === 0) return null;
+  const asks = lenders ? askAllMissing(missing, lenders, languages) : [];
   return (
     <StatCard title="Who has my missing cards?" description="Members of your servers with copies to lend">
       {lenders === null ? (
@@ -445,6 +447,26 @@ function WhoHasMissing({
             );
           })}
         </ul>
+      )}
+      {asks.length > 0 && (
+        <div className="flex flex-col gap-2 border-t pt-4">
+          <h3 className="text-sm font-medium">Ask one member for all they lend of these</h3>
+          <RankList>
+            {asks.map(({ lender, cards }, i) => (
+              <MemberRankRow
+                key={lender.user_id}
+                rank={i + 1}
+                name={lender.display_name}
+                avatarUrl={lender.avatar_url}
+                value={`${cards.length} ${cards.length === 1 ? "card" : "cards"}`}
+                href={`/u/${lender.user_id}`}
+                action={
+                  <AskToBorrow lender={{ id: lender.user_id, name: lender.display_name }} cards={cards} languages={languages} label="Ask for all missing" />
+                }
+              />
+            ))}
+          </RankList>
+        </div>
       )}
     </StatCard>
   );

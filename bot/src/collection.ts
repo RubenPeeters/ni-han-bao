@@ -14,7 +14,7 @@ export const LANGUAGES = [
   { name: "Chinese (Simplified)", value: "zh-Hans" },
   { name: "French", value: "fr" },
 ];
-const languageName = (code: string) => LANGUAGES.find((l) => l.value === code)?.name ?? code;
+export const languageName = (code: string) => LANGUAGES.find((l) => l.value === code)?.name ?? code;
 
 export const COLLECTION_COMMAND = {
   name: "collection",
