@@ -4,6 +4,7 @@ import { CardGrid, type LibraryCard } from "@/components/card-grid";
 import { CardThumb } from "@/components/card-thumb";
 import { DomainIcon, RarityIcon, RulesText, SupertypeIcon, TypeIcon, type RiftboundIcon } from "@/components/riftbound-icons";
 import { LogInPrompt } from "@/components/server-picker";
+import { CardCopies } from "@/components/your-copies";
 import { EmptyState, ErrorState, MemberRankRow, RankList, StatCard } from "@/components/stat-ui";
 import { perLanguage, type Language, type OwnedRow } from "@/lib/collection";
 import { allPages } from "@/lib/decks";
@@ -150,11 +151,22 @@ export async function CardDetail({ id }: { id: string }) {
     supabase.rpc("current_discord_id"),
     riftboundIcons(supabase),
   ]);
-  // Like Who has it?, a failed lookup drops Add to deck, not the card.
-  const decks = me.data ? await myDecks(supabase, me.data as string) : null;
   if (error) return <ErrorState title="Could not load this card">Try again in a minute.</ErrorState>;
   if (!data) notFound();
   const printings = data.printings.toSorted(byPrinting);
+  // Like Who has it?, a failed lookup drops Add to deck or Your copies, not the card.
+  const [decks, mine, profile] = me.data
+    ? await Promise.all([
+        myDecks(supabase, me.data as string),
+        // RLS returns the visitor's own rows only.
+        supabase
+          .from("riftbound_collection")
+          .select("printing_id, finish, condition, language, quantity, for_trade, lendable")
+          .in("printing_id", printings.map((p) => p.id))
+          .returns<OwnedRow[]>(),
+        supabase.from("profiles").select("lend_all, card_language").eq("user_id", me.data).maybeSingle(),
+      ])
+    : [null, null, null];
   const dash = (n: number | null) => (n === null ? "-" : String(n));
   const rarities = [...new Set(printings.flatMap((p) => (p.rarity ? [p.rarity] : [])))];
   const listed = (items: ReactNode[]) =>
@@ -203,6 +215,18 @@ export async function CardDetail({ id }: { id: string }) {
           {decks && !decks.error && <AddToDeck card={{ id: data.id, name: data.name }} decks={decks.data} />}
         </div>
       </div>
+      {me.data && mine && !mine.error && profile && !profile.error && (
+        <StatCard title="Your copies" description="Every language, finish and condition you own">
+          <CardCopies
+            cardId={data.id}
+            cardName={data.name}
+            printings={printings.map(({ id, collector_code }) => ({ id, collector_code }))}
+            mine={{ userId: me.data as string, owned: mine.data }}
+            lendAll={profile.data?.lend_all ?? false}
+            language={(profile.data?.card_language ?? "en") as Language}
+          />
+        </StatCard>
+      )}
       <StatCard
         title="Printings"
         description={`${printings.length.toLocaleString("en-US")} ${printings.length === 1 ? "printing" : "printings"}`}
