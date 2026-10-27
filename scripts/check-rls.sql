@@ -943,6 +943,17 @@ begin
         raise exception 'home_feed() shows collection activity of a member who turned it off';
     end if;
     perform public.set_feed_collection(true);
+    -- Favourite champion (#306): the caller's own row, Data Dragon ids only.
+    perform public.set_favourite_champion('MonkeyKing');
+    if public.profile_favourite_champion('rls-user') is distinct from 'MonkeyKing' then
+        raise exception 'set_favourite_champion() does not save the caller''s choice';
+    end if;
+    begin
+        perform public.set_favourite_champion('<b>Wukong</b>');
+        raise exception 'set_favourite_champion() accepts something that is not a champion id';
+    exception when check_violation then null;
+    end;
+    perform public.set_favourite_champion(null);
 end $$;
 
 -- /forget-me (#72): no row about the user is left anywhere, and none can be written again

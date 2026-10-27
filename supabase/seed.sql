@@ -83,6 +83,9 @@ begin
         select users[i], case when i in (1, 2, 5) then 'members' when i in (3, 8) then 'public' else 'private' end,
                i in (1, 2, 3, 4), i in (1, 2)
         from generate_series(1, 12) i;
+    -- Favourite champions (#306): Anna's differs from her most played, so both show.
+    update public.profiles set favourite_champion = case user_id when users[1] then 'MonkeyKing' when users[2] then 'Ahri' else 'Thresh' end
+        where user_id in (users[1], users[2], users[3]);
 
     -- Activity over the last 120 days. Members differ in level (i) and every day is noisy.
     insert into public.message_counts (guild_id, user_id, day, count)
