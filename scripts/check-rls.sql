@@ -5,7 +5,8 @@
 -- opened (#174), their versions with them (#176), and wishlists their profile (#177); that trade
 -- matches follow it too (#178), and decks not for lending hold their cards (#179); that borrow requests
 -- reach only lenders Who has it? shows (#299); that only public decks are teased logged
--- out (#175); then that /forget-me deletes
+-- out (#175); that the home feed follows decks, profiles, loan parties and hidden members (#302), and collection
+-- activity sums a day and follows its setting (#303); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`; migrate.yml runs it on the dev project after the seed.
 -- Run against a local Supabase or the dev project (never production); everything is rolled back.
@@ -43,6 +44,8 @@ begin
         insert into public.backfill_cursors (guild_id, channel_id, before_id) values (g, 'c', '1');
         insert into public.welcome_messages (guild_id, channel_id) values (g, 'c');
         insert into public.guild_settings (guild_id, report_channel_id) values (g, 'c');
+        insert into public.onboarding_roles (guild_id, role_id, label) values (g, 'r', 'r');
+        insert into public.onboarding_dms (guild_id, user_id) values (g, 'rls-user');
         insert into public.member_channel_counts (guild_id, user_id, channel_id, day, count)
         values (g, 'rls-user', 'c', '2026-01-01', 1);
         insert into public.member_emoji_counts (guild_id, user_id, emoji_key, day, count)
@@ -82,6 +85,9 @@ begin
     select u, 'lol', u, 'euw1' from unnest(array['rls-rls-mine', 'rls-rls-other', 'rls-hidden']) u;
     insert into public.lol_ranks (user_id, queue, tier, division, lp)
     select u, 'RANKED_SOLO_5x5', 'GOLD', 'II', 47 from unnest(array['rls-rls-mine', 'rls-rls-other', 'rls-hidden']) u;
+    -- League rank history (#301): no policies, read by nobody but the bot.
+    insert into public.lol_rank_changes (user_id, puuid, queue, tier, division, lp)
+    select u, u, 'RANKED_SOLO_5x5', 'GOLD', 'II', 47 from unnest(array['rls-rls-mine', 'rls-rls-other', 'rls-hidden']) u;
     -- League games (#104): read through functions only, per server. An hour ago: now() does not
     -- move inside a transaction, and lol_week() counts played_at < now().
     insert into public.lol_matches (user_id, puuid, match_id, queue_id, champion, played_at)
@@ -173,6 +179,7 @@ begin
     if exists (select from public.lol_ranks) or exists (select from public.profile_ranks('rls-rls-mine')) then
         raise exception 'anon reads a rank';
     end if;
+    if exists (select from public.lol_rank_changes) then raise exception 'anon reads rank history'; end if;
     if exists (select from public.lol_matches) or public.profile_lol_champion('rls-rls-mine') is not null then
         raise exception 'anon reads League games';
     end if;
@@ -272,6 +279,7 @@ begin
     if exists (select from public.activity_seconds) then raise exception 'a member reads game time directly'; end if;
     if exists (select from public.game_accounts) then raise exception 'a member reads linked accounts'; end if;
     if exists (select from public.lol_ranks) then raise exception 'a member reads ranks directly'; end if;
+    if exists (select from public.lol_rank_changes) then raise exception 'a member reads rank history directly'; end if;
     if exists (select from public.lol_matches) then raise exception 'a member reads League games directly'; end if;
     if (select array_agg(user_id || ':' || games order by user_id) from public.guild_lol_week('rls-mine'))
         <> array['rls-rls-mine:1', 'rls-user:0'] then
@@ -795,6 +803,10 @@ begin
         from public.my_riftbound_lend_options(array['rls-card'])) <> 'zh-Hans:3:0:[]' then
         raise exception 'my_riftbound_lend_options() is not the caller''s own copies';
     end if;
+    -- The caller marks none of those to lend (#300).
+    if (select free || ':' || held from public.my_lending_summary()) <> '0:0' then
+        raise exception 'my_lending_summary() is not the caller''s own copies to lend';
+    end if;
     begin
         perform public.lend_my_riftbound_deck(deck, 'rls-rls-other', null, cards);
         raise exception 'a deck is lent to someone in none of the lender''s servers';
@@ -858,6 +870,90 @@ begin
     exception when raise_exception then
         if sqlerrm <> 'not your deck' then raise; end if;
     end;
+end $$;
+
+-- The home feed (#302): a deck only for whoever may see it, never anything of a hidden member
+-- or of someone in no server with the visitor. rls-hidden shares rls-mine with the test user.
+-- rls-private too, with no profile row (private): no League activity or trade of theirs shows,
+-- and their loan from rls-rls-mine is no For you item of the test user's. Every earlier loan is closed.
+set role postgres;
+do $$
+begin
+    insert into public.riftbound_decks (user_id, name, visibility) values ('rls-hidden', 'hidden-member', 'servers');
+    perform public.snapshot_riftbound_deck(id) from public.riftbound_decks where name = 'hidden-member';
+    -- Shared by the bot's share command, with no new version; the private one changed but stays private.
+    update public.riftbound_decks set updated_at = now() + interval '1 minute' where name in ('servers-shared', 'private');
+    update public.members set display_name = 'hidden-name' where user_id = 'rls-hidden';
+    insert into public.members (guild_id, user_id, display_name) values ('rls-mine', 'rls-private', 'x');
+    insert into public.guild_members (guild_id, user_id) values ('rls-mine', 'rls-private');
+    insert into public.game_accounts (user_id, game, external_id, region) values ('rls-private', 'lol', 'rls-private', 'euw1');
+    -- Two rows each: the first is a baseline, the second a change.
+    insert into public.lol_rank_changes (user_id, puuid, queue, tier, division, lp)
+    select u, u, 'RANKED_SOLO_5x5', 'GOLD', 'I', 10 from unnest(array['rls-rls-mine', 'rls-private', 'rls-private']) u;
+    insert into public.lol_matches (user_id, puuid, match_id, queue_id, champion, played_at)
+    values ('rls-private', 'rls-private', 'EUW1_rls-private', 420, 'Ahri', now() - interval '1 hour');
+    insert into public.riftbound_trade_matches (user_id, trader_id, card_id) values ('rls-user', 'rls-private', 'rls-card');
+    -- rls-rls-mine's two copies: one to the test user (their one For you item), one to rls-private.
+    perform public.lend_riftbound_cards('rls-rls-mine', b, null, null,
+        '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"en","quantity":1}]')
+    from unnest(array['rls-user', 'rls-private']) b;
+end $$;
+set local role authenticated;
+do $$
+begin
+    if (select array_agg(distinct f.data ->> 'name') from public.home_feed() f where f.kind = 'deck' and f.user_id like 'rls-%' and f.user_id <> 'rls-user')
+        <> array['servers-shared'] then
+        raise exception 'home_feed() shows a deck the visitor may not see or a hidden member''s, or misses a shared one';
+    end if;
+    if exists (select from public.home_feed() f where f.user_id in ('rls-hidden', 'rls-rls-other', 'rls-public')) then
+        raise exception 'home_feed() shows a hidden member or someone in no server with the visitor';
+    end if;
+    if not exists (select from public.home_feed() f where f.kind = 'lol_week' and f.user_id = 'rls-rls-mine' and f.guild_id = 'rls-mine') then
+        raise exception 'home_feed() misses the League week of a member of the visitor''s server';
+    end if;
+    if exists (select from public.home_feed() f where f.user_id = 'rls-private') then
+        raise exception 'home_feed() shows a private profile''s League activity, trades or loans';
+    end if;
+    if not exists (select from public.home_feed() f where f.kind = 'rank' and f.user_id = 'rls-rls-mine')
+        or not exists (select from public.home_feed() f where f.kind = 'trade' and f.user_id = 'rls-rls-mine') then
+        raise exception 'home_feed() misses a visible member''s rank change or trade match';
+    end if;
+    if (select array_agg(f.data ->> 'name') from public.home_feed() f where f.kind = 'deck_shared') <> array['servers-shared'] then
+        raise exception 'home_feed() misses a deck shared without a new version, or shows a private one';
+    end if;
+    if (select count(*) from public.home_feed() f where f.kind in ('request', 'confirm', 'overdue')) <> 1 then
+        raise exception 'home_feed() shows a loan the visitor is no party to';
+    end if;
+    if not exists (select from public.home_feed() f where f.kind = 'event' and f.guild_id = 'rls-mine')
+        or exists (select from public.home_feed() f where f.kind = 'event' and f.data -> 'going' ? 'hidden-name') then
+        raise exception 'home_feed() misses an event or names a member hidden in its server as going';
+    end if;
+    if exists (select from public.home_feed('league') f where f.kind not in ('rank', 'lol_week', 'request', 'confirm', 'overdue', 'trade')) then
+        raise exception 'home_feed(''league'') returns rows of another filter';
+    end if;
+    -- Collection activity (#303): the test user's 2 seeded copies, then +2, +1, +3 (a playset) and +3
+    -- (two playsets) in the collection checks are one item with the sum; removals count nothing.
+    -- rls-rls-mine's 2 and 1 French show, rls-hidden's (hidden) and rls-rls-other's (no shared server) do not.
+    if (select array_agg(f.user_id || ':' || (f.data ->> 'cards') order by f.user_id) from public.home_feed('riftbound') f
+        where f.kind = 'collection' and f.user_id like 'rls-%') <> array['rls-rls-mine:3', 'rls-user:11'] then
+        raise exception 'home_feed() does not sum a day''s added copies into one item, or shows someone it may not';
+    end if;
+    perform public.set_feed_collection(false);
+    if exists (select from public.home_feed() f where f.kind = 'collection' and f.user_id = 'rls-user') then
+        raise exception 'home_feed() shows collection activity of a member who turned it off';
+    end if;
+    perform public.set_feed_collection(true);
+    -- Favourite champion (#306): the caller's own row, Data Dragon ids only.
+    perform public.set_favourite_champion('MonkeyKing');
+    if public.profile_favourite_champion('rls-user') is distinct from 'MonkeyKing' then
+        raise exception 'set_favourite_champion() does not save the caller''s choice';
+    end if;
+    begin
+        perform public.set_favourite_champion('<b>Wukong</b>');
+        raise exception 'set_favourite_champion() accepts something that is not a champion id';
+    exception when check_violation then null;
+    end;
+    perform public.set_favourite_champion(null);
 end $$;
 
 -- /forget-me (#72): no row about the user is left anywhere, and none can be written again

@@ -1,4 +1,5 @@
 import { ApplicationCommandOptionType, ChannelType, PermissionFlagsBits } from "discord.js";
+import { MAX_OFFERED, onboardingText, type OfferedRole } from "./onboarding.js";
 import { timeZoneName } from "./zone.js";
 
 /** Per-server settings, one guild_settings row. */
@@ -7,10 +8,11 @@ export interface GuildSettings {
   timezone: string;
   public_totals_opt_out: boolean;
   rank_roles: boolean;
+  onboarding: boolean;
 }
 
 /** A server that never used /setup; matches the table's defaults. */
-export const DEFAULT_SETTINGS: GuildSettings = { report_channel_id: null, timezone: "UTC", public_totals_opt_out: false, rank_roles: false };
+export const DEFAULT_SETTINGS: GuildSettings = { report_channel_id: null, timezone: "UTC", public_totals_opt_out: false, rank_roles: false, onboarding: false };
 
 export const SETUP_COMMAND = {
   name: "setup",
@@ -75,11 +77,51 @@ export const SETUP_COMMAND = {
         },
       ],
     },
+    {
+      type: ApplicationCommandOptionType.SubcommandGroup,
+      name: "onboarding",
+      description: "A DM to members who join, to pick the roles you offer; needs Manage Roles",
+      options: [
+        {
+          type: ApplicationCommandOptionType.Subcommand,
+          name: "state",
+          description: "On sends the DM to each member who joins, once",
+          options: [
+            {
+              type: ApplicationCommandOptionType.String,
+              name: "state",
+              description: "Off by default",
+              required: true,
+              choices: [
+                { name: "on", value: "on" },
+                { name: "off", value: "off" },
+              ],
+            },
+          ],
+        },
+        {
+          type: ApplicationCommandOptionType.Subcommand,
+          name: "role-add",
+          description: `Offer a role in the picker, at most ${MAX_OFFERED}`,
+          options: [
+            { type: ApplicationCommandOptionType.Role, name: "role", description: "A role without moderation permissions, below mine", required: true },
+            { type: ApplicationCommandOptionType.String, name: "label", description: "Shown in the picker; the role's name by default", max_length: 100 },
+          ],
+        },
+        {
+          type: ApplicationCommandOptionType.Subcommand,
+          name: "role-remove",
+          description: "Stop offering a role; members who have it keep it",
+          options: [{ type: ApplicationCommandOptionType.Role, name: "role", description: "A role offered now", required: true }],
+        },
+      ],
+    },
     { type: ApplicationCommandOptionType.Subcommand, name: "show", description: "Show this server's settings" },
   ],
 } as const;
 
 export interface SetupInput {
+  /** With its group: "onboarding state". */
   subcommand: string;
   channelId: string | null;
   /** Whether the bot can send messages in `channelId`. */
@@ -110,17 +152,18 @@ export function setupChange(input: SetupInput): Partial<GuildSettings> | string 
     if (input.state === "on" && input.rankRolesProblem) return input.rankRolesProblem;
     return { rank_roles: input.state === "on" };
   }
+  if (input.subcommand === "onboarding state") return { onboarding: input.state === "on" };
   return null;
 }
 
-export function settingsText(s: GuildSettings): string {
+export function settingsText(s: GuildSettings, offered: readonly OfferedRole[]): string {
   const report = s.report_channel_id ? `<#${s.report_channel_id}>` : "off (turn it on with /setup report-channel)";
   const totals = s.public_totals_opt_out ? "left out" : "included";
   // Off leaves the roles in place: deleting them is the server's call.
   const roles = s.rank_roles
     ? "on (I give and take the roles named after a tier, Iron to Challenger, by each linked member's rank)"
     : "off (existing rank roles stay until you delete them)";
-  return `Weekly report card: ${report}\nTime zone: ${s.timezone}\nPublic totals: ${totals}\nRank roles: ${roles}`;
+  return `Weekly report card: ${report}\nTime zone: ${s.timezone}\nPublic totals: ${totals}\nRank roles: ${roles}\n${onboardingText(s.onboarding, offered)}`;
 }
 
 export interface SetupWriter {
@@ -133,9 +176,10 @@ export async function applySetup(
   writer: SetupWriter,
   current: GuildSettings,
   change: Partial<GuildSettings> | string | null,
+  offered: readonly OfferedRole[],
 ): Promise<{ reply: string; settings: GuildSettings }> {
   if (typeof change === "string") return { reply: change, settings: current };
-  if (change === null) return { reply: settingsText(current), settings: current };
+  if (change === null) return { reply: settingsText(current, offered), settings: current };
   try {
     await writer.save(change);
   } catch (err) {
@@ -143,5 +187,5 @@ export async function applySetup(
     return { reply: "Something went wrong, nothing was changed. Please try again later.", settings: current };
   }
   const settings = { ...current, ...change };
-  return { reply: `Saved.\n${settingsText(settings)}`, settings };
+  return { reply: `Saved.\n${settingsText(settings, offered)}`, settings };
 }

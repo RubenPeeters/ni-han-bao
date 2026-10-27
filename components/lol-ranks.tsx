@@ -1,5 +1,5 @@
 import { EmptyState, ErrorState, MemberRankRow, RankList, RankRow, StatCard, StatGrid } from "@/components/stat-ui";
-import { loadChampionIcons } from "@/lib/champion-icons";
+import { loadChampionIcons, loadChampions } from "@/lib/champion-icons";
 import { championIcon } from "@/lib/ddragon";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
@@ -134,10 +134,38 @@ export async function GuildLolWeek({ guild }: { guild: string }) {
   );
 }
 
-/** The profile's League card; nothing without a ranked queue or a game this week. */
-export async function ProfileRanks({ ranks, champion }: { ranks: (Rank & { queue: string })[]; champion: string | null }) {
-  if (ranks.length === 0 && !champion) return null;
-  const icons = champion ? await loadChampionIcons() : {};
+/** A champion on the profile: its icon, what it is (Favourite, Most played) and its name. */
+function ProfileChampion({ label, name, icon }: { label: string; name: string; icon: string | null }) {
+  return (
+    <li className="flex min-w-0 items-center gap-3">
+      {icon ? (
+        // Riot's CDN serves them small already; next/image would need a remote pattern.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={icon} alt="" width={40} height={40} className="size-10 shrink-0 rounded-md bg-muted" />
+      ) : (
+        <span aria-hidden className="size-10 shrink-0 rounded-md bg-muted" />
+      )}
+      <span className="flex min-w-0 flex-col">
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <span className="truncate font-medium">{name}</span>
+      </span>
+    </li>
+  );
+}
+
+/** The profile's League card; nothing without a ranked queue, a game this week or a favourite champion. */
+export async function ProfileRanks({
+  ranks,
+  champion,
+  favourite,
+}: {
+  ranks: (Rank & { queue: string })[];
+  champion: string | null;
+  /** Data Dragon's id, chosen on Settings or with /profile champion. */
+  favourite: string | null;
+}) {
+  if (ranks.length === 0 && !champion && !favourite) return null;
+  const [icons, champions] = champion || favourite ? await Promise.all([loadChampionIcons(), loadChampions()]) : [{}, []];
   return (
     <StatCard title="League of Legends" description="Riot's official rank, updated every 3 hours">
       <ul className="grid gap-4 sm:grid-cols-2">
@@ -158,11 +186,17 @@ export async function ProfileRanks({ ranks, champion }: { ranks: (Rank & { queue
           );
         })}
       </ul>
-      {champion && (
-        <p className="flex min-w-0 items-center gap-2 text-sm">
-          <MostlyChampion champion={champion} icons={icons} size={24} />
-          <span className="shrink-0 text-muted-foreground">this week</span>
-        </p>
+      {(favourite || champion) && (
+        <ul className="grid gap-4 sm:grid-cols-2" aria-label="Champions">
+          {favourite && (
+            <ProfileChampion
+              label="Favourite"
+              name={champions.find((c) => c.id === favourite)?.name ?? favourite}
+              icon={championIcon(icons, favourite)}
+            />
+          )}
+          {champion && <ProfileChampion label="Most played this week" name={champion} icon={championIcon(icons, champion)} />}
+        </ul>
       )}
     </StatCard>
   );

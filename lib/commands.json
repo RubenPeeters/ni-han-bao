@@ -56,6 +56,19 @@
             ]
           }
         ]
+      },
+      {
+        "name": "profile champion",
+        "description": "Your favourite League champion on your profile; leave it out to clear it",
+        "options": [
+          {
+            "name": "champion",
+            "description": "The champion",
+            "type": "string",
+            "required": false,
+            "choices": []
+          }
+        ]
       }
     ]
   },
@@ -103,6 +116,18 @@
       {
         "name": "lol unlink",
         "description": "Unlink your League account",
+        "options": []
+      }
+    ]
+  },
+  {
+    "name": "roles",
+    "description": "Pick the roles this server offers",
+    "admin": false,
+    "usages": [
+      {
+        "name": "roles",
+        "description": "Pick the roles this server offers",
         "options": []
       }
     ]
@@ -219,6 +244,55 @@
               "on",
               "off"
             ]
+          }
+        ]
+      },
+      {
+        "name": "setup onboarding state",
+        "description": "On sends the DM to each member who joins, once",
+        "options": [
+          {
+            "name": "state",
+            "description": "Off by default",
+            "type": "string",
+            "required": true,
+            "choices": [
+              "on",
+              "off"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "setup onboarding role-add",
+        "description": "Offer a role in the picker, at most 25",
+        "options": [
+          {
+            "name": "role",
+            "description": "A role without moderation permissions, below mine",
+            "type": "role",
+            "required": true,
+            "choices": []
+          },
+          {
+            "name": "label",
+            "description": "Shown in the picker; the role's name by default",
+            "type": "string",
+            "required": false,
+            "choices": []
+          }
+        ]
+      },
+      {
+        "name": "setup onboarding role-remove",
+        "description": "Stop offering a role; members who have it keep it",
+        "options": [
+          {
+            "name": "role",
+            "description": "A role offered now",
+            "type": "role",
+            "required": true,
+            "choices": []
           }
         ]
       },
@@ -375,6 +449,28 @@
             "type": "string",
             "required": true,
             "choices": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "pack",
+    "description": "An unofficial booster simulation, for fun",
+    "admin": false,
+    "usages": [
+      {
+        "name": "pack open",
+        "description": "Open a simulated pack of a set: not a real pull, never added to your collection",
+        "options": [
+          {
+            "name": "set",
+            "description": "The set (Origins if left out)",
+            "type": "string",
+            "required": false,
+            "choices": [
+              "Origins"
+            ]
           }
         ]
       }

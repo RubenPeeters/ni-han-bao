@@ -1,9 +1,11 @@
-import { setBorrowLanguages, setLending, setVisibility, setWishlistMode } from "@/app/u/[userId]/actions";
+import { setBorrowLanguages, setFeedCollection, setLending, setVisibility, setWishlistMode } from "@/app/u/[userId]/actions";
+import { ChampionPicker } from "@/components/champion-picker";
 import { VISIBILITIES } from "@/components/profile-stats";
 import { LogInPrompt } from "@/components/server-picker";
 import { Checkboxes, Options, SettingsForm, ThemeSettings } from "@/components/settings-form";
 import { ErrorState, PageHeader, StatsSkeleton } from "@/components/stat-ui";
 import { Badge } from "@/components/ui/badge";
+import { loadChampions } from "@/lib/champion-icons";
 import { createClient } from "@/lib/supabase/server";
 import { LANGUAGES } from "@/lib/collection";
 import { hasEnvVars, cn } from "@/lib/utils";
@@ -54,6 +56,8 @@ interface MySettings {
   lend_all: boolean;
   wishlist_mode: string | null;
   borrow_languages: string[];
+  feed_collection: boolean;
+  favourite_champion: string | null;
 }
 
 async function Settings() {
@@ -61,11 +65,12 @@ async function Settings() {
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims) return <LogInPrompt text={LOG_IN} />;
   const me = await supabase.rpc("current_discord_id");
-  const [profile, servers, accounts] = await Promise.all([
+  const [profile, servers, accounts, champions] = await Promise.all([
     // The caller's own row is always visible to them (can_see_profile()); no row is the defaults.
-    supabase.from("profiles").select("visibility, lends_cards, lend_all, wishlist_mode, borrow_languages").eq("user_id", me.data ?? "").maybeSingle<MySettings>(),
+    supabase.from("profiles").select("visibility, lends_cards, lend_all, wishlist_mode, borrow_languages, feed_collection, favourite_champion").eq("user_id", me.data ?? "").maybeSingle<MySettings>(),
     supabase.rpc("my_server_visibility"),
     supabase.rpc("my_game_accounts"),
+    loadChampions(),
   ]);
   // A failed read only takes down the sections that need it.
   const profileFailed = !!(me.error || profile.error);
@@ -89,7 +94,7 @@ async function Settings() {
         </ul>
       </nav>
 
-      <Section id="profile" failed={profileFailed} description="Who can see your profile: your activity, collection, loans and wishlist.">
+      <Section id="profile" failed={profileFailed} description="Who can see your profile: your activity, collection, loans and wishlist; and your favourite champion on it.">
         <SettingsForm action={setVisibility}>
           <fieldset className="flex flex-col gap-1">
             <legend className="mb-2 text-sm font-medium">Who can see my profile</legend>
@@ -99,9 +104,17 @@ async function Settings() {
             Also with <Cmd>/profile visibility</Cmd> in Discord. While you are hidden with <Cmd>/hide-me</Cmd>, nobody else sees it.
           </Help>
         </SettingsForm>
+        <hr />
+        <div className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium">Favourite League champion</h3>
+          <ChampionPicker champions={champions} value={mine?.favourite_champion ?? null} />
+          <Help>
+            Shown on your profile next to your most played champion. Also with <Cmd>/profile champion</Cmd> in Discord.
+          </Help>
+        </div>
       </Section>
 
-      <Section id="riftbound" failed={profileFailed} description="Lending, borrowing, and how your decks count on your wishlist.">
+      <Section id="riftbound" failed={profileFailed} description="Lending, borrowing, how your decks count on your wishlist, and the home feed.">
         <SettingsForm action={setLending}>
           <label className="flex min-h-11 items-start gap-3 py-1 text-sm">
             <input type="checkbox" name="lends" defaultChecked={mine?.lends_cards ?? false} className="mt-0.5 size-4 shrink-0 accent-primary" />
@@ -138,6 +151,18 @@ async function Settings() {
             <Options name="mode" options={WISHLIST_MODES} value={mine?.wishlist_mode ?? "shared"} />
           </fieldset>
           <Help>Decks you have now stay as they are: change one in its editor.</Help>
+        </SettingsForm>
+        <hr />
+        <SettingsForm action={setFeedCollection}>
+          <label className="flex min-h-11 items-start gap-3 py-1 text-sm">
+            <input type="checkbox" name="feed" defaultChecked={mine?.feed_collection ?? true} className="mt-0.5 size-4 shrink-0 accent-primary" />
+            <span className="flex flex-col">
+              <span className="font-medium">Show my collection activity in the feed</span>
+              <span className="text-muted-foreground">
+                Members who may see your profile see how many cards you added each day. Off: nobody does, from earlier days too.
+              </span>
+            </span>
+          </label>
         </SettingsForm>
       </Section>
 

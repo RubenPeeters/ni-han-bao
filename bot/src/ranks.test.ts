@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rankRolesProblem, rankRows, roleChanges, roleTier, tierName } from "./ranks.js";
+import { rankChanges, rankRolesProblem, rankRows, roleChanges, roleTier, tierName } from "./ranks.js";
 
 describe("rankRows", () => {
   it("keeps Riot's tier, division and LP for Solo/Duo and Flex only", () => {
@@ -17,6 +17,35 @@ describe("rankRows", () => {
 
   it("drops a tier it does not know", () => {
     expect(rankRows("u", [{ queueType: "RANKED_SOLO_5x5", tier: "WOOD", rank: "I", leaguePoints: 0 }])).toEqual([]);
+  });
+});
+
+describe("rankChanges", () => {
+  const row = (queue: "RANKED_SOLO_5x5" | "RANKED_FLEX_SR", tier: string, division: string | null, lp = 0) => ({ user_id: "u", queue, tier, division, lp });
+
+  it("records a baseline for a queue with no history", () => {
+    expect(rankChanges([], [row("RANKED_SOLO_5x5", "GOLD", "II", 47)])).toEqual([row("RANKED_SOLO_5x5", "GOLD", "II", 47)]);
+  });
+
+  it("records a promotion and a demotion, by division or tier", () => {
+    expect(rankChanges([row("RANKED_SOLO_5x5", "GOLD", "III")], [row("RANKED_SOLO_5x5", "GOLD", "II")])).toHaveLength(1);
+    expect(rankChanges([row("RANKED_SOLO_5x5", "GOLD", "IV")], [row("RANKED_SOLO_5x5", "SILVER", "I")])).toHaveLength(1);
+  });
+
+  it("ignores a change of LP alone", () => {
+    expect(rankChanges([row("RANKED_SOLO_5x5", "GOLD", "II", 10)], [row("RANKED_SOLO_5x5", "GOLD", "II", 90)])).toEqual([]);
+  });
+
+  it("compares apex tiers, which have no division, by tier", () => {
+    expect(rankChanges([row("RANKED_SOLO_5x5", "MASTER", null, 50)], [row("RANKED_SOLO_5x5", "MASTER", null, 300)])).toEqual([]);
+    expect(rankChanges([row("RANKED_SOLO_5x5", "MASTER", null)], [row("RANKED_SOLO_5x5", "GRANDMASTER", null)])).toHaveLength(1);
+    expect(rankChanges([row("RANKED_SOLO_5x5", "DIAMOND", "I")], [row("RANKED_SOLO_5x5", "MASTER", null)])).toHaveLength(1);
+  });
+
+  it("compares each queue with its own history", () => {
+    expect(
+      rankChanges([row("RANKED_SOLO_5x5", "GOLD", "II")], [row("RANKED_SOLO_5x5", "GOLD", "II"), row("RANKED_FLEX_SR", "GOLD", "II")]),
+    ).toEqual([row("RANKED_FLEX_SR", "GOLD", "II")]);
   });
 });
 

@@ -57,6 +57,7 @@ begin
     delete from public.riftbound_loans where lender_id = any (users) or borrower_id = any (users);
     perform set_config('ni_han_bao.erase_loans', 'off', true);
     delete from public.riftbound_collection where user_id = any (users);
+    delete from public.riftbound_collection_activity where user_id = any (users);
     delete from public.riftbound_decks where user_id = any (users);
     delete from public.riftbound_wishlist where user_id = any (users);
     delete from public.riftbound_trade_matches where user_id = any (users) or trader_id = any (users);
@@ -76,11 +77,15 @@ begin
         from generate_series(1, 12) i;
     insert into public.guild_members (guild_id, user_id) select g, u from unnest(users) u;
     -- Anna (the viewer) shares with members; a few are public, the rest stay private.
-    -- Bram lends everything, Chloé the cards she marks; Daan lends too, but his profile is private.
+    -- Anna and Bram lend everything (Anna for /loans' summary, #300), Chloé the cards she marks;
+    -- Daan lends too, but his profile is private.
     insert into public.profiles (user_id, visibility, lends_cards, lend_all)
         select users[i], case when i in (1, 2, 5) then 'members' when i in (3, 8) then 'public' else 'private' end,
-               i in (2, 3, 4), i = 2
+               i in (1, 2, 3, 4), i in (1, 2)
         from generate_series(1, 12) i;
+    -- Favourite champions (#306): Anna's differs from her most played, so both show.
+    update public.profiles set favourite_champion = case user_id when users[1] then 'MonkeyKing' when users[2] then 'Ahri' else 'Thresh' end
+        where user_id in (users[1], users[2], users[3]);
 
     -- Activity over the last 120 days. Members differ in level (i) and every day is noisy.
     insert into public.message_counts (guild_id, user_id, day, count)
@@ -293,10 +298,10 @@ begin
     values (users[1], users[2], '{en,fr}', today + 5, null, now() - interval '1 day'),
            (users[3], users[1], '{en}', null, 'For Nexus Night on Friday, I give it back on Sunday.', now() - interval '2 hours');
     insert into public.riftbound_borrow_request_cards (request_id, card_id, quantity)
-    select r.id, case when r.borrower_id = users[1] then 'nine-tailed-fox' else 'ahri-alluring' end, 1
-    from public.riftbound_borrow_requests r where r.borrower_id in (users[1], users[3]);
+    select br.id, case when br.borrower_id = users[1] then 'nine-tailed-fox' else 'ahri-alluring' end, 1
+    from public.riftbound_borrow_requests br where br.borrower_id in (users[1], users[3]);
     insert into public.riftbound_borrow_request_dms (request_id, recipient)
-    select r.id, 'lender' from public.riftbound_borrow_requests r where r.borrower_id in (users[1], users[3]);
+    select br.id, 'lender' from public.riftbound_borrow_requests br where br.borrower_id in (users[1], users[3]);
 
     -- Wishlist (#177): Anna answered the question with Shared. Her demo deck stays built, the
     -- Annie deck lends it cards, and she wants two cards by hand, one of them a printing.
@@ -313,6 +318,12 @@ begin
     values (users[2], 'ogn-066-298', 'normal', 'NM', 'en', 2, 2), (users[3], 'ogs-017-024', 'normal', 'NM', 'en', 1, 1),
            (users[3], 'ogn-066-298', 'foil', 'LP', 'en', 1, 1), (users[4], 'ogs-017-024', 'normal', 'NM', 'en', 1, 1)
     on conflict (user_id, printing_id, finish, condition, language) do update set for_trade = c.quantity;
+    -- Collection activity (#303): the inserts above counted every copy as added today; replace
+    -- that with a few days of Bram, Chloé and Elise adding cards, for the home feed.
+    delete from public.riftbound_collection_activity where user_id = any (users);
+    insert into public.riftbound_collection_activity (user_id, day, copies_added, updated_at)
+    values (users[2], today, 40, now() - interval '3 hours'), (users[3], today - 1, 12, now() - interval '1 day 2 hours'),
+           (users[5], today - 4, 3, now() - interval '4 days 5 hours'), (users[2], today - 6, 1, now() - interval '6 days');
 
     -- Riftbound local play: stores, regulars and upcoming events.
     -- One store with a preview image (#261), one whose site has none, one without a link.

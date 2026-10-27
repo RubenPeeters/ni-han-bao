@@ -41,6 +41,10 @@ describe("setupChange", () => {
   it("says why it cannot turn rank roles on", () => {
     expect(setupChange({ ...input, subcommand: "rank-roles", state: "on", rankRolesProblem: "no Manage Roles" })).toBe("no Manage Roles");
   });
+  it("turns onboarding on and off", () => {
+    expect(setupChange({ ...input, subcommand: "onboarding state", state: "on" })).toEqual({ onboarding: true });
+    expect(setupChange({ ...input, subcommand: "onboarding state", state: "off" })).toEqual({ onboarding: false });
+  });
   it("changes nothing for show", () => expect(setupChange(input)).toBeNull());
 });
 
@@ -49,27 +53,32 @@ describe("applySetup", () => {
   const writer = { save: async (c: Partial<GuildSettings>) => void saved.push(c) };
 
   it("saves the change and replies with the new settings", async () => {
-    const { reply, settings } = await applySetup(writer, DEFAULT_SETTINGS, { report_channel_id: "c1" });
+    const { reply, settings } = await applySetup(writer, DEFAULT_SETTINGS, { report_channel_id: "c1" }, []);
     expect(saved).toEqual([{ report_channel_id: "c1" }]);
-    expect(settings).toEqual({ report_channel_id: "c1", timezone: "UTC", public_totals_opt_out: false, rank_roles: false });
-    expect(reply).toBe("Saved.\nWeekly report card: <#c1>\nTime zone: UTC\nPublic totals: included\nRank roles: off (existing rank roles stay until you delete them)");
+    expect(settings).toEqual({ report_channel_id: "c1", timezone: "UTC", public_totals_opt_out: false, rank_roles: false, onboarding: false });
+    expect(reply).toBe(
+      "Saved.\nWeekly report card: <#c1>\nTime zone: UTC\nPublic totals: included\nRank roles: off (existing rank roles stay until you delete them)\n" +
+        "Onboarding: off, no roles offered yet (add them with /setup onboarding role-add)",
+    );
   });
   it("shows the settings without saving", async () => {
     const { reply } = await applySetup(
       { save: () => Promise.reject(new Error("no")) },
-      DEFAULT_SETTINGS,
+      { ...DEFAULT_SETTINGS, onboarding: true },
       null,
+      [{ role_id: "r1", label: "Top" }, { role_id: "r2", label: "Mid" }],
     );
     expect(reply).toMatch(/Weekly report card: off/);
+    expect(reply).toMatch(/\nOnboarding: on, offers Top, Mid$/);
   });
   it("keeps the old settings when the save fails", async () => {
     const result = await applySetup({ save: () => Promise.reject(new Error("db down")) }, DEFAULT_SETTINGS, {
       timezone: "Europe/Brussels",
-    });
+    }, []);
     expect(result.settings).toBe(DEFAULT_SETTINGS);
     expect(result.reply).toMatch(/nothing was changed/);
   });
   it("passes a refusal through", async () => {
-    expect((await applySetup(writer, DEFAULT_SETTINGS, "nope")).reply).toBe("nope");
+    expect((await applySetup(writer, DEFAULT_SETTINGS, "nope", [])).reply).toBe("nope");
   });
 });

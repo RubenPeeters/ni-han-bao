@@ -21,3 +21,20 @@ export function championIcons(
 export function championIcon(icons: Record<string, string>, champion: string): string | null {
   return icons[key(champion)] ?? null;
 }
+
+export interface Champion {
+  /** Data Dragon's id, what profiles.favourite_champion stores ("MonkeyKing"). */
+  id: string;
+  name: string;
+  icon: string;
+}
+
+/** Every champion with its icon, by name: the Settings picker's grid. */
+export function championList(
+  version: string,
+  champions: Record<string, { id: string; name: string; image: { full: string } }>,
+): Champion[] {
+  return Object.values(champions)
+    .map((c) => ({ id: c.id, name: c.name, icon: `${DDRAGON}/cdn/${version}/img/champion/${c.image.full}` }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}

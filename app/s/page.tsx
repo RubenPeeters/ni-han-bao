@@ -11,7 +11,7 @@ export const metadata = {
 export default function ServersPage() {
   return (
     <>
-      <PageHeader title="Your servers" description="Stats are only shown to members of each server." />
+      <PageHeader title="Your servers" description="This week in the servers you are in. Stats are only shown to members." />
       {hasEnvVars ? (
         <Suspense fallback={<StatsSkeleton cards={1} />}>
           <ServerPicker />
