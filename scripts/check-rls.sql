@@ -5,7 +5,7 @@
 -- opened (#174), their versions with them (#176), and wishlists their profile (#177); that trade
 -- matches follow it too (#178), and decks not for lending hold their cards (#179); that borrow requests
 -- reach only lenders Who has it? shows (#299); that only public decks are teased logged
--- out (#175); that the home feed follows decks and hidden members (#302); then that /forget-me deletes
+-- out (#175); that the home feed follows decks, profiles, loan parties and hidden members (#302); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`; migrate.yml runs it on the dev project after the seed.
 -- Run against a local Supabase or the dev project (never production); everything is rolled back.
@@ -871,11 +871,29 @@ end $$;
 
 -- The home feed (#302): a deck only for whoever may see it, never anything of a hidden member
 -- or of someone in no server with the visitor. rls-hidden shares rls-mine with the test user.
+-- rls-private too, with no profile row (private): no League activity or trade of theirs shows,
+-- and their loan from rls-rls-mine is no For you item of the test user's. Every earlier loan is closed.
 set role postgres;
 do $$
 begin
     insert into public.riftbound_decks (user_id, name, visibility) values ('rls-hidden', 'hidden-member', 'servers');
     perform public.snapshot_riftbound_deck(id) from public.riftbound_decks where name = 'hidden-member';
+    -- Shared by the bot's share command, with no new version; the private one changed but stays private.
+    update public.riftbound_decks set updated_at = now() + interval '1 minute' where name in ('servers-shared', 'private');
+    update public.members set display_name = 'hidden-name' where user_id = 'rls-hidden';
+    insert into public.members (guild_id, user_id, display_name) values ('rls-mine', 'rls-private', 'x');
+    insert into public.guild_members (guild_id, user_id) values ('rls-mine', 'rls-private');
+    insert into public.game_accounts (user_id, game, external_id, region) values ('rls-private', 'lol', 'rls-private', 'euw1');
+    -- Two rows each: the first is a baseline, the second a change.
+    insert into public.lol_rank_changes (user_id, puuid, queue, tier, division, lp)
+    select u, u, 'RANKED_SOLO_5x5', 'GOLD', 'I', 10 from unnest(array['rls-rls-mine', 'rls-private', 'rls-private']) u;
+    insert into public.lol_matches (user_id, puuid, match_id, queue_id, champion, played_at)
+    values ('rls-private', 'rls-private', 'EUW1_rls-private', 420, 'Ahri', now() - interval '1 hour');
+    insert into public.riftbound_trade_matches (user_id, trader_id, card_id) values ('rls-user', 'rls-private', 'rls-card');
+    -- rls-rls-mine's two copies: one to the test user (their one For you item), one to rls-private.
+    perform public.lend_riftbound_cards('rls-rls-mine', b, null, null,
+        '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"en","quantity":1}]')
+    from unnest(array['rls-user', 'rls-private']) b;
 end $$;
 set local role authenticated;
 do $$
@@ -889,6 +907,26 @@ begin
     end if;
     if not exists (select from public.home_feed() f where f.kind = 'lol_week' and f.user_id = 'rls-rls-mine' and f.guild_id = 'rls-mine') then
         raise exception 'home_feed() misses the League week of a member of the visitor''s server';
+    end if;
+    if exists (select from public.home_feed() f where f.user_id = 'rls-private') then
+        raise exception 'home_feed() shows a private profile''s League activity, trades or loans';
+    end if;
+    if not exists (select from public.home_feed() f where f.kind = 'rank' and f.user_id = 'rls-rls-mine')
+        or not exists (select from public.home_feed() f where f.kind = 'trade' and f.user_id = 'rls-rls-mine') then
+        raise exception 'home_feed() misses a visible member''s rank change or trade match';
+    end if;
+    if (select array_agg(f.data ->> 'name') from public.home_feed() f where f.kind = 'deck_shared') <> array['servers-shared'] then
+        raise exception 'home_feed() misses a deck shared without a new version, or shows a private one';
+    end if;
+    if (select count(*) from public.home_feed() f where f.kind in ('request', 'confirm', 'overdue')) <> 1 then
+        raise exception 'home_feed() shows a loan the visitor is no party to';
+    end if;
+    if not exists (select from public.home_feed() f where f.kind = 'event' and f.guild_id = 'rls-mine')
+        or exists (select from public.home_feed() f where f.kind = 'event' and f.data -> 'going' ? 'hidden-name') then
+        raise exception 'home_feed() misses an event or names a member hidden in its server as going';
+    end if;
+    if exists (select from public.home_feed('league') f where f.kind not in ('rank', 'lol_week', 'request', 'confirm', 'overdue', 'trade')) then
+        raise exception 'home_feed(''league'') returns rows of another filter';
     end if;
 end $$;
 

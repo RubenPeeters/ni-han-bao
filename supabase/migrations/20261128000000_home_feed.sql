@@ -3,11 +3,13 @@
 --
 -- For you (the caller's own, unlabelled but trades): borrow requests to answer, loans to
 -- confirm, overdue loans, new trade matches. Happening (the last 30 days, upcoming events):
--- events, deck versions, accepted catalogue updates, posted recaps, rank changes, League weeks.
+-- events, deck versions and shares, accepted catalogue updates, posted recaps, rank changes, League
+-- weeks; only p_filter's (lib/feed.ts FILTERS), so its 500-row cap counts only rows the view shows.
 -- Security definer to read the bot-only tables, so every visibility rule is applied here:
--- people only from the caller's servers and never hidden in any server (as can_see_profile()),
--- decks through can_see_deck(), event goers not hidden in that server.
-create function public.home_feed()
+-- people only from the caller's servers and never hidden in any server, their League activity and
+-- trades only through can_see_profile(), decks through can_see_deck(), event goers not hidden in
+-- that server.
+create function public.home_feed(p_filter text default 'all')
 returns table (kind text, happened_at timestamptz, guild_id text, guild_name text, user_id text, user_name text, data jsonb)
 language sql
 stable
@@ -26,7 +28,8 @@ as $$
     ),
     -- Everyone sharing a server with the caller, once, labelled with the server of their latest name.
     people as (
-        select distinct on (m.user_id) m.user_id, m.display_name, mine.guild_id, mine.name as guild_name, mine.tz
+        select distinct on (m.user_id) m.user_id, m.display_name, mine.guild_id, mine.name as guild_name, mine.tz,
+            public.can_see_profile(m.user_id) as profile
         from mine
         join public.guild_members gm on gm.guild_id = mine.guild_id
         join public.members m on m.guild_id = gm.guild_id and m.user_id = gm.user_id
@@ -73,7 +76,7 @@ as $$
         from me
         join public.riftbound_trade_matches t on t.user_id = me.id
         join people p on p.user_id = t.trader_id
-        where t.notified_at > now() - interval '14 days'
+        where t.notified_at > now() - interval '14 days' and p.profile
         group by t.trader_id, p.guild_id, p.guild_name, p.display_name
     ),
     upcoming as (
@@ -108,6 +111,14 @@ as $$
         join public.riftbound_deck_versions v on v.deck_id = d.id
         where v.saved_at > now() - interval '30 days' and public.can_see_deck(d.user_id, d.visibility)
         union all
+        -- The bot's share command makes a deck visible without saving a version: a change newer than its latest.
+        select 'deck_shared', d.updated_at, p.guild_id, p.guild_name, d.user_id, p.display_name,
+            jsonb_build_object('deck', d.id, 'name', d.name)
+        from people p
+        join public.riftbound_decks d on d.user_id = p.user_id
+        where d.updated_at > now() - interval '30 days' and public.can_see_deck(d.user_id, d.visibility)
+            and d.updated_at > (select max(v.saved_at) from public.riftbound_deck_versions v where v.deck_id = d.id)
+        union all
         select 'catalogue', c.decided_at, null, null, null, null, jsonb_build_object('cards', c.added)
         from me
         join public.riftbound_catalogue_proposals c on c.status = 'accepted' and c.added > 0
@@ -130,7 +141,7 @@ as $$
             from public.lol_rank_changes x
             where x.user_id in (select user_id from people)
         ) c on c.user_id = p.user_id and c.puuid = a.external_id
-        where c.prev is not null and c.changed_at > now() - interval '30 days'
+        where c.prev is not null and c.changed_at > now() - interval '30 days' and p.profile
         union all
         -- Games per week (Monday, in the label server's time zone) on the linked account.
         select 'lol_week', max(x.played_at), p.guild_id, p.guild_name, p.user_id, p.display_name,
@@ -140,14 +151,19 @@ as $$
         join public.game_accounts a on a.user_id = p.user_id and a.game = 'lol'
         join public.lol_matches x on x.user_id = p.user_id and x.puuid = a.external_id
         cross join lateral (select date_trunc('week', x.played_at at time zone p.tz)::date as week) w
-        where x.played_at > now() - interval '35 days'
+        where x.played_at > now() - interval '35 days' and p.profile
             and w.week > (now() at time zone p.tz)::date - 35
         group by p.user_id, p.display_name, p.guild_id, p.guild_name, p.tz, w.week
     )
     select * from for_you
     union all
-    (select * from happening order by happened_at desc limit 500);
+    (
+        select * from happening h
+        where p_filter = 'all' or p_filter = case
+            when h.kind in ('rank', 'lol_week') then 'league' when h.kind = 'recap' then 'server' else 'riftbound' end
+        order by h.happened_at desc limit 500
+    );
 $$;
 
-revoke execute on function public.home_feed() from public, anon;
-grant execute on function public.home_feed() to authenticated;
+revoke execute on function public.home_feed(text) from public, anon;
+grant execute on function public.home_feed(text) to authenticated;

@@ -16,7 +16,7 @@ const query = (filter: Filter, show: number) => {
 /** The logged-in home: the visitor's own items, then what happened in their servers. */
 export async function HomeFeed({ filter, show }: { filter: Filter; show: number }) {
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("home_feed");
+  const { data, error } = await supabase.rpc("home_feed", { p_filter: filter });
   if (error) {
     return <ErrorState title="Could not load your feed">Try again in a minute.</ErrorState>;
   }

@@ -35,6 +35,7 @@ const FILTER_OF: Record<string, Filter> = {
   event: "riftbound",
   event_soon: "riftbound",
   deck: "riftbound",
+  deck_shared: "riftbound",
   catalogue: "riftbound",
   rank: "league",
   lol_week: "league",
@@ -44,7 +45,7 @@ const FILTER_OF: Record<string, Filter> = {
 export const parseFilter = (value: unknown): Filter =>
   FILTERS.some((f) => f.value === value) ? (value as Filter) : "all";
 
-/** ?show=: how many Happening items, in whole pages; home_feed() returns 500 at most. */
+/** ?show=: how many Happening items, in whole pages; home_feed() returns 500 rows of the filter at most. */
 export function parseShow(value: unknown): number {
   const n = Number(value);
   return Number.isInteger(n) && n > PAGE ? Math.min(Math.ceil(n / PAGE), 17) * PAGE : PAGE;
@@ -148,6 +149,8 @@ export function toItem(row: FeedRow & { count: number }): FeedItem {
             : `${who} saved a new version of ${d.name}`,
         `/decks/${d.deck}`,
       );
+    case "deck_shared":
+      return item(`${who} shared a deck, ${d.name}`, `/decks/${d.deck}`);
     case "catalogue":
       return item(`${plural(d.cards, "new card")} in the catalogue`, "/cards");
     case "recap":
