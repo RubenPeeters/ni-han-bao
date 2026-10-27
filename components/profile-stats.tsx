@@ -58,13 +58,15 @@ export function formatSeconds(seconds: number): string {
  */
 export async function ProfileStats({ user }: { user: string }) {
   const supabase = await createClient();
-  const [profile, servers, badges, games, ranks, champion] = await Promise.all([
+  const [profile, servers, badges, games, ranks, champion, favourite] = await Promise.all([
     supabase.rpc("profile", { u: user }).maybeSingle<Profile>(),
     supabase.rpc("profile_servers", { u: user }),
     supabase.rpc("profile_badges", { u: user }).maybeSingle<Badges>(),
     supabase.rpc("profile_games", { u: user }),
     supabase.rpc("profile_ranks", { u: user }),
     supabase.rpc("profile_lol_champion", { u: user }),
+    // The profiles policy (can_see_profile()) shows the row to whoever may see the profile.
+    supabase.from("profiles").select("favourite_champion").eq("user_id", user).maybeSingle<{ favourite_champion: string | null }>(),
   ]);
   if (profile.error || servers.error || badges.error || games.error || ranks.error) {
     return <ErrorState title="Could not load this profile">Try again in a minute.</ErrorState>;
@@ -126,6 +128,7 @@ export async function ProfileStats({ user }: { user: string }) {
         ranks={ranks.data as (Rank & { queue: string })[]}
         // Decoration only: a failed champion lookup drops the line, not the profile.
         champion={champion.error ? null : (champion.data as string | null)}
+        favourite={favourite.data?.favourite_champion ?? null}
       />
       {(topGames.length > 0 || streaming >= 60) && (
         <StatCard title="Games" description="Last 30 days, from Discord's Playing and Streaming status">

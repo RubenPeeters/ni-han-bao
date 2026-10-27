@@ -1,9 +1,11 @@
-import { setBorrowLanguages, setFeedCollection, setLending, setVisibility, setWishlistMode } from "@/app/u/[userId]/actions";
+import { setBorrowLanguages, setFavouriteChampion, setFeedCollection, setLending, setVisibility, setWishlistMode } from "@/app/u/[userId]/actions";
+import { ChampionPicker } from "@/components/champion-picker";
 import { VISIBILITIES } from "@/components/profile-stats";
 import { LogInPrompt } from "@/components/server-picker";
 import { Checkboxes, Options, SettingsForm, ThemeSettings } from "@/components/settings-form";
 import { ErrorState, PageHeader, StatsSkeleton } from "@/components/stat-ui";
 import { Badge } from "@/components/ui/badge";
+import { loadChampions } from "@/lib/champion-icons";
 import { createClient } from "@/lib/supabase/server";
 import { LANGUAGES } from "@/lib/collection";
 import { hasEnvVars, cn } from "@/lib/utils";
@@ -55,6 +57,7 @@ interface MySettings {
   wishlist_mode: string | null;
   borrow_languages: string[];
   feed_collection: boolean;
+  favourite_champion: string | null;
 }
 
 async function Settings() {
@@ -62,11 +65,12 @@ async function Settings() {
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims) return <LogInPrompt text={LOG_IN} />;
   const me = await supabase.rpc("current_discord_id");
-  const [profile, servers, accounts] = await Promise.all([
+  const [profile, servers, accounts, champions] = await Promise.all([
     // The caller's own row is always visible to them (can_see_profile()); no row is the defaults.
-    supabase.from("profiles").select("visibility, lends_cards, lend_all, wishlist_mode, borrow_languages, feed_collection").eq("user_id", me.data ?? "").maybeSingle<MySettings>(),
+    supabase.from("profiles").select("visibility, lends_cards, lend_all, wishlist_mode, borrow_languages, feed_collection, favourite_champion").eq("user_id", me.data ?? "").maybeSingle<MySettings>(),
     supabase.rpc("my_server_visibility"),
     supabase.rpc("my_game_accounts"),
+    loadChampions(),
   ]);
   // A failed read only takes down the sections that need it.
   const profileFailed = !!(me.error || profile.error);
@@ -100,6 +104,18 @@ async function Settings() {
             Also with <Cmd>/profile visibility</Cmd> in Discord. While you are hidden with <Cmd>/hide-me</Cmd>, nobody else sees it.
           </Help>
         </SettingsForm>
+        <hr />
+        <div className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium">Favourite League champion</h3>
+          {champions.length === 0 ? (
+            <ErrorState title="Could not load the champions">Try again in a minute.</ErrorState>
+          ) : (
+            <ChampionPicker champions={champions} value={mine?.favourite_champion ?? null} action={setFavouriteChampion} />
+          )}
+          <Help>
+            Shown on your profile next to your most played champion. Also with <Cmd>/profile champion</Cmd> in Discord.
+          </Help>
+        </div>
       </Section>
 
       <Section id="riftbound" failed={profileFailed} description="Lending, borrowing, how your decks count on your wishlist, and the home feed.">

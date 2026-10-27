@@ -91,7 +91,8 @@ import {
 } from "./stores.js";
 import { isDiscordUrl, storeImage } from "./store-image.js";
 import { challengeText, GAME, LOL_COMMAND, startLink, verifyLink, type Platform, type RiotLookup } from "./lol.js";
-import { PROFILE_COMMAND, setProfileVisibility } from "./profile.js";
+import { championChoices, loadChampions } from "./champions.js";
+import { PROFILE_COMMAND, setFavouriteChampion, setProfileVisibility } from "./profile.js";
 import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type Match, type MatchRow } from "./matches.js";
 import { rankChanges, rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
@@ -1435,6 +1436,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
     );
     return;
   }
+  if (interaction.isAutocomplete() && interaction.commandName === PROFILE_COMMAND.name) {
+    await tracked(
+      "command",
+      loadChampions()
+        .then((champions) => interaction.respond(championChoices(champions, interaction.options.getFocused())))
+        .catch((err: unknown) => log("error", "autocomplete_failed", { command: interaction.commandName, error: err })),
+    );
+    return;
+  }
   const cardCommands = [CARD_COMMAND.name, COLLECTION_COMMAND.name] as string[];
   if (interaction.isAutocomplete() && cardCommands.includes(interaction.commandName)) {
     await tracked(
@@ -1660,9 +1670,30 @@ async function forgetCommand(interaction: ChatInputCommandInteraction<"cached">)
   await interaction.editReply({ content: reply, components: [] });
 }
 
-/** /profile visibility: who can see the caller's /u/[userId] page. */
+/** /profile visibility: who can see the caller's /u/[userId] page; /profile champion: their favourite. */
 async function profileCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  if (interaction.options.getSubcommand() === "champion") {
+    const reply = await setFavouriteChampion(
+      {
+        async setFavourite(userId, championId) {
+          const { data, error } = await db
+            .from("profiles")
+            .upsert({ user_id: userId, favourite_champion: championId, updated_at: new Date().toISOString() }, { onConflict: "user_id" })
+            .select("user_id");
+          if (error) throw new Error(`profiles upsert: ${error.message}`);
+          // skip_forgotten() drops a forgotten user's row without an error.
+          return data.length > 0;
+        },
+      },
+      interaction.user.id,
+      interaction.options.getString("champion"),
+      loadChampions,
+      config.siteUrl,
+    );
+    await interaction.editReply(reply);
+    return;
+  }
   const reply = await setProfileVisibility(
     {
       async setVisibility(userId, visibility) {

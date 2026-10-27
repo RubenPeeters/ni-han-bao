@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { PROFILE_COMMAND, setProfileVisibility, VISIBILITIES } from "./profile.js";
+import { parseChampions } from "./champions.js";
+import { PROFILE_COMMAND, setFavouriteChampion, setProfileVisibility, VISIBILITIES } from "./profile.js";
 
 describe("PROFILE_COMMAND", () => {
   it("offers every visibility the profiles table accepts", () => {
@@ -38,5 +39,37 @@ describe("setProfileVisibility", () => {
       null,
     );
     expect(reply).toMatch(/nothing was changed/);
+  });
+});
+
+describe("setFavouriteChampion", () => {
+  const champions = async () => parseChampions({ MonkeyKing: { id: "MonkeyKing", name: "Wukong" }, Ahri: { id: "Ahri", name: "Ahri" } });
+
+  it("stores the id of a typed name", async () => {
+    const setFavourite = vi.fn(async () => true);
+    const reply = await setFavouriteChampion({ setFavourite }, "a", "Wukong", champions, "https://site");
+    expect(setFavourite).toHaveBeenCalledWith("a", "MonkeyKing");
+    expect(reply).toMatch(/Wukong/);
+    expect(reply).toContain("https://site/u/a");
+  });
+
+  it("clears it without a champion, without loading the list", async () => {
+    const setFavourite = vi.fn(async () => true);
+    const list = vi.fn(champions);
+    await setFavouriteChampion({ setFavourite }, "a", null, list, null);
+    expect(setFavourite).toHaveBeenCalledWith("a", null);
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("writes nothing for an unknown champion or when Data Dragon is down", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const setFavourite = vi.fn(async () => true);
+    expect(await setFavouriteChampion({ setFavourite }, "a", "Nobody", champions, null)).toMatch(/nothing was changed/);
+    expect(await setFavouriteChampion({ setFavourite }, "a", "Ahri", () => Promise.reject(new Error("down")), null)).toMatch(/nothing was changed/);
+    expect(setFavourite).not.toHaveBeenCalled();
+  });
+
+  it("tells a forgotten user nothing was saved", async () => {
+    expect(await setFavouriteChampion({ setFavourite: async () => false }, "a", "Ahri", champions, null)).toMatch(/\/show-me/);
   });
 });

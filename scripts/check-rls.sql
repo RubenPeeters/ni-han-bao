@@ -6,7 +6,8 @@
 -- matches follow it too (#178), and decks not for lending hold their cards (#179); that borrow requests
 -- reach only lenders Who has it? shows (#299); that only public decks are teased logged
 -- out (#175); that the home feed follows decks, profiles, loan parties and hidden members (#302), and collection
--- activity sums a day and follows its setting (#303); then that /forget-me deletes
+-- activity sums a day and follows its setting (#303); that a favourite champion is an id
+-- (#306); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`; migrate.yml runs it on the dev project after the seed.
 -- Run against a local Supabase or the dev project (never production); everything is rolled back.
@@ -413,6 +414,20 @@ begin
         raise exception 'set_borrow_languages() accepts no language';
     exception when raise_exception then
         if sqlerrm <> 'pick at least one language' then raise; end if;
+    end;
+    -- Favourite champion (#306): set, cleared, and never anything but an id.
+    perform public.set_favourite_champion('MonkeyKing');
+    if (select favourite_champion from public.profiles where user_id = 'rls-user') is distinct from 'MonkeyKing' then
+        raise exception 'set_favourite_champion() does not save your own choice';
+    end if;
+    perform public.set_favourite_champion(null);
+    if (select favourite_champion from public.profiles where user_id = 'rls-user') is not null then
+        raise exception 'set_favourite_champion(null) does not clear it';
+    end if;
+    begin
+        perform public.set_favourite_champion('<b>Ahri</b>');
+        raise exception 'set_favourite_champion() accepts something that is no champion id';
+    exception when check_violation then null;
     end;
     -- Decks (#173): public ones and those of members of the visitor's servers, never private.
     if (select array_agg(name order by name) from public.riftbound_decks where user_id like 'rls-%') <> array['public', 'servers-shared']

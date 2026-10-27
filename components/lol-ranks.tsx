@@ -1,6 +1,6 @@
 import { EmptyState, ErrorState, MemberRankRow, RankList, RankRow, StatCard, StatGrid } from "@/components/stat-ui";
-import { loadChampionIcons } from "@/lib/champion-icons";
-import { championIcon } from "@/lib/ddragon";
+import { loadChampionIcons, loadChampions } from "@/lib/champion-icons";
+import { championIcon, championKey } from "@/lib/ddragon";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 
@@ -134,10 +134,24 @@ export async function GuildLolWeek({ guild }: { guild: string }) {
   );
 }
 
-/** The profile's League card; nothing without a ranked queue or a game this week. */
-export async function ProfileRanks({ ranks, champion }: { ranks: (Rank & { queue: string })[]; champion: string | null }) {
-  if (ranks.length === 0 && !champion) return null;
-  const icons = champion ? await loadChampionIcons() : {};
+/** The profile's League card; nothing without a ranked queue, a game this week or a favourite. */
+export async function ProfileRanks({
+  ranks,
+  champion,
+  favourite,
+}: {
+  ranks: (Rank & { queue: string })[];
+  champion: string | null;
+  favourite: string | null;
+}) {
+  if (ranks.length === 0 && !champion && !favourite) return null;
+  const champions = champion || favourite ? await loadChampions() : [];
+  // Ids ("MonkeyKing") and Match-V5's spellings both to the name people know, with its icon.
+  const find = (c: string) => champions.find((x) => championKey(x.id) === championKey(c) || championKey(x.name) === championKey(c));
+  const picks = [
+    { label: "Favourite", champion: favourite },
+    { label: "Most played this week", champion },
+  ].filter((p): p is { label: string; champion: string } => !!p.champion);
   return (
     <StatCard title="League of Legends" description="Riot's official rank, updated every 3 hours">
       <ul className="grid gap-4 sm:grid-cols-2">
@@ -158,11 +172,30 @@ export async function ProfileRanks({ ranks, champion }: { ranks: (Rank & { queue
           );
         })}
       </ul>
-      {champion && (
-        <p className="flex min-w-0 items-center gap-2 text-sm">
-          <MostlyChampion champion={champion} icons={icons} size={24} />
-          <span className="shrink-0 text-muted-foreground">this week</span>
-        </p>
+      {picks.length > 0 && (
+        <ul className="grid gap-4 sm:grid-cols-2">
+          {picks.map((p) => {
+            const c = find(p.champion);
+            return (
+              <li key={p.label} className="flex min-w-0 items-center gap-3">
+                {/* The emblems' width, so the names line up with the ranks above. */}
+                <span className="flex w-14 shrink-0 justify-center">
+                  {c ? (
+                    // Riot's CDN serves them small already; next/image would need a remote pattern.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={c.icon} alt="" width={40} height={40} className="rounded-md bg-muted" />
+                  ) : (
+                    <span aria-hidden className="size-10 rounded-md bg-muted" />
+                  )}
+                </span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="text-xs text-muted-foreground">{p.label}</span>
+                  <span className="truncate font-medium">{c?.name ?? p.champion}</span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </StatCard>
   );
