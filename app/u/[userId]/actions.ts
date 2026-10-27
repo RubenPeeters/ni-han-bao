@@ -36,6 +36,15 @@ export async function setBorrowLanguages(formData: FormData) {
   revalidatePath("/settings");
 }
 
+/** Show my collection activity in the feed, on /settings; off hides past items too, home_feed() reads it live. */
+export async function setFeedCollection(formData: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_feed_collection", { p_on: formData.get("feed") === "on" });
+  if (error) throw new Error(`set_feed_collection failed: ${error.message}`);
+  revalidatePath("/");
+  revalidatePath("/settings");
+}
+
 /** The once-asked question of how decks count on the wishlist; preset on new decks. */
 export async function setWishlistMode(formData: FormData) {
   const supabase = await createClient();

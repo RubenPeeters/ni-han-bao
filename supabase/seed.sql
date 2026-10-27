@@ -57,6 +57,7 @@ begin
     delete from public.riftbound_loans where lender_id = any (users) or borrower_id = any (users);
     perform set_config('ni_han_bao.erase_loans', 'off', true);
     delete from public.riftbound_collection where user_id = any (users);
+    delete from public.riftbound_collection_activity where user_id = any (users);
     delete from public.riftbound_decks where user_id = any (users);
     delete from public.riftbound_wishlist where user_id = any (users);
     delete from public.riftbound_trade_matches where user_id = any (users) or trader_id = any (users);
@@ -314,6 +315,12 @@ begin
     values (users[2], 'ogn-066-298', 'normal', 'NM', 'en', 2, 2), (users[3], 'ogs-017-024', 'normal', 'NM', 'en', 1, 1),
            (users[3], 'ogn-066-298', 'foil', 'LP', 'en', 1, 1), (users[4], 'ogs-017-024', 'normal', 'NM', 'en', 1, 1)
     on conflict (user_id, printing_id, finish, condition, language) do update set for_trade = c.quantity;
+    -- Collection activity (#303): the inserts above counted every copy as added today; replace
+    -- that with a few days of Bram, Chloé and Elise adding cards, for the home feed.
+    delete from public.riftbound_collection_activity where user_id = any (users);
+    insert into public.riftbound_collection_activity (user_id, day, copies_added, updated_at)
+    values (users[2], today, 40, now() - interval '3 hours'), (users[3], today - 1, 12, now() - interval '1 day 2 hours'),
+           (users[5], today - 4, 3, now() - interval '4 days 5 hours'), (users[2], today - 6, 1, now() - interval '6 days');
 
     -- Riftbound local play: stores, regulars and upcoming events.
     -- One store with a preview image (#261), one whose site has none, one without a link.
