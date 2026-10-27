@@ -37,7 +37,136 @@
     "users": {},
     "emojis": {},
     "message": {
-      "content": "Weekly report card: <#900000000000000201>\nTime zone: Europe/Brussels\nPublic totals: left out\nRank roles: off (existing rank roles stay until you delete them)"
+      "content": "Weekly report card: <#900000000000000201>\nTime zone: Europe/Brussels\nPublic totals: left out\nRank roles: off (existing rank roles stay until you delete them)\nOnboarding: on, offers Top, Jungle, Mid, Bot, Support"
+    }
+  },
+  "onboarding-dm": {
+    "command": null,
+    "ephemeral": false,
+    "channels": {},
+    "users": {},
+    "emojis": {},
+    "message": {
+      "content": "Welcome to **Demo server**! Pick the roles you want below. You can change them any time with /roles in the server.",
+      "components": [
+        {
+          "type": 1,
+          "components": [
+            {
+              "type": 3,
+              "custom_id": "onboard-roles:900000000000000001",
+              "placeholder": "Pick your roles",
+              "min_values": 0,
+              "max_values": 5,
+              "options": [
+                {
+                  "label": "Top",
+                  "value": "900000000000000400",
+                  "default": false
+                },
+                {
+                  "label": "Jungle",
+                  "value": "900000000000000401",
+                  "default": false
+                },
+                {
+                  "label": "Mid",
+                  "value": "900000000000000402",
+                  "default": false
+                },
+                {
+                  "label": "Bot",
+                  "value": "900000000000000403",
+                  "default": false
+                },
+                {
+                  "label": "Support",
+                  "value": "900000000000000404",
+                  "default": false
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": 1,
+          "components": [
+            {
+              "type": 2,
+              "style": 5,
+              "label": "Pick your favourite champion",
+              "url": "https://nexus.example/settings"
+            },
+            {
+              "type": 2,
+              "style": 2,
+              "label": "No thanks",
+              "custom_id": "onboard-no:900000000000000001"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "roles": {
+    "command": "/roles",
+    "ephemeral": true,
+    "channels": {},
+    "users": {},
+    "emojis": {},
+    "message": {
+      "content": "Pick your roles. Roles you untick are taken away.",
+      "components": [
+        {
+          "type": 1,
+          "components": [
+            {
+              "type": 3,
+              "custom_id": "onboard-roles:900000000000000001",
+              "placeholder": "Pick your roles",
+              "min_values": 0,
+              "max_values": 5,
+              "options": [
+                {
+                  "label": "Top",
+                  "value": "900000000000000400",
+                  "default": false
+                },
+                {
+                  "label": "Jungle",
+                  "value": "900000000000000401",
+                  "default": false
+                },
+                {
+                  "label": "Mid",
+                  "value": "900000000000000402",
+                  "default": true
+                },
+                {
+                  "label": "Bot",
+                  "value": "900000000000000403",
+                  "default": false
+                },
+                {
+                  "label": "Support",
+                  "value": "900000000000000404",
+                  "default": false
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "roles-picked": {
+    "command": "/roles",
+    "ephemeral": true,
+    "channels": {},
+    "users": {},
+    "emojis": {},
+    "message": {
+      "content": "Added Top. Removed Mid."
     }
   },
   "report": {
@@ -759,7 +888,7 @@
     "users": {},
     "emojis": {},
     "message": {
-      "content": "This deletes everything nexus has stored about you, in every server: your message, reaction, voice and game time counts, your name and avatar, your membership, your regular stores, the events you are going to, your linked League account with its ranks and games, your Riftbound collection, decks, wishlist, trade matches and lending setting, your card loans (gone for the other member too), your profile visibility and your /hide-me setting. It cannot be undone. The bot stops counting you until you use /show-me. You also lose access to the servers' pages on the website until then.",
+      "content": "This deletes everything nexus has stored about you, in every server: your message, reaction, voice and game time counts, your name and avatar, your membership, your regular stores, the events you are going to, your linked League account with its ranks and games, your Riftbound collection, decks, wishlist, trade matches and lending setting, your card loans (gone for the other member too), your profile visibility, the onboarding DMs you got and your /hide-me setting. It cannot be undone. The bot stops counting you until you use /show-me. You also lose access to the servers' pages on the website until then.",
       "components": [
         {
           "components": [

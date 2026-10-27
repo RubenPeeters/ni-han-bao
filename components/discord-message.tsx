@@ -2,7 +2,7 @@ import { cardImageUrl } from "@/bot/src/card-match";
 import { discordMarkdown, type Token } from "@/lib/discord-markdown";
 import replies from "@/lib/replies.json";
 import { cn } from "@/lib/utils";
-import { CornerDownRight, ExternalLink, Eye, ImageIcon } from "lucide-react";
+import { ChevronDown, CornerDownRight, ExternalLink, Eye, ImageIcon } from "lucide-react";
 import { Fragment } from "react";
 
 interface Embed {
@@ -28,6 +28,8 @@ interface Component {
   label?: string;
   style?: number;
   disabled?: boolean;
+  placeholder?: string;
+  options?: { label: string; default?: boolean }[];
 }
 /** A message as the bot sends it (Discord's API shape), plus how it was asked for. */
 export interface Reply {
@@ -165,7 +167,7 @@ function EmbedView({ embed, channels, users, emojis }: { embed: Embed } & Names)
   );
 }
 
-/** Discord's components: 17 container, 9 section, 10 text, 11 thumbnail, 12 gallery, 14 separator, 1 row of 2 buttons. */
+/** Discord's components: 17 container, 9 section, 10 text, 11 thumbnail, 12 gallery, 14 separator, 1 row of 2 buttons or a 3 select. */
 function ComponentView({ c, names }: { c: Component; names: Names }) {
   const children = c.components?.map((child, i) => <ComponentView key={i} c={child} names={names} />);
   switch (c.type) {
@@ -208,6 +210,16 @@ function ComponentView({ c, names }: { c: Component; names: Names }) {
       );
     case 14:
       return c.divider === false ? <div aria-hidden className="h-1" /> : <hr className="border-border" />;
+    case 3: {
+      // Closed, as Discord shows it: the ticked options, else the placeholder.
+      const picked = c.options?.filter((o) => o.default).map((o) => o.label) ?? [];
+      return (
+        <span className="flex w-full max-w-md items-center justify-between gap-2 rounded-md border border-border bg-secondary px-3 py-2">
+          <span className={cn("truncate", !picked.length && "text-muted-foreground")}>{picked.length ? picked.join(", ") : c.placeholder}</span>
+          <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        </span>
+      );
+    }
     case 2:
       return (
         <span className={cn("inline-flex items-center gap-1.5 rounded-md px-4 py-1.5 font-medium", BUTTON[c.style ?? 2], c.disabled && "opacity-50")}>

@@ -44,6 +44,8 @@ begin
         insert into public.backfill_cursors (guild_id, channel_id, before_id) values (g, 'c', '1');
         insert into public.welcome_messages (guild_id, channel_id) values (g, 'c');
         insert into public.guild_settings (guild_id, report_channel_id) values (g, 'c');
+        insert into public.onboarding_roles (guild_id, role_id, label) values (g, 'r', 'r');
+        insert into public.onboarding_dms (guild_id, user_id) values (g, 'rls-user');
         insert into public.member_channel_counts (guild_id, user_id, channel_id, day, count)
         values (g, 'rls-user', 'c', '2026-01-01', 1);
         insert into public.member_emoji_counts (guild_id, user_id, emoji_key, day, count)
