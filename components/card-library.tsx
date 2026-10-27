@@ -6,7 +6,7 @@ import { DomainIcon, RarityIcon, RulesText, SupertypeIcon, TypeIcon, type Riftbo
 import { LogInPrompt } from "@/components/server-picker";
 import { CardCopies } from "@/components/your-copies";
 import { EmptyState, ErrorState, MemberRankRow, RankList, StatCard } from "@/components/stat-ui";
-import { perLanguage, type Language, type OwnedRow } from "@/lib/collection";
+import { borrowCopies, type Language, type OwnedRow } from "@/lib/collection";
 import { allPages } from "@/lib/decks";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
@@ -164,7 +164,7 @@ export async function CardDetail({ id }: { id: string }) {
           .select("printing_id, finish, condition, language, quantity, for_trade, lendable")
           .in("printing_id", printings.map((p) => p.id))
           .returns<OwnedRow[]>(),
-        supabase.from("profiles").select("lend_all, card_language").eq("user_id", me.data).maybeSingle(),
+        supabase.from("profiles").select("lend_all, card_language, borrow_languages").eq("user_id", me.data).maybeSingle(),
       ])
     : [null, null, null];
   const dash = (n: number | null) => (n === null ? "-" : String(n));
@@ -249,7 +249,7 @@ export async function CardDetail({ id }: { id: string }) {
         </ul>
       </StatCard>
       {/* Decoration of the card page: a failed lookup drops the section, not the card. */}
-      {!lenders.error && <WhoHasIt lenders={lenders.data as Lender[]} />}
+      {!lenders.error && <WhoHasIt lenders={lenders.data as Lender[]} languages={profile?.data?.borrow_languages ?? ["en"]} />}
     </>
   );
 }
@@ -263,8 +263,11 @@ interface Lender {
   copies: { language: string; copies: number }[];
 }
 
-/** Per server the visitor is in, who has copies to lend; card_lenders() decides who may show. */
-function WhoHasIt({ lenders }: { lenders: Lender[] }) {
+/**
+ * Per server the visitor is in, who has copies to lend; card_lenders() decides who may show.
+ * Copies in the visitor's borrow languages first, the rest folded into "also".
+ */
+function WhoHasIt({ lenders, languages }: { lenders: Lender[]; languages: string[] }) {
   const guilds = [...new Map(lenders.map((l) => [l.guild_id, l.guild_name])).entries()];
   return (
     <StatCard title="Who has it?" description="Members of your servers with copies to lend">
@@ -277,13 +280,17 @@ function WhoHasIt({ lenders }: { lenders: Lender[] }) {
             <RankList>
               {lenders
                 .filter((l) => l.guild_id === guildId)
-                .map((l, i) => (
+                .map((l) => ({ l, c: borrowCopies(l.copies, languages) }))
+                // Stable: within each group, the database's order (most copies first).
+                .toSorted((a, b) => Number(b.c.matches > 0) - Number(a.c.matches > 0))
+                .map(({ l, c }, i) => (
                   <MemberRankRow
                     key={l.user_id}
                     rank={i + 1}
                     name={l.display_name}
                     avatarUrl={l.avatar_url}
-                    value={perLanguage(l.copies)}
+                    value={c.value}
+                    detail={c.also}
                     href={`/u/${l.user_id}`}
                   />
                 ))}

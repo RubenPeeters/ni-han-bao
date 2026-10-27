@@ -18,6 +18,29 @@ export const languageCode = (code: string) => code.split("-")[0].toUpperCase();
 export const perLanguage = (copies: { language: string; copies: number }[] | number) =>
   // A database not yet migrated still returns the old total: show it rather than take the page down.
   typeof copies === "number" ? `${copies} to lend` : copies.map((c) => `${languageCode(c.language)} ${c.copies}`).join(" · ");
+/**
+ * Which languages a borrower takes (#298), first match wins: the borrow request's own choice,
+ * the deck's language when it takes no other, the member's Settings.
+ */
+export function borrowLanguages(member: string[], deck?: { language: string; allow_other_languages: boolean } | null, request?: string[] | null) {
+  if (request?.length) return request;
+  if (deck && !deck.allow_other_languages) return [deck.language];
+  return member;
+}
+/**
+ * A lender's copies for Who has it?: those in the borrower's languages as the row's value, the
+ * rest folded into "also: FR 1". A database not yet migrated returns a total: all of it matches.
+ */
+export function borrowCopies(copies: { language: string; copies: number }[] | number, languages: string[]) {
+  if (typeof copies === "number") return { value: perLanguage(copies), also: null, matches: copies };
+  const match = copies.filter((c) => languages.includes(c.language));
+  const other = copies.filter((c) => !languages.includes(c.language));
+  return {
+    value: match.length ? perLanguage(match) : "-",
+    also: other.length ? `also: ${perLanguage(other)}` : null,
+    matches: match.reduce((n, c) => n + c.copies, 0),
+  };
+}
 /** Which number a tile's stepper changes. */
 export type Mode = "quantity" | "for_trade" | "lendable";
 
