@@ -12,6 +12,10 @@ export type Finish = (typeof FINISHES)[number];
 export type Condition = (typeof CONDITIONS)[number];
 export type Language = (typeof LANGUAGES)[number]["code"];
 export const languageName = (code: string) => LANGUAGES.find((l) => l.code === code)?.name ?? code;
+/** Who has it?'s copies to lend per language, as riftbound_free_to_lend() returns them: "EN 1 · FR 1". */
+export const perLanguage = (copies: { language: string; copies: number }[] | number) =>
+  // A database not yet migrated still returns the old total: show it rather than take the page down.
+  typeof copies === "number" ? `${copies} to lend` : copies.map((c) => `${c.language.split("-")[0].toUpperCase()} ${c.copies}`).join(" · ");
 /** Which number a tile's stepper changes. */
 export type Mode = "quantity" | "for_trade" | "lendable";
 
