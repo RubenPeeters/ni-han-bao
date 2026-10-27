@@ -41,6 +41,33 @@ export function borrowCopies(copies: { language: string; copies: number }[] | nu
     matches: match.reduce((n, c) => n + c.copies, 0),
   };
 }
+/** A lender's copies to lend in every language, the most a request can ask of them. */
+export const totalCopies = (copies: { language: string; copies: number }[] | number) =>
+  typeof copies === "number" ? copies : copies.reduce((n, c) => n + c.copies, 0);
+/**
+ * Ask for all missing (#299): per lender, each missing card they lend, prefilled with as many as
+ * they have in the borrower's languages, else in any, never more than is missing. A pinned
+ * printing's row asks for its card: requests name cards, the lender picks the copies.
+ */
+export function askAllMissing<L extends { card_id: string; printing_id: string | null; user_id: string; copies: { language: string; copies: number }[] | number }>(
+  missing: { card_id: string; printing_id: string | null; name: string; missing: number }[],
+  lenders: L[],
+  languages: string[],
+) {
+  const asks = new Map<string, { lender: L; cards: Map<string, { card_id: string; name: string; count: number; max: number }> }>();
+  for (const m of missing) {
+    for (const l of lenders.filter((x) => x.card_id === m.card_id && x.printing_id === m.printing_id)) {
+      const ask = asks.get(l.user_id) ?? { lender: l, cards: new Map() };
+      asks.set(l.user_id, ask);
+      const max = totalCopies(l.copies);
+      const card = ask.cards.get(m.card_id) ?? { card_id: m.card_id, name: m.name, count: 0, max: 0 };
+      card.max = Math.max(card.max, max);
+      card.count = Math.min(card.count + Math.min(m.missing, borrowCopies(l.copies, languages).matches || max), card.max);
+      ask.cards.set(m.card_id, card);
+    }
+  }
+  return [...asks.values()].map((a) => ({ lender: a.lender, cards: [...a.cards.values()] }));
+}
 /** Which number a tile's stepper changes. */
 export type Mode = "quantity" | "for_trade" | "lendable";
 

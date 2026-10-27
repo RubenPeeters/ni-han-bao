@@ -3,7 +3,8 @@
 -- servers only; that profiles follow their visibility (#100); that the lending ledger holds
 -- (#172); that decks follow their visibility (#173) and only public ones are remembered as
 -- opened (#174), their versions with them (#176), and wishlists their profile (#177); that trade
--- matches follow it too (#178), and decks not for lending hold their cards (#179); that only public decks are teased logged
+-- matches follow it too (#178), and decks not for lending hold their cards (#179); that borrow requests
+-- reach only lenders Who has it? shows (#299); that only public decks are teased logged
 -- out (#175); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`; migrate.yml runs it on the dev project after the seed.
@@ -150,6 +151,10 @@ begin
     if exists (select from public.riftbound_loans) or exists (select from public.riftbound_loan_cards)
         or exists (select from public.riftbound_loan_entries) then
         raise exception 'anon reads a loan';
+    end if;
+    if exists (select from public.riftbound_borrow_requests) or exists (select from public.riftbound_borrow_request_cards)
+        or exists (select from public.riftbound_borrow_request_answers) or exists (select from public.riftbound_borrow_request_dms) then
+        raise exception 'anon reads a borrow request';
     end if;
     if exists (select from public.riftbound_decks) or exists (select from public.riftbound_deck_cards) then
         raise exception 'anon reads a deck, even a public one';
@@ -311,6 +316,36 @@ begin
         or (select count(*) from public.profile_loans('rls-rls-mine')) <> 1
         or exists (select from public.profile_loans('rls-public')) or exists (select from public.profile_loans('rls-rls-other')) then
         raise exception 'profile_loans() shows loans the visitor is not a party to';
+    end if;
+    -- Borrow requests (#299): only of a lender Who has it? shows, for copies they have to lend
+    -- in the languages asked, one open per card; read by the parties through my_borrow_requests().
+    begin
+        perform public.ask_to_borrow('rls-rls-mine', '[{"card_id": "rls-card", "quantity": 1}]', '{fr}', null, null);
+        raise exception 'a request asks for copies the lender does not have in those languages';
+    exception when raise_exception then
+        if sqlerrm like 'a request%' then raise; end if;
+    end;
+    begin
+        perform public.ask_to_borrow('rls-hidden', '[{"card_id": "rls-card", "quantity": 1}]', '{en}', null, null);
+        raise exception 'a hidden member can be asked to lend';
+    exception when raise_exception then
+        if sqlerrm like 'a hidden%' then raise; end if;
+    end;
+    perform public.ask_to_borrow('rls-rls-mine', '[{"card_id": "rls-card", "quantity": 1}]', '{en}', null, 'please');
+    begin
+        perform public.ask_to_borrow('rls-rls-mine', '[{"card_id": "rls-card", "quantity": 1}]', '{en}', null, null);
+        raise exception 'two open requests for one card';
+    exception when raise_exception then
+        if sqlerrm like 'two open%' then raise; end if;
+    end;
+    if exists (select from public.riftbound_borrow_requests) or exists (select from public.riftbound_borrow_request_cards) then
+        raise exception 'a member reads borrow requests directly';
+    end if;
+    if (select array_agg(other_id || ':' || asked || ':' || state) from public.my_borrow_requests()) <> array['rls-rls-mine:true:open']
+        or public.decline_my_borrow_request((select id from public.my_borrow_requests()), null) <> 'not_lender'
+        or public.cancel_borrow_request((select id from public.my_borrow_requests())) <> 'ok'
+        or public.cancel_borrow_request((select id from public.my_borrow_requests())) <> 'closed' then
+        raise exception 'my_borrow_requests() or Cancel does not follow the parties';
     end if;
     if not exists (select from public.profile_collection('rls-rls-mine')) or exists (select from public.profile_collection('rls-rls-other'))
         or exists (select from public.profile_collection('rls-hidden')) then
@@ -784,6 +819,9 @@ begin
     if exists (select from public.riftbound_loans where 'rls-user' in (lender_id, borrower_id))
         or exists (select from public.riftbound_loans where borrower_id = 'rls-public' and lender_id = 'rls-rls-mine' and replaces is not null) then
         raise exception 'forget_user() leaves the user''s loans';
+    end if;
+    if exists (select from public.riftbound_borrow_requests where 'rls-user' in (lender_id, borrower_id)) then
+        raise exception 'forget_user() leaves the user''s borrow requests';
     end if;
     if public.lend_riftbound_cards('rls-rls-mine', 'rls-user', null, null,
         '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"en","quantity":1}]') is not null then
