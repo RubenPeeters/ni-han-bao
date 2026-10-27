@@ -36,6 +36,17 @@ export function rankRows(userId: string, entries: readonly LeagueEntry[]): RankR
     }));
 }
 
+/**
+ * The rows to append to the rank history: each queue whose tier or division differs from its
+ * last recorded one, or that has none yet (the baseline). LP alone is no change.
+ */
+export function rankChanges<T extends RankRow>(last: readonly Pick<RankRow, "queue" | "tier" | "division">[], now: readonly T[]): T[] {
+  return now.filter((r) => {
+    const before = last.find((l) => l.queue === r.queue);
+    return !before || before.tier !== r.tier || before.division !== r.division;
+  });
+}
+
 /** "GOLD" -> "Gold": the role name. */
 export function tierName(tier: string): string {
   return tier.charAt(0) + tier.slice(1).toLowerCase();
