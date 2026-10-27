@@ -5,7 +5,7 @@ import { CardThumb } from "@/components/card-thumb";
 import { DomainIcon, RarityIcon, RulesText, SupertypeIcon, TypeIcon, type RiftboundIcon } from "@/components/riftbound-icons";
 import { LogInPrompt } from "@/components/server-picker";
 import { EmptyState, ErrorState, MemberRankRow, RankList, StatCard } from "@/components/stat-ui";
-import { languageName, type Language, type OwnedRow } from "@/lib/collection";
+import { perLanguage, type Language, type OwnedRow } from "@/lib/collection";
 import { allPages } from "@/lib/decks";
 import { createClient } from "@/lib/supabase/server";
 import { ArrowLeft } from "lucide-react";
@@ -236,8 +236,7 @@ interface Lender {
   user_id: string;
   display_name: string;
   avatar_url: string | null;
-  copies: number;
-  languages: string[];
+  copies: { language: string; copies: number }[];
 }
 
 /** Per server the visitor is in, who has copies to lend; card_lenders() decides who may show. */
@@ -260,8 +259,7 @@ function WhoHasIt({ lenders }: { lenders: Lender[] }) {
                     rank={i + 1}
                     name={l.display_name}
                     avatarUrl={l.avatar_url}
-                    value={`${l.copies} to lend`}
-                    detail={l.languages.map(languageName).join(", ")}
+                    value={perLanguage(l.copies)}
                     href={`/u/${l.user_id}`}
                   />
                 ))}

@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import type { Card, Printing } from "@/bot/src/card-match";
 import { missingCards, type OwnedCopy } from "@/bot/src/deck-match";
 import { deckWanted } from "@/bot/src/lend-copies";
-import { languageName } from "@/lib/collection";
+import { perLanguage } from "@/lib/collection";
 import { allPages, deckChanges, SECTIONS, VISIBILITIES, type Entry, type Pin } from "@/lib/decks";
 import { formatExact } from "@/lib/time";
 import { createClient } from "@/lib/supabase/server";
@@ -371,8 +371,8 @@ interface CardLender {
   user_id: string;
   display_name: string;
   avatar_url: string | null;
-  copies: number;
-  languages: string[] | null;
+  /** Per language, after decks not for lending hold theirs. */
+  copies: { language: string; copies: number }[];
 }
 
 interface MissingCard {
@@ -426,8 +426,7 @@ function WhoHasMissing({
                         rank={i + 1}
                         name={l.display_name}
                         avatarUrl={l.avatar_url}
-                        value={`${l.copies} to lend`}
-                        detail={(l.languages ?? []).map(languageName).join(", ")}
+                        value={perLanguage(l.copies)}
                         href={`/u/${l.user_id}`}
                       />
                     ))}

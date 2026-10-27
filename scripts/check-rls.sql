@@ -299,7 +299,7 @@ begin
         raise exception 'a member reads collection rows that are not theirs';
     end if;
     -- rls-rls-mine has 2 and lent 1 (#172): the lent copy is not on offer.
-    if (select array_agg(user_id || ':' || copies) from public.card_lenders('rls-card')) <> array['rls-rls-mine:1'] then
+    if (select array_agg(user_id || ':' || copies) from public.card_lenders('rls-card')) <> array['rls-rls-mine:[{"copies": 1, "language": "en"}]'] then
         raise exception 'card_lenders() does not list just the visible lenders of the visitor''s servers, or offers lent copies';
     end if;
     -- Loans (#172): only the parties, through profile_loans().
@@ -626,14 +626,32 @@ set role postgres;
 do $$
 declare kept uuid := (select id from public.riftbound_decks where user_id = 'rls-rls-mine' and name = 'private');
 begin
-    if (select copies from public.riftbound_free_to_lend('rls-rls-mine') where card_id = 'rls-card') <> 2 then
+    if (select copies from public.riftbound_free_to_lend('rls-rls-mine') where card_id = 'rls-card') <> '[{"language":"en","copies":2}]' then
         raise exception 'riftbound_free_to_lend() does not offer the copies in hand';
     end if;
     update public.riftbound_decks set not_for_lending = true where id = kept;
-    if (select copies from public.riftbound_free_to_lend('rls-rls-mine') where card_id = 'rls-card') <> 1
-        or (select held from public.riftbound_lend_options('rls-rls-mine', array['rls-card'], null)) <> 1 then
+    if (select copies from public.riftbound_free_to_lend('rls-rls-mine') where card_id = 'rls-card') <> '[{"language":"en","copies":1}]'
+        or (select holds from public.riftbound_lend_options('rls-rls-mine', array['rls-card'], null)) <> '[{"language":"en","copies":1}]' then
         raise exception 'a deck not for lending does not hold its cards back';
     end if;
+    -- Per language (#296): 2 EN and 1 FR, the English deck holds 1 EN, so 1 of each is free;
+    -- once it holds 3, the FR one too, and no language is left to list.
+    insert into public.riftbound_collection (user_id, printing_id, finish, condition, language, quantity)
+    values ('rls-rls-mine', 'rls-printing', 'normal', 'NM', 'fr', 1);
+    if (select copies from public.riftbound_free_to_lend('rls-rls-mine') where card_id = 'rls-card')
+        <> '[{"language":"en","copies":1},{"language":"fr","copies":1}]' then
+        raise exception 'riftbound_free_to_lend() does not hold a deck''s copies in its own language first';
+    end if;
+    update public.riftbound_deck_cards set quantity = 2 where deck_id = kept;
+    if (select copies from public.riftbound_free_to_lend('rls-rls-mine') where card_id = 'rls-card') <> '[{"language":"fr","copies":1}]' then
+        raise exception 'riftbound_free_to_lend() lists a language with no free copy';
+    end if;
+    update public.riftbound_deck_cards set quantity = 3 where deck_id = kept;
+    if exists (select from public.riftbound_free_to_lend('rls-rls-mine') where card_id = 'rls-card') then
+        raise exception 'riftbound_free_to_lend() does not spill a deck''s hold into other languages';
+    end if;
+    update public.riftbound_deck_cards set quantity = 1 where deck_id = kept;
+    delete from public.riftbound_collection where user_id = 'rls-rls-mine' and language = 'fr';
     begin
         perform public.lend_riftbound_cards('rls-rls-mine', 'rls-user', null, null, '[]', kept);
         raise exception 'a deck not for lending is lent';
@@ -648,18 +666,18 @@ declare deck uuid; loan bigint;
     cards constant jsonb := '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"zh-Hans","quantity":1}]';
 begin
     if (select array_agg(card_id || ':' || user_id || ':' || copies) from public.riftbound_card_lenders(array['rls-card', 'rls-card-2']))
-        <> array['rls-card:rls-rls-mine:1'] then
+        <> array['rls-card:rls-rls-mine:[{"copies": 1, "language": "en"}]'] then
         raise exception 'riftbound_card_lenders() offers copies a deck not for lending holds, or lenders who may not show';
     end if;
     if (select array_agg(coalesce(printing_id, '-') || ':' || copies order by printing_id nulls first)
-        from public.riftbound_card_lenders(array['rls-card'], array['rls-printing'])) <> array['-:1', 'rls-printing:1']
+        from public.riftbound_card_lenders(array['rls-card'], array['rls-printing'])) <> array['-:[{"copies": 1, "language": "en"}]', 'rls-printing:[{"copies": 1, "language": "en"}]']
         or exists (select from public.riftbound_card_lenders(array['rls-card'], array['rls-printing'], 'fr')) then
         raise exception 'riftbound_card_lenders() does not match a pinned printing, or offers copies in another language';
     end if;
     deck := public.save_riftbound_deck(null, 'lend me', null, null, null, null, null, null,
         '[{"section":"main","card_id":"rls-card","printing_id":null,"quantity":1}]');
-    if (select string_agg(language || ':' || quantity || ':' || lendable || ':' || held, ',')
-        from public.my_riftbound_lend_options(array['rls-card'])) <> 'zh-Hans:3:0:0' then
+    if (select string_agg(language || ':' || quantity || ':' || lendable || ':' || holds, ',')
+        from public.my_riftbound_lend_options(array['rls-card'])) <> 'zh-Hans:3:0:[]' then
         raise exception 'my_riftbound_lend_options() is not the caller''s own copies';
     end if;
     begin
