@@ -82,6 +82,9 @@ begin
     select u, 'lol', u, 'euw1' from unnest(array['rls-rls-mine', 'rls-rls-other', 'rls-hidden']) u;
     insert into public.lol_ranks (user_id, queue, tier, division, lp)
     select u, 'RANKED_SOLO_5x5', 'GOLD', 'II', 47 from unnest(array['rls-rls-mine', 'rls-rls-other', 'rls-hidden']) u;
+    -- League rank history (#301): no policies, read by nobody but the bot.
+    insert into public.lol_rank_changes (user_id, puuid, queue, tier, division, lp)
+    select u, u, 'RANKED_SOLO_5x5', 'GOLD', 'II', 47 from unnest(array['rls-rls-mine', 'rls-rls-other', 'rls-hidden']) u;
     -- League games (#104): read through functions only, per server. An hour ago: now() does not
     -- move inside a transaction, and lol_week() counts played_at < now().
     insert into public.lol_matches (user_id, puuid, match_id, queue_id, champion, played_at)
@@ -173,6 +176,7 @@ begin
     if exists (select from public.lol_ranks) or exists (select from public.profile_ranks('rls-rls-mine')) then
         raise exception 'anon reads a rank';
     end if;
+    if exists (select from public.lol_rank_changes) then raise exception 'anon reads rank history'; end if;
     if exists (select from public.lol_matches) or public.profile_lol_champion('rls-rls-mine') is not null then
         raise exception 'anon reads League games';
     end if;
@@ -272,6 +276,7 @@ begin
     if exists (select from public.activity_seconds) then raise exception 'a member reads game time directly'; end if;
     if exists (select from public.game_accounts) then raise exception 'a member reads linked accounts'; end if;
     if exists (select from public.lol_ranks) then raise exception 'a member reads ranks directly'; end if;
+    if exists (select from public.lol_rank_changes) then raise exception 'a member reads rank history directly'; end if;
     if exists (select from public.lol_matches) then raise exception 'a member reads League games directly'; end if;
     if (select array_agg(user_id || ':' || games order by user_id) from public.guild_lol_week('rls-mine'))
         <> array['rls-rls-mine:1', 'rls-user:0'] then

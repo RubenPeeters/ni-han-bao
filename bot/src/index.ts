@@ -93,7 +93,7 @@ import { isDiscordUrl, storeImage } from "./store-image.js";
 import { challengeText, GAME, LOL_COMMAND, startLink, verifyLink, type Platform, type RiotLookup } from "./lol.js";
 import { PROFILE_COMMAND, setProfileVisibility } from "./profile.js";
 import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type Match, type MatchRow } from "./matches.js";
-import { rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
+import { rankChanges, rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
 import { addToCollection, COLLECTION_COMMAND, setLending } from "./collection.js";
 import { deckText, type DeckEntry, type OwnedCopy } from "./deck-match.js";
@@ -2311,6 +2311,19 @@ async function refreshRankNow(userId: string, puuid: string, platform: string): 
     // Fails on the foreign key when the account was unlinked meanwhile, which is what we want.
     const { error } = await db.from("lol_ranks").upsert(rows, { onConflict: "user_id,queue" });
     if (error) throw new Error(`lol_ranks upsert: ${error.message}`);
+    // Newest first, so rankChanges() compares each queue with its latest row.
+    const last = await db
+      .from("lol_rank_changes")
+      .select("queue, tier, division")
+      .eq("user_id", userId)
+      .eq("puuid", puuid)
+      .order("changed_at", { ascending: false });
+    if (last.error) throw new Error(`lol_rank_changes: ${last.error.message}`);
+    const changes = rankChanges(last.data, rows).map(({ updated_at, ...r }) => ({ ...r, puuid, changed_at: updated_at }));
+    if (changes.length) {
+      const { error } = await db.from("lol_rank_changes").insert(changes);
+      if (error) throw new Error(`lol_rank_changes insert: ${error.message}`);
+    }
   }
   // Queues no longer ranked in (a new season, or decayed out) go.
   let stale = db.from("lol_ranks").delete().eq("user_id", userId);
