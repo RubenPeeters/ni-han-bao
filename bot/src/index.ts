@@ -3123,7 +3123,8 @@ async function checkCardFeed(): Promise<void> {
   }
   const stored = await storedCatalogue();
   const diff = diffCatalogue(fetched.catalogue, stored);
-  if (diff.sets.length === 0 && diff.icons.length === 0) {
+  // Findings alone are still asked about: a stale correction leaves the corrected catalogue unchanged.
+  if (diff.sets.length === 0 && diff.icons.length === 0 && fetched.catalogue.findings.length === 0) {
     log("info", "riftbound_feed_unchanged", { build_id: fetched.buildId });
     return;
   }
@@ -3151,8 +3152,10 @@ async function checkCardFeed(): Promise<void> {
     if (findings.length) log("warn", "riftbound_feed_findings", { build_id: fetched.buildId, findings });
     const owner = await ownerId();
     if (!owner) throw new Error("the application has no owner");
+    const message = proposalMessage(fetched.buildId, diff, id, findings);
     await client.users.send(owner, {
-      ...feedback(proposalMessage(fetched.buildId, diff, id, findings), "catalogue"),
+      ...feedback(message, "catalogue"),
+      files: message.files,
       allowedMentions: { parse: [] },
     });
     log("info", "riftbound_feed_proposed", { proposal: id, build_id: fetched.buildId, ...proposalCounts(diff) });
