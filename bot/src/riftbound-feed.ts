@@ -71,12 +71,11 @@ const occurrences = (text: string | null, token: string) => (text ?? "").split(t
 
 /**
  * The printing's rules text as printed: each text correction's token replaced, where it occurs
- * exactly once, so the rest stays Riot's text. Already fixed by Riot is left to staleFindings.
+ * exactly once, so the rest stays Riot's text. Any other count, Riot's fix included, fails the fetch.
  */
 export function correctText(text: string | null, c: Correction): string | null {
   for (const t of c.text ?? []) {
     const n = occurrences(text, t.feed);
-    if (n === 0 && occurrences(text, t.printed) > 0) continue;
     if (n !== 1) throw new Error(`text correction for ${c.printing}: ${t.feed} occurs ${n} times in its rules text, expected once`);
     text = text!.split(t.feed).join(t.printed);
   }

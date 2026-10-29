@@ -171,8 +171,8 @@ describe("corrections", () => {
     expect(() => correctText(":rb_rune_rainbow: :rb_rune_rainbow:", twice)).toThrow("text correction for RAD-150/167: :rb_rune_rainbow: occurs 2 times");
     expect(() => transformFeed(items, { "blade-of-the-exile": { ...blade, text: [{ ...text[0], feed: ":rb_rune_order:" }] } }))
       .toThrow("text correction for RAD-150/167: :rb_rune_order: occurs 0 times");
-    // Riot fixed it: left as it is, reported as a stale correction.
-    expect(correctText("<p>:rb_rune_calm:</p>", { ...blade, text })).toBe("<p>:rb_rune_calm:</p>");
+    // Riot's fix fails too: the printed token alone does not show which occurrence they changed.
+    expect(() => correctText("<p>:rb_rune_calm:</p>", { ...blade, text })).toThrow("text correction for RAD-150/167: :rb_rune_rainbow: occurs 0 times");
     expect(() => transformFeed(items, { "blade-of-the-exile": { ...blade, text: [{ ...text[0], printed: "calm" }] } })).toThrow(/is not one icon token/);
   });
 
