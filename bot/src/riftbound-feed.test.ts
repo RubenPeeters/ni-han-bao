@@ -189,6 +189,7 @@ describe("manifest", () => {
       fetched_at: "1970-01-01T00:00:00.000Z",
       printings_per_set: { OGN: 4, OGS: 0, SFD: 2, UNL: 1, VEN: 3, RAD: 1 },
       untyped: ["buff"],
+      findings: [],
     });
     expect(m.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -198,7 +199,7 @@ describe("bot/riftbound-cards.json", () => {
   it("is in the committed format and matches its manifest", () => {
     const committed = readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8");
     const m = JSON.parse(readFileSync(new URL("../riftbound-cards.manifest.json", import.meta.url), "utf8"));
-    expect(cardsJson({ ...JSON.parse(committed), untyped: [], textDifferences: [] })).toBe(committed);
+    expect(cardsJson({ ...JSON.parse(committed), untyped: [], textDifferences: [], findings: [] })).toBe(committed);
     expect(createHash("sha256").update(committed).digest("hex")).toBe(m.sha256);
   });
 
