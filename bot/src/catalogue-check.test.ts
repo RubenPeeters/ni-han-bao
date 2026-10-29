@@ -125,6 +125,30 @@ describe("proposalMessage", () => {
   });
 });
 
+describe("proposalMessage findings", () => {
+  const finding = (n: number) => ({
+    check: "domain symbol" as const, printing: `RAD-${String(n).padStart(3, "0")}/167`, feed: "Chaos", other: "card image Fury",
+    image_url: "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/3dca5e04ff8dff983993f87d5a82a7fd56d7bc9c-744x1039.png?accountingTag=RB",
+  });
+
+  it("lists the first findings with their images and counts the rest, within Discord's limits", () => {
+    const diff = diffCatalogue(feed, { cards: [], printings: [], icons: [] });
+    const findings = Array.from({ length: 40 }, (_, i) => finding(i + 1));
+    const message = JSON.stringify(proposalMessage("x", diff, 1, findings));
+    expect(message).toContain("40 values in the feed disagree with another source:");
+    expect(message).toContain("- RAD-001/167 domain symbol: feed Chaos, card image Fury (https://cmsassets.rgpub.io/");
+    expect(message).toContain("- and 35 more, in the bot's log");
+    expect(message).not.toContain("RAD-006/167");
+    const inside = (JSON.parse(message).components[0].components as { content?: string; items?: { description: string }[] }[]);
+    expect(inside.flatMap((c) => [c.content ?? "", ...(c.items ?? []).map((i) => i.description)]).join("").length).toBeLessThanOrEqual(MAX_TEXT);
+  });
+
+  it("says nothing when there are none", () => {
+    const diff = diffCatalogue(feed, { cards: [], printings: [], icons: [] });
+    expect(JSON.stringify(proposalMessage("x", diff, 1, []))).not.toContain("disagree");
+  });
+});
+
 describe("brokenText", () => {
   it("says why and that nothing changed", () => {
     expect(brokenText(new Error("expected one card array in the feed, found 0"))).toBe(

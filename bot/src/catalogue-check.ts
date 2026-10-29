@@ -4,6 +4,7 @@ import { ButtonStyle, ComponentType, MessageFlags, type APIComponentInContainer,
 import { createHash } from "node:crypto";
 import { byPrinting, cardImageUrl } from "./card-match.js";
 import { type V2 } from "./riftbound-reply.js";
+import { findingText, type Finding } from "./riftbound-checks.js";
 import { cardsJson, SET_ORDER, type FeedCard, type FeedCatalogue, type FeedIcon, type FeedPrinting } from "./riftbound-feed.js";
 
 export const CARD_COLUMNS = "id, name, type, supertypes, domains, energy, might, tags, rules_text, placeholder";
@@ -90,9 +91,14 @@ const some = (count: number, label: string, names: string[]) =>
 
 // Media galleries take up to 10 images.
 const GALLERY_MAX = 10;
+// With their image URLs, within the message's 4000 characters; the log has them all.
+const FIRST_FINDINGS = 5;
 
-/** The DM that asks the owner to accept a feed: per set its counts and new cards' pictures, Accept and Reject. */
-export function proposalMessage(buildId: string, diff: CatalogueDiff, proposal: number): V2 {
+/**
+ * The DM that asks the owner to accept a feed: per set its counts and new cards' pictures, the
+ * feed's values another source disagrees with (#324), Accept and Reject.
+ */
+export function proposalMessage(buildId: string, diff: CatalogueDiff, proposal: number, findings: Finding[] = []): V2 {
   const text = (content: string): APITextDisplayComponent => ({ type: ComponentType.TextDisplay, content });
   const sets = diff.sets.flatMap((s): APIComponentInContainer[] => {
     const added = new Set(diff.cards.filter((c) => s.added.includes(c.name)).map((c) => c.id));
@@ -106,6 +112,13 @@ export function proposalMessage(buildId: string, diff: CatalogueDiff, proposal: 
     return [text(line), ...(items.length ? [{ type: ComponentType.MediaGallery as const, items }] : [])];
   });
   const icons = diff.icons.length ? [text(some(diff.icons.length, "new or changed icons", diff.icons.map((i) => i.label)))] : [];
+  const checks = findings.length
+    ? [text([
+        `${findings.length} value${findings.length === 1 ? "" : "s"} in the feed disagree with another source:`,
+        ...findings.slice(0, FIRST_FINDINGS).map((f) => `- ${findingText(f)}`),
+        ...(findings.length > FIRST_FINDINGS ? [`- and ${findings.length - FIRST_FINDINGS} more, in the bot's log`] : []),
+      ].join("\n"))]
+    : [];
   return {
     components: [
       {
@@ -114,6 +127,7 @@ export function proposalMessage(buildId: string, diff: CatalogueDiff, proposal: 
           text(`Riot's Riftbound card feed (build \`${buildId}\`) differs from the catalogue.`),
           ...sets,
           ...icons,
+          ...checks,
           text("Accept writes the new and changed cards. Cards no longer in the feed stay: collections, decks and loans point at them."),
         ],
       },

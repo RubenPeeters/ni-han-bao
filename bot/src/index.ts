@@ -157,6 +157,7 @@ import { CARD_COMMAND, cardChoices, cardMiss, lookupCard, type Catalogue } from 
 import { callerName, cardMessage, PAGING_MS, PAGING_OVER, parsePageButtonId, shownPage, type V2 } from "./riftbound-reply.js";
 import { emojiImage, emojiPlan, wantedEmojis, type Emojis } from "./emojis.js";
 import { CORRECTIONS, feedItems, fetchFeed, transformFeed, type FeedCard, type FeedIcon, type FeedPrinting } from "./riftbound-feed.js";
+import { symbolFindings } from "./riftbound-checks.js";
 import {
   brokenText,
   CARD_COLUMNS,
@@ -3120,7 +3121,8 @@ async function checkCardFeed(): Promise<void> {
     }
     return;
   }
-  const diff = diffCatalogue(fetched.catalogue, await storedCatalogue());
+  const stored = await storedCatalogue();
+  const diff = diffCatalogue(fetched.catalogue, stored);
   if (diff.sets.length === 0 && diff.icons.length === 0) {
     log("info", "riftbound_feed_unchanged", { build_id: fetched.buildId });
     return;
@@ -3140,9 +3142,19 @@ async function checkCardFeed(): Promise<void> {
   }
   const id = inserted[0].id as number;
   try {
+    // The domain symbols of printings new to the catalogue (#324): a failed read is a finding, never a failed check.
+    const known = new Set(stored.printings.map((p) => p.id));
+    const findings = [
+      ...fetched.catalogue.findings,
+      ...(await symbolFindings(fetched.catalogue.cards, fetched.catalogue.printings.filter((p) => !known.has(p.id)))),
+    ];
+    if (findings.length) log("warn", "riftbound_feed_findings", { build_id: fetched.buildId, findings });
     const owner = await ownerId();
     if (!owner) throw new Error("the application has no owner");
-    await client.users.send(owner, { ...feedback(proposalMessage(fetched.buildId, diff, id), "catalogue"), allowedMentions: { parse: [] } });
+    await client.users.send(owner, {
+      ...feedback(proposalMessage(fetched.buildId, diff, id, findings), "catalogue"),
+      allowedMentions: { parse: [] },
+    });
     log("info", "riftbound_feed_proposed", { proposal: id, build_id: fetched.buildId, ...proposalCounts(diff) });
   } catch (err) {
     // Unasked, so the next check asks again.
