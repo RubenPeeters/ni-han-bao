@@ -4,7 +4,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { SET_NAMES } from "./card-match.js";
-import { printingFindings, staleFindings, type Finding } from "./riftbound-checks.js";
+import { printingFindings, runeFindings, staleFindings, type Finding } from "./riftbound-checks.js";
 import { catalogueJson, type Card, type Printing } from "./riftbound.js";
 
 export const SITE_URL = "https://playriftbound.com/en-us/";
@@ -53,6 +53,10 @@ export interface Correction {
   type?: string;
   domains?: string[];
   source: string[];
+  // A wrong icon token in the printing's rules text (#328): the feed's token and the printed one.
+  text?: { feed: string; printed: string; source: string }[];
+  // The printing's rune tokens name another domain on purpose, checked on the card (#328).
+  runes_checked?: boolean;
 }
 export type Corrections = Record<string, Correction>;
 export const CORRECTIONS: Corrections = JSON.parse(
@@ -62,6 +66,21 @@ export const CORRECTIONS: Corrections = JSON.parse(
 /** The card as it is printed: the correction's type and domains over the feed's. */
 export const correct = (card: FeedCard, c: Correction | undefined): FeedCard =>
   c ? { ...card, type: c.type ?? card.type, domains: c.domains ?? card.domains } : card;
+
+const occurrences = (text: string | null, token: string) => (text ?? "").split(token).length - 1;
+
+/**
+ * The printing's rules text as printed: each text correction's token replaced, where it occurs
+ * exactly once, so the rest stays Riot's text. Any other count, Riot's fix included, fails the fetch.
+ */
+export function correctText(text: string | null, c: Correction): string | null {
+  for (const t of c.text ?? []) {
+    const n = occurrences(text, t.feed);
+    if (n !== 1) throw new Error(`text correction for ${c.printing}: ${t.feed} occurs ${n} times in its rules text, expected once`);
+    text = text!.split(t.feed).join(t.printed);
+  }
+  return text;
+}
 
 /** The build id in Riot's home page, which changes on every deploy of their site. */
 export function buildId(html: string): string {
@@ -222,7 +241,10 @@ export function transformFeed(items: unknown[], corrections: Corrections = {}): 
   const parsed = items.map(parse);
   for (const p of parsed) {
     const c = corrections[p.card.id];
-    if (c?.printing === p.printing.collector_code) findings.push(...staleFindings(p.card, c, p.printing.image_url!));
+    if (c?.printing === p.printing.collector_code) {
+      findings.push(...staleFindings(p.card, c, p.printing.image_url!));
+      p.printing.rules_text = p.card.rules_text = correctText(p.printing.rules_text, c);
+    }
     p.card = correct(p.card, c);
     bySlug.set(p.card.id, [...(bySlug.get(p.card.id) ?? []), p]);
     for (const i of p.icons) {
@@ -241,8 +263,11 @@ export function transformFeed(items: unknown[], corrections: Corrections = {}): 
       throw new Error(`correction for ${id}: no printing ${c.printing} of it in the feed`);
     if (c.type !== undefined && !types.has(c.type)) throw new Error(`correction for ${id}: unknown type ${c.type}`);
     for (const d of c.domains ?? []) if (!domains.has(d)) throw new Error(`correction for ${id}: unknown domain ${d}`);
+    for (const t of c.text ?? [])
+      if (![t.feed, t.printed].every((x) => /^:rb_[a-z0-9_]+:$/.test(x))) throw new Error(`correction for ${id}: text ${t.feed} to ${t.printed} is not one icon token`);
   }
-  for (const p of parsed) findings.push(...printingFindings(p.card, p.printing, p.alt, types));
+  for (const p of parsed)
+    findings.push(...printingFindings(p.card, p.printing, p.alt, types), ...runeFindings(p.card, p.printing, corrections[p.card.id]));
 
   const cards: FeedCard[] = [];
   const printings: FeedPrinting[] = [];
