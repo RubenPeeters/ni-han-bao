@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { buildId, cardsJson, feedItems, manifest, slug, transformFeed } from "./riftbound-feed.js";
+import { buildId, cardsJson, CORRECTIONS, correct, feedItems, manifest, slug, transformFeed } from "./riftbound-feed.js";
 
 // Raw cards as Riot's gallery feed gave them on 2026-10-20.
 const feed = JSON.parse(readFileSync(new URL("riftbound-feed.fixture.json", import.meta.url), "utf8"));
@@ -135,6 +135,41 @@ describe("transformFeed", () => {
     other.name = "Body-Rune";
     expect(() => transformFeed([raw("VEN-R04"), other])).toThrow(/body-rune is shared/);
     expect(() => transformFeed([raw("VEN-R04"), raw("VEN-R04")])).toThrow(/repeats printing ids: ven-r04/);
+  });
+});
+
+describe("corrections", () => {
+  const blade = { printing: "RAD-150/167", source: ["card image"] };
+
+  it("overrides only what the correction gives", () => {
+    const buff = card("buff");
+    expect(correct(buff, undefined)).toBe(buff);
+    expect(correct(buff, { ...blade, type: "Spell" })).toEqual({ ...buff, type: "Spell" });
+    expect(correct(buff, { ...blade, domains: ["Calm"] })).toEqual({ ...buff, domains: ["Calm"] });
+  });
+
+  it("applies to the card in the feed", () => {
+    const corrected = transformFeed(items, { "blade-of-the-exile": { ...blade, type: "Unit", domains: ["Body"] } });
+    expect(corrected.cards.find((c) => c.id === "blade-of-the-exile")).toMatchObject({ type: "Unit", domains: ["Body"] });
+    expect(corrected.cards.filter((c) => c.id !== "blade-of-the-exile")).toEqual(catalogue.cards.filter((c) => c.id !== "blade-of-the-exile"));
+  });
+
+  it("fails for a card or printing not in the feed, or a type or domain the feed does not have", () => {
+    expect(() => transformFeed(items, { "pillaged-armory": { printing: "RAD-073/167", domains: ["Body"], source: ["card image"] } }))
+      .toThrow(/correction for pillaged-armory: no printing RAD-073\/167/);
+    expect(() => transformFeed(items, { "blade-of-the-exile": { ...blade, printing: "RAD-151/167", type: "Gear" } })).toThrow(/no printing RAD-151/);
+    expect(() => transformFeed(items, { "blade-of-the-exile": { ...blade, type: "Gears" } })).toThrow(/unknown type Gears/);
+    expect(() => transformFeed(items, { "blade-of-the-exile": { ...blade, domains: ["Furry"] } })).toThrow(/unknown domain Furry/);
+  });
+
+  it("are in bot/riftbound-cards.json", () => {
+    const committed = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8"));
+    for (const [id, c] of Object.entries(CORRECTIONS)) {
+      const printed = committed.cards.find((x: { id: string }) => x.id === id);
+      expect(printed).toEqual(correct(printed, c));
+      expect(committed.printings.find((p: { collector_code: string }) => p.collector_code === c.printing)?.card_id).toBe(id);
+      expect(c.source.every((s) => s === "image alt text" || s === "card image")).toBe(true);
+    }
   });
 });
 

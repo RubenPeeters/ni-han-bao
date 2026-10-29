@@ -3,13 +3,13 @@
 // and the copy in supabase/seed.sql for the dev database. Commit all three; the same feed gives
 // byte-identical files. Production's catalogue changes only through Accept (#204).
 import { readFileSync, writeFileSync } from "node:fs";
-import { cardsJson, feedItems, fetchFeed, manifest, transformFeed } from "./riftbound-feed.js";
+import { CORRECTIONS, cardsJson, feedItems, fetchFeed, manifest, transformFeed } from "./riftbound-feed.js";
 
 const bot = new URL("../", import.meta.url);
 
 const fetchedAt = new Date();
 const { url, buildId, feed } = await fetchFeed();
-const catalogue = transformFeed(feedItems(feed));
+const catalogue = transformFeed(feedItems(feed), CORRECTIONS);
 const json = cardsJson(catalogue);
 writeFileSync(new URL("riftbound-cards.json", bot), json);
 writeFileSync(new URL("riftbound-cards.manifest.json", bot), manifest(catalogue, json, { url, buildId, fetchedAt }));

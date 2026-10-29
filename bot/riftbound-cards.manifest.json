@@ -12,22 +12,9 @@
     "VEN": 237,
     "RAD": 219
   },
-  "sha256": "0e1c11ed6591977dffebff4d28230288f59e05d7bd65282f1e89f285f6c1c35b",
+  "sha256": "85bea1d73942cacc2dfd1a3a1897f313922d1c434d8590e08d5e1efe184bf0f9",
   "untyped": [
-    "antagonistic-apparatus",
     "buff",
-    "entrenched-boar",
-    "fanfare",
-    "hunker-down",
-    "hush",
-    "industrious-mechsmith",
-    "one-two-punch",
-    "pitiless-stalker",
-    "protectors-shield",
-    "raucous-anthem",
-    "rousing-display",
-    "scorched-earth",
-    "whirling-twirligig",
     "xp-tracker"
   ],
   "text_differences": [

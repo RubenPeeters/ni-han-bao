@@ -156,7 +156,7 @@ import {
 import { CARD_COMMAND, cardChoices, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
 import { callerName, cardMessage, PAGING_MS, PAGING_OVER, parsePageButtonId, shownPage, type V2 } from "./riftbound-reply.js";
 import { emojiImage, emojiPlan, wantedEmojis, type Emojis } from "./emojis.js";
-import { feedItems, fetchFeed, transformFeed, type FeedCard, type FeedIcon, type FeedPrinting } from "./riftbound-feed.js";
+import { CORRECTIONS, feedItems, fetchFeed, transformFeed, type FeedCard, type FeedIcon, type FeedPrinting } from "./riftbound-feed.js";
 import {
   brokenText,
   CARD_COLUMNS,
@@ -3076,7 +3076,7 @@ async function ownerId(): Promise<string | null> {
 
 async function readFeedCatalogue() {
   const { buildId, feed } = await fetchFeed();
-  const catalogue = transformFeed(feedItems(feed));
+  const catalogue = transformFeed(feedItems(feed), CORRECTIONS);
   return { buildId, catalogue, checksum: checksum(catalogue) };
 }
 
