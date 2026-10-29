@@ -156,7 +156,8 @@ import {
 import { CARD_COMMAND, cardChoices, cardMiss, lookupCard, type Catalogue } from "./riftbound.js";
 import { callerName, cardMessage, PAGING_MS, PAGING_OVER, parsePageButtonId, shownPage, type V2 } from "./riftbound-reply.js";
 import { emojiImage, emojiPlan, wantedEmojis, type Emojis } from "./emojis.js";
-import { feedItems, fetchFeed, transformFeed, type FeedCard, type FeedIcon, type FeedPrinting } from "./riftbound-feed.js";
+import { CORRECTIONS, feedItems, fetchFeed, transformFeed, type FeedCard, type FeedIcon, type FeedPrinting } from "./riftbound-feed.js";
+import { symbolFindings } from "./riftbound-checks.js";
 import {
   brokenText,
   CARD_COLUMNS,
@@ -3076,7 +3077,7 @@ async function ownerId(): Promise<string | null> {
 
 async function readFeedCatalogue() {
   const { buildId, feed } = await fetchFeed();
-  const catalogue = transformFeed(feedItems(feed));
+  const catalogue = transformFeed(feedItems(feed), CORRECTIONS);
   return { buildId, catalogue, checksum: checksum(catalogue) };
 }
 
@@ -3120,8 +3121,10 @@ async function checkCardFeed(): Promise<void> {
     }
     return;
   }
-  const diff = diffCatalogue(fetched.catalogue, await storedCatalogue());
-  if (diff.sets.length === 0 && diff.icons.length === 0) {
+  const stored = await storedCatalogue();
+  const diff = diffCatalogue(fetched.catalogue, stored);
+  // Findings alone are still asked about: a stale correction leaves the corrected catalogue unchanged.
+  if (diff.sets.length === 0 && diff.icons.length === 0 && fetched.catalogue.findings.length === 0) {
     log("info", "riftbound_feed_unchanged", { build_id: fetched.buildId });
     return;
   }
@@ -3140,9 +3143,21 @@ async function checkCardFeed(): Promise<void> {
   }
   const id = inserted[0].id as number;
   try {
+    // The domain symbols of printings new to the catalogue (#324): a failed read is a finding, never a failed check.
+    const known = new Set(stored.printings.map((p) => p.id));
+    const findings = [
+      ...fetched.catalogue.findings,
+      ...(await symbolFindings(fetched.catalogue.cards, fetched.catalogue.printings.filter((p) => !known.has(p.id)))),
+    ];
+    if (findings.length) log("warn", "riftbound_feed_findings", { build_id: fetched.buildId, findings });
     const owner = await ownerId();
     if (!owner) throw new Error("the application has no owner");
-    await client.users.send(owner, { ...feedback(proposalMessage(fetched.buildId, diff, id), "catalogue"), allowedMentions: { parse: [] } });
+    const message = proposalMessage(fetched.buildId, diff, id, findings);
+    await client.users.send(owner, {
+      ...feedback(message, "catalogue"),
+      files: message.files,
+      allowedMentions: { parse: [] },
+    });
     log("info", "riftbound_feed_proposed", { proposal: id, build_id: fetched.buildId, ...proposalCounts(diff) });
   } catch (err) {
     // Unasked, so the next check asks again.

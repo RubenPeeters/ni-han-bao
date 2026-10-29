@@ -11,7 +11,8 @@
     "test": "vitest run",
     "icons": "tsx src/icons.ts",
     "commands": "tsx src/command-reference.ts",
-    "cards": "tsx src/fetch-cards.ts"
+    "cards": "tsx src/fetch-cards.ts",
+    "cards:check-images": "tsx src/check-images.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

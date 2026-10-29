@@ -12,6 +12,7 @@ import {
 import { ComponentType } from "discord.js";
 import { MAX_COMPONENTS, MAX_TEXT } from "./riftbound-reply.js";
 import { feedItems, transformFeed, type FeedCard } from "./riftbound-feed.js";
+import { findingText } from "./riftbound-checks.js";
 
 const feed = transformFeed(feedItems(JSON.parse(readFileSync(new URL("riftbound-feed.fixture.json", import.meta.url), "utf8"))));
 // What the database returns: the same columns, from an earlier copy of the feed.
@@ -122,6 +123,46 @@ describe("proposalMessage", () => {
     const descriptions = galleries.flatMap((g) => g.items!.map((i) => i.description));
     expect([...texts(message.components), ...descriptions].join("").length).toBeLessThanOrEqual(MAX_TEXT);
     expect(json.match(/"type":/g)!.length).toBeLessThanOrEqual(MAX_COMPONENTS);
+  });
+});
+
+describe("proposalMessage findings", () => {
+  const finding = (n: number) => ({
+    check: "domain symbol" as const, printing: `RAD-${String(n).padStart(3, "0")}/167`, feed: "Chaos", other: "card image Fury",
+    image_url: "https://cmsassets.rgpub.io/sanity/images/dsfx7636/game_data_live/3dca5e04ff8dff983993f87d5a82a7fd56d7bc9c-744x1039.png?accountingTag=RB",
+  });
+
+  it("lists the first findings with their images and counts the rest, within Discord's limits", () => {
+    const diff = diffCatalogue(feed, { cards: [], printings: [], icons: [] });
+    const findings = Array.from({ length: 40 }, (_, i) => finding(i + 1));
+    const { files, ...v2 } = proposalMessage("x", diff, 1, findings);
+    const message = JSON.stringify(v2);
+    expect(message).toContain("40 values in the feed disagree with another source:");
+    expect(message).toContain("- RAD-001/167 domain symbol: feed Chaos, card image Fury (https://cmsassets.rgpub.io/");
+    expect(message).toContain("- and 35 more; all of them are in findings.txt");
+    expect(message).not.toContain("RAD-006/167");
+    expect(message).toContain("attachment://findings.txt");
+    const all = files![0].attachment.toString().trim().split("\n");
+    expect(files![0].name).toBe("findings.txt");
+    expect(all).toHaveLength(40);
+    expect(all[39]).toBe(findingText(finding(40)));
+    const inside = (JSON.parse(message).components[0].components as { content?: string; items?: { description: string }[] }[]);
+    expect(inside.flatMap((c) => [c.content ?? "", ...(c.items ?? []).map((i) => i.description)]).join("").length).toBeLessThanOrEqual(MAX_TEXT);
+  });
+
+  it("says nothing when there are none", () => {
+    const diff = diffCatalogue(feed, { cards: [], printings: [], icons: [] });
+    expect(JSON.stringify(proposalMessage("x", diff, 1, []))).not.toContain("disagree");
+  });
+
+  it("asks about findings alone, such as a stale correction, when the catalogue is unchanged", () => {
+    const stored = { cards: feed.cards, printings: feed.printings, icons: feed.icons };
+    const diff = diffCatalogue(feed, stored);
+    const stale = { check: "stale correction" as const, printing: "RAD-001/167", feed: "Chaos", other: "correction Chaos", image_url: "https://x/1.png" };
+    const message = proposalMessage("x", diff, 1, [stale]);
+    expect(JSON.stringify(message)).toContain("matches the catalogue");
+    expect(JSON.stringify(message)).toContain("RAD-001/167 stale correction");
+    expect(message.files![0].attachment.toString()).toContain("RAD-001/167 stale correction");
   });
 });
 

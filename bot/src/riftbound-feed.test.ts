@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { buildId, cardsJson, feedItems, manifest, slug, transformFeed } from "./riftbound-feed.js";
+import { buildId, cardsJson, CORRECTIONS, correct, feedItems, manifest, slug, transformFeed } from "./riftbound-feed.js";
 
 // Raw cards as Riot's gallery feed gave them on 2026-10-20.
 const feed = JSON.parse(readFileSync(new URL("riftbound-feed.fixture.json", import.meta.url), "utf8"));
@@ -138,6 +138,41 @@ describe("transformFeed", () => {
   });
 });
 
+describe("corrections", () => {
+  const blade = { printing: "RAD-150/167", source: ["card image"] };
+
+  it("overrides only what the correction gives", () => {
+    const buff = card("buff");
+    expect(correct(buff, undefined)).toBe(buff);
+    expect(correct(buff, { ...blade, type: "Spell" })).toEqual({ ...buff, type: "Spell" });
+    expect(correct(buff, { ...blade, domains: ["Calm"] })).toEqual({ ...buff, domains: ["Calm"] });
+  });
+
+  it("applies to the card in the feed", () => {
+    const corrected = transformFeed(items, { "blade-of-the-exile": { ...blade, type: "Unit", domains: ["Body"] } });
+    expect(corrected.cards.find((c) => c.id === "blade-of-the-exile")).toMatchObject({ type: "Unit", domains: ["Body"] });
+    expect(corrected.cards.filter((c) => c.id !== "blade-of-the-exile")).toEqual(catalogue.cards.filter((c) => c.id !== "blade-of-the-exile"));
+  });
+
+  it("fails for a card or printing not in the feed, or a type or domain the feed does not have", () => {
+    expect(() => transformFeed(items, { "pillaged-armory": { printing: "RAD-073/167", domains: ["Body"], source: ["card image"] } }))
+      .toThrow(/correction for pillaged-armory: no printing RAD-073\/167/);
+    expect(() => transformFeed(items, { "blade-of-the-exile": { ...blade, printing: "RAD-151/167", type: "Gear" } })).toThrow(/no printing RAD-151/);
+    expect(() => transformFeed(items, { "blade-of-the-exile": { ...blade, type: "Gears" } })).toThrow(/unknown type Gears/);
+    expect(() => transformFeed(items, { "blade-of-the-exile": { ...blade, domains: ["Furry"] } })).toThrow(/unknown domain Furry/);
+  });
+
+  it("are in bot/riftbound-cards.json", () => {
+    const committed = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8"));
+    for (const [id, c] of Object.entries(CORRECTIONS)) {
+      const printed = committed.cards.find((x: { id: string }) => x.id === id);
+      expect(printed).toEqual(correct(printed, c));
+      expect(committed.printings.find((p: { collector_code: string }) => p.collector_code === c.printing)?.card_id).toBe(id);
+      expect(c.source.every((s) => s === "image alt text" || s === "card image")).toBe(true);
+    }
+  });
+});
+
 describe("slug", () => {
   it("drops accents and apostrophes", () => {
     expect(slug("Kai'Sa Survivor")).toBe("kaisa-survivor");
@@ -154,6 +189,7 @@ describe("manifest", () => {
       fetched_at: "1970-01-01T00:00:00.000Z",
       printings_per_set: { OGN: 4, OGS: 0, SFD: 2, UNL: 1, VEN: 3, RAD: 1 },
       untyped: ["buff"],
+      findings: [],
     });
     expect(m.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -163,7 +199,7 @@ describe("bot/riftbound-cards.json", () => {
   it("is in the committed format and matches its manifest", () => {
     const committed = readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8");
     const m = JSON.parse(readFileSync(new URL("../riftbound-cards.manifest.json", import.meta.url), "utf8"));
-    expect(cardsJson({ ...JSON.parse(committed), untyped: [], textDifferences: [] })).toBe(committed);
+    expect(cardsJson({ ...JSON.parse(committed), untyped: [], textDifferences: [], findings: [] })).toBe(committed);
     expect(createHash("sha256").update(committed).digest("hex")).toBe(m.sha256);
   });
 

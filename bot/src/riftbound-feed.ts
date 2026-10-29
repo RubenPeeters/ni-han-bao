@@ -2,7 +2,9 @@
 // authentication, ported from riftbound-db's scripts/fetch-cards.ts. The feed is an internal
 // detail of Riot's site, so every shape it relies on is checked and a change fails loudly.
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { SET_NAMES } from "./card-match.js";
+import { printingFindings, staleFindings, type Finding } from "./riftbound-checks.js";
 import { catalogueJson, type Card, type Printing } from "./riftbound.js";
 
 export const SITE_URL = "https://playriftbound.com/en-us/";
@@ -39,7 +41,27 @@ export interface FeedCatalogue {
   untyped: string[];
   // Cards whose printings differ in rules text (errata, templating), printing ids per text.
   textDifferences: { card_id: string; printings: string[][] }[];
+  // Values another source disagrees with (#324), in the manifest and the proposal DM.
+  findings: Finding[];
 }
+
+// Riot's feed has the wrong type or domain on some cards (#323): what the card itself shows, per
+// card id, with the printing it was read from and how ("image alt text" for the type, "card image"
+// for the domain symbol).
+export interface Correction {
+  printing: string;
+  type?: string;
+  domains?: string[];
+  source: string[];
+}
+export type Corrections = Record<string, Correction>;
+export const CORRECTIONS: Corrections = JSON.parse(
+  readFileSync(new URL("../riftbound-corrections.json", import.meta.url), "utf8"),
+);
+
+/** The card as it is printed: the correction's type and domains over the feed's. */
+export const correct = (card: FeedCard, c: Correction | undefined): FeedCard =>
+  c ? { ...card, type: c.type ?? card.type, domains: c.domains ?? card.domains } : card;
 
 /** The build id in Riot's home page, which changes on every deploy of their site. */
 export function buildId(html: string): string {
@@ -106,6 +128,8 @@ interface Parsed {
   printing: FeedPrinting;
   icons: FeedIcon[];
   rank: number;
+  // The image's alt text, which names the card's type.
+  alt: string | null;
 }
 
 function parse(raw: unknown): Parsed {
@@ -162,6 +186,7 @@ function parse(raw: unknown): Parsed {
   if (typeof number !== "number" || !Number.isInteger(number)) fail(code, "collectorNumber");
   const rulesText = optional(r.text, (v) => html(v, "text"));
   const illustrators = labels(obj(r.illustrator, code, "illustrator").values, code, "illustrator");
+  const image = obj(r.cardImage, code, "cardImage");
   const card: FeedCard = {
     id: slug(subtitle ? `${name} ${subtitle}` : name),
     name: subtitle ? `${name}, ${subtitle}` : name,
@@ -182,18 +207,23 @@ function parse(raw: unknown): Parsed {
     collector_number: number,
     rarity: facet(obj(r.rarity, code, "rarity").value, "rarity"),
     illustrator: illustrators.length ? illustrators.join(", ") : null,
-    image_url: str(obj(r.cardImage, code, "cardImage").url, code, "image url"),
+    image_url: str(image.url, code, "image url"),
     rules_text: rulesText,
     effect_text: optional(r.effect, (v) => html(v, "effect")),
   };
-  return { card, printing, icons, rank };
+  return { card, printing, icons, rank, alt: optional(image.accessibilityText, (v) => str(v, code, "image alt text")) };
 }
 
 /** The raw feed cards to rows of riftbound_cards and riftbound_printings, sorted by id. */
-export function transformFeed(items: unknown[]): FeedCatalogue {
+export function transformFeed(items: unknown[], corrections: Corrections = {}): FeedCatalogue {
   const bySlug = new Map<string, Parsed[]>();
   const icons = new Map<string, FeedIcon>();
-  for (const p of items.map(parse)) {
+  const findings: Finding[] = [];
+  const parsed = items.map(parse);
+  for (const p of parsed) {
+    const c = corrections[p.card.id];
+    if (c?.printing === p.printing.collector_code) findings.push(...staleFindings(p.card, c, p.printing.image_url!));
+    p.card = correct(p.card, c);
     bySlug.set(p.card.id, [...(bySlug.get(p.card.id) ?? []), p]);
     for (const i of p.icons) {
       const key = `${i.facet}:${i.value}`;
@@ -202,6 +232,17 @@ export function transformFeed(items: unknown[]): FeedCatalogue {
       icons.set(key, i);
     }
   }
+
+  // A correction that no longer fits the feed is a changed feed: fail like any other shape.
+  const labels = (facet: string) => new Set([...icons.values()].filter((i) => i.facet === facet).map((i) => i.label));
+  const [types, domains] = [labels("type"), labels("domain")];
+  for (const [id, c] of Object.entries(corrections)) {
+    if (!bySlug.get(id)?.some((p) => p.printing.collector_code === c.printing))
+      throw new Error(`correction for ${id}: no printing ${c.printing} of it in the feed`);
+    if (c.type !== undefined && !types.has(c.type)) throw new Error(`correction for ${id}: unknown type ${c.type}`);
+    for (const d of c.domains ?? []) if (!domains.has(d)) throw new Error(`correction for ${id}: unknown domain ${d}`);
+  }
+  for (const p of parsed) findings.push(...printingFindings(p.card, p.printing, p.alt, types));
 
   const cards: FeedCard[] = [];
   const printings: FeedPrinting[] = [];
@@ -228,8 +269,11 @@ export function transformFeed(items: unknown[]): FeedCatalogue {
     cards,
     printings,
     icons: [...icons.values()].sort((a, b) => (a.facet < b.facet ? -1 : a.facet > b.facet ? 1 : a.value < b.value ? -1 : 1)),
-    untyped: cards.filter((c) => c.type === null).map((c) => c.id), textDifferences };
+    untyped: cards.filter((c) => c.type === null).map((c) => c.id), textDifferences,
+    findings: findings.sort((a, b) => findingKey(a).localeCompare(findingKey(b))) };
 }
+
+const findingKey = (f: Finding) => `${f.printing} ${f.check} ${f.feed}`;
 
 export const cardsJson = ({ cards, printings, icons }: FeedCatalogue) => catalogueJson({ cards, printings, icons });
 
@@ -247,6 +291,7 @@ export function manifest(catalogue: FeedCatalogue, json: string, source: { url: 
       sha256: createHash("sha256").update(json).digest("hex"),
       untyped: catalogue.untyped,
       text_differences: catalogue.textDifferences,
+      findings: catalogue.findings,
     },
     null,
     2,
