@@ -12,6 +12,8 @@ export interface WishRow {
   decks: number;
   /** The hand-set target, if any. */
   manual: number | null;
+  /** The playset goal (#330), 3 for any printing and language, if a chosen set has the card. */
+  goal: number | null;
   copies: { printing_id: string; language: string; quantity: number }[];
 }
 
@@ -19,6 +21,8 @@ export interface Wanted extends Omit<WishRow, "copies" | "deck"> {
   /** What the decks need: the dedicated ones added up, plus the largest shared one. */
   decks: number;
   wanted: number;
+  /** How many of `wanted` only the playset goal wants: the rest is for the decks and targets. */
+  playset: number;
 }
 
 interface Need {
@@ -62,7 +66,8 @@ function shortOf(needs: Need[], copies: Copy[]): number[] {
  * What is still wanted of each card, pin and language: max(target, decks) minus what is owned, a
  * copy counting once. Dedicated decks stay built, so every shared deck must be buildable beside
  * them; the decks take the owned copies first. The targets then count those copies and the ones
- * the decks still want, so a target is a total, never on top of the decks.
+ * the decks still want, so a target is a total, never on top of the decks. The playset goal
+ * last, a total in the same way: it wants only what the decks and targets leave short of it.
  */
 export function wishlist(rows: WishRow[]): Wanted[] {
   const keyOf = (card: string, n: Omit<Need, "quantity">) => `${card}|${n.printing_id}|${n.language}`;
@@ -74,7 +79,8 @@ export function wishlist(rows: WishRow[]): Wanted[] {
     const decks =
       same.reduce((n, r) => n + (r.deck === null ? r.decks : 0), 0) +
       Math.max(0, ...same.flatMap((r) => (r.deck === null ? [] : [r.decks])));
-    out.set(key, { card_id, printing_id, language, decks, manual: same.find((r) => r.manual)?.manual ?? null, wanted: 0 });
+    const manual = same.find((r) => r.manual)?.manual ?? null;
+    out.set(key, { card_id, printing_id, language, decks, manual, goal: same.find((r) => r.goal)?.goal ?? null, wanted: 0, playset: 0 });
   }
   for (const card of new Set(rows.map((r) => r.card_id))) {
     const mine = rows.filter((r) => r.card_id === card);
@@ -99,7 +105,15 @@ export function wishlist(rows: WishRow[]): Wanted[] {
       });
     }
     const targets = mine.filter((r) => r.manual).map((r) => asNeed(r, r.manual!));
-    shortOf(targets, [...owned, ...toGet]).forEach((q, i) => want(targets[i], q));
+    shortOf(targets, [...owned, ...toGet]).forEach((q, i) => {
+      if (q) toGet.push({ ...targets[i], quantity: q });
+      want(targets[i], q);
+    });
+    const goals = mine.filter((r) => r.goal).map((r) => asNeed(r, r.goal!));
+    shortOf(goals, [...owned, ...toGet]).forEach((q, i) => {
+      want(goals[i], q);
+      out.get(keyOf(card, goals[i]))!.playset += q;
+    });
   }
   return [...out.values()];
 }

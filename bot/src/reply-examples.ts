@@ -152,9 +152,11 @@ export function replyExamples(): Record<string, ReplyExample> {
       wishlistShare(
         ANNA,
         [
-          { card_id: "jinx-demolitionist", printing_id: null, language: null, decks: 3, manual: null, wanted: 2 },
-          { card_id: "ahri-alluring", printing_id: "ogn-066-298", language: null, decks: 1, manual: null, wanted: 1 },
-          { card_id: "calm-rune", printing_id: null, language: null, decks: 6, manual: null, wanted: 3 },
+          { card_id: "jinx-demolitionist", printing_id: null, language: null, decks: 3, manual: null, goal: 3, wanted: 2, playset: 0 },
+          { card_id: "ahri-alluring", printing_id: "ogn-066-298", language: null, decks: 1, manual: null, goal: null, wanted: 1, playset: 0 },
+          { card_id: "calm-rune", printing_id: null, language: null, decks: 6, manual: null, goal: null, wanted: 3, playset: 0 },
+          { card_id: "flash", printing_id: null, language: null, decks: 1, manual: null, goal: 3, wanted: 3, playset: 2 },
+          { card_id: "garen-commander", printing_id: null, language: null, decks: 0, manual: null, goal: 3, wanted: 3, playset: 3 },
         ],
         catalogue,
         emojiIds,

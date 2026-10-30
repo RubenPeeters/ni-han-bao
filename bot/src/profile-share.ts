@@ -104,20 +104,25 @@ export function collectionShare(
 }
 
 /**
- * /wishlist share: the first wanted cards by name with their counts, or for a private profile
- * the (ephemeral) text saying what to change.
+ * /wishlist share: the first wanted cards by name with their counts, those for the decks and
+ * added by hand before the playset goal's (#330), or for a private profile the (ephemeral) text
+ * saying what to change.
  */
 export function wishlistShare(sharer: Sharer, wanted: Wanted[], catalogue: Pick<Catalogue, "cards" | "printings">, emojis: Emojis, siteUrl: string | null): V2 | string {
   if (sharer.visibility !== "public" && sharer.visibility !== "members") return privateReply("wishlist", siteUrl);
   const byCard = new Map(catalogue.cards.map((c) => [c.id, c]));
   const name = (id: string) => byCard.get(id)?.name ?? id;
-  const rows = wanted.filter((w) => w.wanted > 0).sort((a, b) => name(a.card_id).localeCompare(name(b.card_id)));
-  const total = rows.reduce((n, w) => n + w.wanted, 0);
+  const byName = (a: Wanted, b: Wanted) => name(a.card_id).localeCompare(name(b.card_id));
+  const rows = [
+    ...wanted.filter((w) => w.wanted > w.playset).map((w) => ({ ...w, n: w.wanted - w.playset, forGoal: false })).sort(byName),
+    ...wanted.filter((w) => w.playset > 0).map((w) => ({ ...w, n: w.playset, forGoal: true })).sort(byName),
+  ];
+  const total = wanted.reduce((n, w) => n + w.wanted, 0);
   const lines = rows.slice(0, WISHLIST_SHOWN).map((w) => {
     const domains = (byCard.get(w.card_id)?.domains ?? []).map((d) => emoji(emojis, `rb_${d.toLowerCase()}`)).filter(Boolean).join("");
     const code = w.printing_id && catalogue.printings.find((p) => p.id === w.printing_id)?.collector_code;
     const pin = code ? ` · only ${escapeMarkdown(code)}` : "";
-    return `${w.wanted}× **${escapeMarkdown(name(w.card_id))}**${domains ? ` ${domains}` : ""}${pin}`;
+    return `${w.n}× **${escapeMarkdown(name(w.card_id))}**${domains ? ` ${domains}` : ""}${pin}${w.forGoal ? " · playset goal" : ""}`;
   });
   const more = rows.length > WISHLIST_SHOWN ? [`-# and ${rows.length - WISHLIST_SHOWN} more on the wishlist's page`] : [];
   const heading = text(`### ${escapeMarkdown(sharer.name)}'s wishlist · ${cards(total)}`);

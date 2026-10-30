@@ -60,6 +60,7 @@ begin
     delete from public.riftbound_collection_activity where user_id = any (users);
     delete from public.riftbound_decks where user_id = any (users);
     delete from public.riftbound_wishlist where user_id = any (users);
+    delete from public.riftbound_playset_goals where user_id = any (users);
     delete from public.riftbound_trade_matches where user_id = any (users) or trader_id = any (users);
     delete from public.profiles where user_id = any (users);
     delete from public.guild_members where guild_id = g;
@@ -312,6 +313,8 @@ begin
     where user_id = users[1];
     insert into public.riftbound_wishlist (user_id, card_id, printing_id, quantity)
     values (users[1], 'dark-child-starter', null, 2), (users[1], 'ahri-alluring', 'ogn-066-298', 3);
+    -- Playset goal (#330): Anna wants a playset of Proving Grounds, below her decks.
+    insert into public.riftbound_playset_goals (user_id, set_code) values (users[1], 'OGS');
     -- Trades (#178): Bram and Chloé have copies of cards on Anna's wishlist for trade, for her
     -- Trades page. Daan does too, but his profile is private, so he does not show.
     insert into public.riftbound_collection as c (user_id, printing_id, finish, condition, language, quantity, for_trade)
