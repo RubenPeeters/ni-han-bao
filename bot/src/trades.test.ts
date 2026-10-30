@@ -18,7 +18,7 @@ const candidate = (c: Partial<Candidate>): Candidate => ({
   ...nowhere,
   ...c,
 });
-const want = (w: Partial<Wanted>): Wanted => ({ card_id: "ahri", printing_id: null, language: null, decks: 0, manual: 1, wanted: 1, ...w });
+const want = (w: Partial<Wanted>): Wanted => ({ card_id: "ahri", printing_id: null, language: null, decks: 0, manual: 1, goal: null, wanted: 1, playset: 0, ...w });
 
 describe("newMatches", () => {
   it("matches only what is still wanted, in a printing and language that fits", () => {
@@ -39,6 +39,14 @@ describe("newMatches", () => {
   it("says how many of the card the wanter still wants", () => {
     const out = newMatches([candidate({})], () => [want({ wanted: 2 }), want({ language: "fr", wanted: 1 }), want({ card_id: "jinx", wanted: 4 })]);
     expect(out.get("anna")?.[0].wanted).toBe(3);
+  });
+
+  it("never matches what only the playset goal wants, and counts only the rest", () => {
+    const out = newMatches([candidate({}), candidate({ card_id: "jinx" })], () => [
+      want({ goal: 3, wanted: 3, playset: 2 }),
+      want({ card_id: "jinx", goal: 3, wanted: 2, playset: 2 }),
+    ]);
+    expect(out.get("anna")?.map((m) => `${m.card_id}:${m.wanted}`)).toEqual(["ahri:1"]);
   });
 
   it("adds up a trader's fitting copies and keeps the server with the best place to meet", () => {

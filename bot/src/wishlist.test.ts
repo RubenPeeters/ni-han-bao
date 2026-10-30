@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import { wishlist, type WishRow } from "./wishlist.js";
 
-const row = (r: Partial<WishRow>): WishRow => ({ card_id: "x", printing_id: null, language: null, deck: null, decks: 0, manual: null, copies: [], ...r });
+const row = (r: Partial<WishRow>): WishRow => ({ card_id: "x", printing_id: null, language: null, deck: null, decks: 0, manual: null, goal: null, copies: [], ...r });
 const copy = (printing_id: string, quantity: number, language = "en") => ({ printing_id, language, quantity });
 const wanted = (rows: WishRow[]) => wishlist(rows).map((r) => r.wanted);
 
@@ -53,4 +53,15 @@ test("a shared deck is built beside the dedicated ones", () => {
   const rows = [row({ decks: 2, copies: [copy("P1", 3)] }), row({ deck: 1, decks: 2, copies: [copy("P1", 3)] })];
   assert.deepEqual(wanted(rows), [1]);
   assert.deepEqual(wishlist(rows).map((r) => r.decks), [4]);
+});
+
+test("the playset goal is a total after the decks and targets, in any printing and language", () => {
+  const split = (rows: WishRow[]) => wishlist(rows).map((r) => `${r.wanted}:${r.playset}`);
+  assert.deepEqual(split([row({ goal: 3, copies: [copy("P1", 1, "fr")] })]), ["2:2"]);
+  // Two for the decks, then one more for the playset: never 3 on top.
+  assert.deepEqual(split([row({ decks: 2, goal: 3 })]), ["3:1"]);
+  assert.deepEqual(split([row({ decks: 4, goal: 3, copies: [copy("P1", 1)] })]), ["3:0"]);
+  // A pinned deck's copies to get count towards it too.
+  assert.deepEqual(split([row({ printing_id: "P2", decks: 2, copies: [copy("P1", 1)] }), row({ manual: 1, goal: 3, copies: [copy("P1", 1)] })]), ["2:0", "0:0"]);
+  assert.deepEqual(split([row({ manual: 4, goal: 3 })]), ["4:0"]);
 });

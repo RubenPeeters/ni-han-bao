@@ -37,11 +37,22 @@ From Discord, `/collection add card:Ahri count:2` adds copies too, in the langua
 
 ![My collection](/docs/shots/collection.png)
 
-`/collection share` posts a summary in the channel: how many cards you own, per set, your five rarest, and a link to your profile's **Collection** tab. `/wishlist share` does the same for the cards you still want, the first ten by name. Both follow your [profile visibility](/docs/get-started/link-accounts#your-profile): for **Server members**, the reply says the link opens only for members of your servers; a **Private** profile posts nothing and tells only you what to change.
+`/collection share` posts a summary in the channel: how many cards you own, per set, your five rarest, and a link to your profile's **Collection** tab. `/wishlist share` does the same for the cards you still want, the first ten by name: those for your decks and cards you added first, then the playset goal's. Both follow your [profile visibility](/docs/get-started/link-accounts#your-profile): for **Server members**, the reply says the link opens only for members of your servers; a **Private** profile posts nothing and tells only you what to change.
 
 <ReplyExample name="collection-share" />
 
 <ReplyExample name="wishlist-share" />
+
+### Your wishlist
+
+**My wishlist**, under **Riftbound**, lists the cards you still want in two sections:
+
+- **For my decks and cards I added**: what the decks that count on your wishlist need, and the cards you add by hand, with how many you want in all. These come first.
+- **Playset goal**: tick a set under **Playset goal** (or **All sets**, which also covers the sets still to come) to want 3 copies of each of its cards, in any printing and language. Only the set's normal numbers count, as with **I own a playset**: no alternate art, starred, overnumbered, SP, token or rune printings. A card printed in two of your sets wants 3, not 6.
+
+The copies you own go to your decks first, then to the cards you added, then to the playset goal, so the goal never wants copies on top of the decks. A card can be in both sections, with its split: "2 for decks, 1 for the playset".
+
+On a server's **Trades** page, playset goal cards come below your other matches. Only the first section gets a DM from the bot or an item on the home feed when someone has a card for trade.
 
 `/card`, `/deck share`, `/collection` and `/wishlist share` work in DMs too once you [add nexus to your account](/docs/get-started/add-the-bot#use-it-in-dms).
 
