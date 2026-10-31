@@ -916,6 +916,9 @@ begin
     perform public.lend_riftbound_cards('rls-rls-mine', b, null, null,
         '[{"printing_id":"rls-printing","finish":"normal","condition":"NM","language":"en","quantity":1}]')
     from unnest(array['rls-user', 'rls-private']) b;
+    -- The test user ran /hide-me above (#100), and hidden members never appear in the feed (#302):
+    -- shown again, so the collection checks below can see their own item.
+    update public.members set hidden = false where guild_id = 'rls-mine' and user_id = 'rls-user';
 end $$;
 set local role authenticated;
 do $$
