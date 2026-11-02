@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import { altType, findingText, printingFindings, staleFindings, symbolCrop, symbolDomain } from "./riftbound-checks.js";
-import { feedItems, transformFeed } from "./riftbound-feed.js";
+import { altType, findingText, printingFindings, runeFindings, staleFindings, symbolCrop, symbolDomain } from "./riftbound-checks.js";
+import { CORRECTIONS, feedItems, transformFeed, type FeedCard, type FeedPrinting } from "./riftbound-feed.js";
 
 const items = feedItems(JSON.parse(readFileSync(new URL("riftbound-feed.fixture.json", import.meta.url), "utf8")));
 const catalogue = transformFeed(items);
@@ -72,6 +72,15 @@ describe("staleFindings", () => {
     expect(staleFindings(feed, { printing: "RAD-150/167", type: "Unit", domains: ["Calm"], source: [] }, image)).toEqual([]);
   });
 
+  it("reports a text correction whose token the feed no longer has", () => {
+    const text = [{ feed: ":rb_rune_chaos:", printed: ":rb_rune_fury:", source: "card image" }];
+    const fixed = { ...feed, rules_text: "<p>:rb_rune_fury:: Kill this.</p>" };
+    expect(staleFindings(fixed, { printing: "RAD-150/167", text, source: [] }, image)).toEqual([
+      { check: "stale correction", printing: "RAD-150/167", feed: "rules text without :rb_rune_chaos:", other: "correction :rb_rune_chaos: to :rb_rune_fury:", image_url: image },
+    ]);
+    expect(staleFindings({ ...fixed, rules_text: "<p>:rb_rune_chaos:: Kill this.</p>" }, { printing: "RAD-150/167", text, source: [] }, image)).toEqual([]);
+  });
+
   it("is run by transformFeed on the feed before the correction", () => {
     const stale = transformFeed(items, { "blade-of-the-exile": { printing: "RAD-150/167", type: "Gear", source: ["image alt text"] } });
     expect(stale.findings).toEqual([{ check: "stale correction", printing: "RAD-150/167", feed: "Gear", other: "correction Gear", image_url: image }]);
@@ -114,5 +123,45 @@ describe("findingText", () => {
       .toBe("RAD-001/167 domain symbol: feed Chaos, card image Fury (https://x/1.png)");
     expect(findingText({ check: "missing", printing: "RAD-009/167", feed: "no domain", other: null, image_url: "https://x/9.png" }))
       .toBe("RAD-009/167 missing: feed no domain (https://x/9.png)");
+  });
+});
+
+describe("runeFindings", () => {
+  const sona = printing("ogn-073-298");
+  const text = (rules_text: string) => ({ ...sona, rules_text });
+
+  it("reports a coloured rune outside a single-domain card's domain, once per rune", () => {
+    expect(runeFindings(card("sona-harmonious"), text(":rb_rune_calm::rb_rune_rainbow: ready."), undefined)).toEqual([]);
+    expect(runeFindings(card("sona-harmonious"), text(":rb_rune_fury::rb_rune_fury::rb_rune_calm:"), undefined)).toEqual([
+      { check: "rune", printing: "OGN-073/298", feed: ":rb_rune_fury:", other: "card domain Calm", image_url: sona.image_url },
+    ]);
+    expect(runeFindings({ ...card("sona-harmonious"), domains: ["Calm", "Mind"] }, text(":rb_rune_fury:"), undefined)).toEqual([]);
+  });
+
+  it("skips a printing whose runes were checked, and only that printing", () => {
+    const checked = { printing: "OGN-073/298", runes_checked: true, source: ["card image"] };
+    expect(runeFindings(card("sona-harmonious"), text(":rb_rune_fury:"), checked)).toEqual([]);
+    expect(runeFindings(card("sona-harmonious"), text(":rb_rune_fury:"), { ...checked, printing: "VEN-SP2/006" })).toHaveLength(1);
+  });
+
+  it("is run by transformFeed after text corrections", () => {
+    const wrong = raw("OGN-073/298");
+    (wrong.text as { richText: { body: string } }).richText.body = "<p>:rb_rune_fury:: ready.</p>";
+    const fed = items.map((i) => ((i as { publicCode: string }).publicCode === "OGN-073/298" ? wrong : i));
+    expect(transformFeed(fed).findings.map((f) => `${f.printing} ${f.check}: ${f.feed}`)).toEqual(["OGN-073/298 rune: :rb_rune_fury:"]);
+    const text = [{ feed: ":rb_rune_fury:", printed: ":rb_rune_calm:", source: "card image" }];
+    expect(transformFeed(fed, { "sona-harmonious": { printing: "OGN-073/298", text, source: [] } }).findings).toEqual([]);
+  });
+
+  it("finds only Runeblade Anvil in the committed catalogue without its text correction", () => {
+    const committed: { cards: FeedCard[]; printings: FeedPrinting[] } = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8"));
+    const cards = new Map(committed.cards.map((c) => [c.id, c]));
+    const findings = (uncorrect: boolean) => committed.printings.flatMap((p) => {
+      const c = CORRECTIONS[p.card_id];
+      const t = uncorrect && c?.printing === p.collector_code ? c.text ?? [] : [];
+      return runeFindings(cards.get(p.card_id)!, { ...p, rules_text: t.reduce((s, x) => s!.replace(x.printed, x.feed), p.rules_text) }, c);
+    });
+    expect(findings(false)).toEqual([]);
+    expect(findings(true).map((f) => `${f.printing} ${f.feed}`)).toEqual(["RAD-012/167 :rb_rune_chaos:"]);
   });
 });

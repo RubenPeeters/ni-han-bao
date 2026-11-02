@@ -38,11 +38,12 @@ export async function TradeStats({ guild }: { guild: string }) {
   if (rows.error) return <ErrorState title="Could not load your trades">Try again in a minute.</ErrorState>;
   const wanted = wishlist(rows.data).filter((w) => w.wanted > 0);
   const ids = [...new Set(wanted.map((w) => w.card_id))];
+  // The catalogue in pages, not `.in(ids)`: a full playset goal is hundreds of ids, too long for a URL.
   const [timeZone, offers, cards, printings] = await Promise.all([
     guildTimeZone(guild),
     allPages<Offer, { message: string }>((from, to) => supabase.rpc("guild_trade_offers", { guild, p_cards: ids }).range(from, to)),
-    supabase.from("riftbound_cards").select("id, name, type").in("id", ids),
-    supabase.from("riftbound_printings").select("id, card_id, image_url").in("card_id", ids).order("collector_number").order("id"),
+    allPages((from, to) => supabase.from("riftbound_cards").select("id, name, type").order("id").range(from, to)),
+    allPages((from, to) => supabase.from("riftbound_printings").select("id, card_id, image_url").order("collector_number").order("id").range(from, to)),
   ]);
   if (offers.error || cards.error || printings.error) return <ErrorState title="Could not load your trades">Try again in a minute.</ErrorState>;
   const names = new Map(cards.data.map((c) => [c.id as string, c.name as string]));
@@ -57,19 +58,23 @@ export async function TradeStats({ guild }: { guild: string }) {
     minute: "2-digit",
     hourCycle: "h23",
   });
-  // Per card, per trader: their copies that fit a printing or language the visitor wants.
-  const matches = ids
+  // Per card, per trader: their copies that fit a printing or language the visitor wants. A card
+  // wanted for the decks or by hand is a priority match, even when the playset goal wants it too.
+  const matches = [...new Set(offers.data.map((o) => o.card_id))]
     .map((card) => {
+      const mine = wanted.filter((w) => w.card_id === card);
       const traders = new Map<string, Offer>();
       for (const o of offers.data) {
-        if (o.card_id !== card || !wanted.some((w) => w.card_id === card && fits(o, w))) continue;
+        if (o.card_id !== card || !mine.some((w) => fits(o, w))) continue;
         const t = traders.get(o.user_id);
         traders.set(o.user_id, t ? { ...t, copies: t.copies + o.copies } : o);
       }
-      return { card, want: wanted.filter((w) => w.card_id === card).reduce((n, w) => n + w.wanted, 0), traders: [...traders.values()] };
+      const want = mine.reduce((n, w) => n + w.wanted, 0);
+      return { card, want, goal: mine.every((w) => w.wanted === w.playset), traders: [...traders.values()] };
     })
     .filter((m) => m.traders.length > 0)
-    .toSorted((a, b) => (names.get(a.card) ?? "").localeCompare(names.get(b.card) ?? ""));
+    .toSorted((a, b) => Number(a.goal) - Number(b.goal) || (names.get(a.card) ?? "").localeCompare(names.get(b.card) ?? ""));
+  const goalAt = matches.findIndex((m) => m.goal);
   return (
     <StatCard title="Trade matches" description="Cards on your wishlist that other members have for trade" wide>
       {wanted.length === 0 ? (
@@ -83,8 +88,13 @@ export async function TradeStats({ guild }: { guild: string }) {
       ) : matches.length === 0 ? (
         <EmptyState>Nobody here has a card you want for trade yet. You get a DM from the bot when someone does.</EmptyState>
       ) : (
-        matches.map((m) => (
+        matches.map((m, i) => (
           <div key={m.card} className="flex min-w-0 flex-col gap-2">
+            {i === goalAt && (
+              <h3 className="border-t pt-4 text-sm font-semibold">
+                Playset goal <span className="font-normal text-muted-foreground">· after your decks, no DM for these</span>
+              </h3>
+            )}
             <h3 className="flex items-center justify-between gap-3 text-sm font-medium">
               <Link href={`/cards/${m.card}`} className="flex min-w-0 items-center gap-3 rounded-md underline-offset-4 hover:text-gold hover:underline">
                 <span className="w-12 shrink-0">
@@ -92,7 +102,9 @@ export async function TradeStats({ guild }: { guild: string }) {
                 </span>
                 <span className="truncate">{names.get(m.card) ?? m.card}</span>
               </Link>
-              <span className="shrink-0 tabular-nums text-muted-foreground">You want {m.want}</span>
+              <span className="shrink-0 tabular-nums text-muted-foreground">
+                {m.goal ? `Playset goal: ${m.want}` : `You want ${m.want}`}
+              </span>
             </h3>
             <RankList>
               {m.traders.map((t, i) => (

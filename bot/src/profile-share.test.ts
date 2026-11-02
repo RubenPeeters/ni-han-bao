@@ -10,7 +10,16 @@ const emojis = new Map([["rb_showcase", "5"], ["rb_fury", "1"]]);
 const SITE = "https://nexus.example";
 const anna = (visibility: string | null): Sharer => ({ id: "42", name: "Anna", visibility });
 const shown = (reply: unknown) => JSON.stringify(reply);
-const want = (card_id: string, wanted: number, printing_id: string | null = null): Wanted => ({ card_id, printing_id, language: null, decks: wanted, manual: null, wanted });
+const want = (card_id: string, wanted: number, printing_id: string | null = null, playset = 0): Wanted => ({
+  card_id,
+  printing_id,
+  language: null,
+  decks: wanted - playset,
+  manual: null,
+  goal: playset ? 3 : null,
+  wanted,
+  playset,
+});
 
 describe("/collection share", () => {
   const owned = [
@@ -81,6 +90,14 @@ describe("/wishlist share", () => {
     expect(text.match(/1× /g)).toHaveLength(10);
     expect(text).toContain("and 2 more");
     expect(text).toContain("only for members of Anna's servers");
+  });
+
+  it("lists the playset goal after the decks, so it cannot bury them", () => {
+    const goal = catalogue.cards.slice(0, 12).map((c) => want(c.id, 3, null, 3));
+    const text = shown(wishlistShare(anna("public"), [...goal, want("jinx-demolitionist", 3, null, 1)], catalogue, emojis, SITE));
+    expect(text).toContain("· 39 cards");
+    expect(text.indexOf("2× **Jinx, Demolitionist**")).toBeLessThan(text.indexOf("playset goal"));
+    expect(text).toContain("and 4 more");
   });
 
   it("posts nothing for a private profile", () => {

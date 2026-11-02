@@ -2,7 +2,7 @@
 -- rows from every table with a guild_id, and a logged-in user reads rows of their own
 -- servers only; that profiles follow their visibility (#100); that the lending ledger holds
 -- (#172); that decks follow their visibility (#173) and only public ones are remembered as
--- opened (#174), their versions with them (#176), and wishlists their profile (#177); that trade
+-- opened (#174), their versions with them (#176), and wishlists their profile (#177), playset goals too (#330); that trade
 -- matches follow it too (#178), and decks not for lending hold their cards (#179); that borrow requests
 -- reach only lenders Who has it? shows (#299); that only public decks are teased logged
 -- out (#175); that the home feed follows decks, profiles, loan parties and hidden members (#302), and collection
@@ -489,6 +489,25 @@ begin
         perform public.set_riftbound_wish('rls-card-2', 'rls-printing', 1);
         raise exception 'a wishlist entry is pinned to a printing of another card';
     exception when foreign_key_violation then null;
+    end;
+    -- Playset goal (#330): your own sets only; one set off out of all keeps the others, one by one,
+    -- and the goal is 3 of a card with a basic printing in a chosen set, unless you own 3 already.
+    perform public.set_riftbound_playset_goal(null, true);
+    perform public.set_riftbound_playset_goal('RLS', false);
+    if (select playset_all_sets from public.profiles where user_id = 'rls-user')
+        or exists (select from public.riftbound_playset_goals where set_code = 'RLS' or user_id <> 'rls-user') then
+        raise exception 'set_riftbound_playset_goal() keeps a set chosen, or shows someone else''s';
+    end if;
+    perform public.set_riftbound_playset_goal('RLS', true);
+    if (exists (select from public.profile_wishlist('rls-user') w where w.card_id = 'rls-card' and w.goal = 3 and w.printing_id is null))
+            <> ((select coalesce(sum(quantity), 0) from public.riftbound_collection where printing_id in ('rls-printing', 'rls-alt')) < 3) then
+        raise exception 'profile_wishlist() does not want a playset of a chosen set';
+    end if;
+    begin
+        perform public.set_riftbound_playset_goal('rls-no-set', true);
+        raise exception 'a playset goal for a set that does not exist';
+    exception when raise_exception then
+        if sqlerrm <> 'unknown set rls-no-set' then raise; end if;
     end;
     -- CSV import (#242): adds to the caller's 3 copies and wish of 5, skips unknown ids, caps wants at
     -- 99. Undone by the block's own exception, so the checks below see the rows as they were.

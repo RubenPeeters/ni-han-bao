@@ -5,7 +5,7 @@ import sharp from "sharp";
 import type { Correction, FeedCard, FeedPrinting } from "./riftbound-feed.js";
 
 export interface Finding {
-  check: "type" | "missing" | "domain symbol" | "stale correction";
+  check: "type" | "missing" | "domain symbol" | "stale correction" | "rune";
   // The printing's collector code.
   printing: string;
   feed: string;
@@ -52,7 +52,22 @@ export function staleFindings(feed: FeedCard, c: Correction, image_url: string):
     ...(c.domains !== undefined && JSON.stringify(c.domains) === JSON.stringify(feed.domains)
       ? [{ ...at, feed: feed.domains.join(", "), other: `correction ${c.domains.join(", ")}` }]
       : []),
+    ...(c.text ?? []).filter((t) => !(feed.rules_text ?? "").includes(t.feed))
+      .map((t) => ({ ...at, feed: `rules text without ${t.feed}`, other: `correction ${t.feed} to ${t.printed}` })),
   ];
+}
+
+/**
+ * Check 5 (#328): a coloured rune token in a single-domain card's rules text, after corrections,
+ * that is not the card's domain. Printings whose runes were checked on the card are skipped.
+ */
+export function runeFindings(card: FeedCard, printing: FeedPrinting, c: Correction | undefined): Finding[] {
+  if (card.domains.length !== 1 || (c?.runes_checked && c.printing === printing.collector_code)) return [];
+  const runes = new Set([...(printing.rules_text ?? "").matchAll(/:rb_rune_([a-z]+):/g)].map((m) => m[1]));
+  return [...runes].filter((r) => r !== "rainbow" && r !== card.domains[0].toLowerCase()).map((r) => ({
+    check: "rune", printing: printing.collector_code, feed: `:rb_rune_${r}:`, other: `card domain ${card.domains[0]}`,
+    image_url: printing.image_url ?? "",
+  }));
 }
 
 // The domain symbol's hue in degrees, measured on all 933 single-domain printings outside

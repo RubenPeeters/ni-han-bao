@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { buildId, cardsJson, CORRECTIONS, correct, feedItems, manifest, slug, transformFeed } from "./riftbound-feed.js";
+import { buildId, cardsJson, CORRECTIONS, correct, correctText, feedItems, manifest, slug, transformFeed } from "./riftbound-feed.js";
 
 // Raw cards as Riot's gallery feed gave them on 2026-10-20.
 const feed = JSON.parse(readFileSync(new URL("riftbound-feed.fixture.json", import.meta.url), "utf8"));
@@ -162,6 +162,20 @@ describe("corrections", () => {
     expect(() => transformFeed(items, { "blade-of-the-exile": { ...blade, domains: ["Furry"] } })).toThrow(/unknown domain Furry/);
   });
 
+  it("replace a token in the printing's rules text only where it occurs exactly once", () => {
+    const text = [{ feed: ":rb_rune_rainbow:", printed: ":rb_rune_calm:", source: "card image" }];
+    const corrected = transformFeed(items, { "blade-of-the-exile": { ...blade, text } });
+    const exile = (c: typeof corrected) => [c.cards.find((x) => x.id === "blade-of-the-exile")!.rules_text, c.printings.find((p) => p.id === "rad-150-167")!.rules_text];
+    expect(exile(corrected)).toEqual(exile(catalogue).map((t) => t!.replace(":rb_rune_rainbow:", ":rb_rune_calm:")));
+    const twice = { ...blade, text: [{ ...text[0], feed: ":rb_rune_rainbow:" }] };
+    expect(() => correctText(":rb_rune_rainbow: :rb_rune_rainbow:", twice)).toThrow("text correction for RAD-150/167: :rb_rune_rainbow: occurs 2 times");
+    expect(() => transformFeed(items, { "blade-of-the-exile": { ...blade, text: [{ ...text[0], feed: ":rb_rune_order:" }] } }))
+      .toThrow("text correction for RAD-150/167: :rb_rune_order: occurs 0 times");
+    // Riot's fix fails too: the printed token alone does not show which occurrence they changed.
+    expect(() => correctText("<p>:rb_rune_calm:</p>", { ...blade, text })).toThrow("text correction for RAD-150/167: :rb_rune_rainbow: occurs 0 times");
+    expect(() => transformFeed(items, { "blade-of-the-exile": { ...blade, text: [{ ...text[0], printed: "calm" }] } })).toThrow(/is not one icon token/);
+  });
+
   it("are in bot/riftbound-cards.json", () => {
     const committed = JSON.parse(readFileSync(new URL("../riftbound-cards.json", import.meta.url), "utf8"));
     for (const [id, c] of Object.entries(CORRECTIONS)) {
@@ -169,6 +183,11 @@ describe("corrections", () => {
       expect(printed).toEqual(correct(printed, c));
       expect(committed.printings.find((p: { collector_code: string }) => p.collector_code === c.printing)?.card_id).toBe(id);
       expect(c.source.every((s) => s === "image alt text" || s === "card image")).toBe(true);
+      const text = committed.printings.find((p: { collector_code: string }) => p.collector_code === c.printing).rules_text;
+      for (const t of c.text ?? []) {
+        expect([text.includes(t.feed), text.includes(t.printed), t.source]).toEqual([false, true, "card image"]);
+        expect(printed.rules_text).toBe(text);
+      }
     }
   });
 });

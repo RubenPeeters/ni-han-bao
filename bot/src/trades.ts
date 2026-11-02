@@ -43,22 +43,22 @@ const rank = (p: Place) => (p.place_kind ? RANK[p.place_kind] : 3);
 
 /**
  * The new matches per wanter: candidates whose printing and language fit something still
- * wanted (wishlist() of the wanter's rows), copies added up per server, one server per
- * trader and card.
+ * wanted (wishlist() of the wanter's rows) for the decks or by hand, copies added up per
+ * server, one server per trader and card. The playset goal (#330) never sends a DM.
  */
 export function newMatches(candidates: Candidate[], wantedOf: (user: string) => Wanted[]): Map<string, Match[]> {
   const best = new Map<string, Match & { user_id: string }>();
   const perGuild = new Map<string, Match & { user_id: string }>();
   const wanted = new Map<string, Wanted[]>();
   for (const c of candidates) {
-    if (!wanted.has(c.user_id)) wanted.set(c.user_id, wantedOf(c.user_id).filter((w) => w.wanted > 0));
+    if (!wanted.has(c.user_id)) wanted.set(c.user_id, wantedOf(c.user_id).filter((w) => w.wanted > w.playset));
     if (!wanted.get(c.user_id)!.some((w) => w.card_id === c.card_id && fits(c, w))) continue;
     const key = `${c.user_id}|${c.trader_id}|${c.card_id}`;
     const inGuild = perGuild.get(`${key}|${c.guild_id}`);
     if (inGuild) inGuild.copies += c.copies;
     else {
       const { printing_id: _p, language: _l, ...match } = c;
-      const want = wanted.get(c.user_id)!.reduce((n, w) => n + (w.card_id === c.card_id ? w.wanted : 0), 0);
+      const want = wanted.get(c.user_id)!.reduce((n, w) => n + (w.card_id === c.card_id ? w.wanted - w.playset : 0), 0);
       perGuild.set(`${key}|${c.guild_id}`, { ...match, wanted: want });
     }
     const m = perGuild.get(`${key}|${c.guild_id}`)!;
