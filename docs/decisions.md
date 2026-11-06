@@ -1,5 +1,3 @@
-# Decisions
-
 ## 2026-11-06: Riftbound card data from OpenRift instead of Riot's card-gallery feed
 
 **Decision.** The Riftbound catalogue is taken from OpenRift's public API (https://openrift.app/api/v1/catalog) instead of scraping Riot's card-gallery feed (`playriftbound.com/_next/data/{buildId}/…`). ni-han-bao adopts OpenRift's printing model: one printing per art × finish × language, identified by OpenRift's ids. Finish and language follow from the printing instead of being columns the owner sets independently.
