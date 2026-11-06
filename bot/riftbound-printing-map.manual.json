@@ -1,0 +1,10 @@
+{
+  "schema": {
+    "printing_id": "the old Riot printing id (riftbound_printings.id)",
+    "finish": "normal | foil",
+    "language": "en | zh-Hans | fr",
+    "openrift_id": "the OpenRift printing UUID it maps to",
+    "reason": "why, for the reviewer"
+  },
+  "resolutions": []
+}
