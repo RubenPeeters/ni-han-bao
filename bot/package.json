@@ -12,7 +12,9 @@
     "icons": "tsx src/icons.ts",
     "commands": "tsx src/command-reference.ts",
     "cards": "tsx src/fetch-cards.ts",
-    "cards:check-images": "tsx src/check-images.ts"
+    "cards:check-images": "tsx src/check-images.ts",
+    "cards:map": "tsx src/map-cards.ts",
+    "cards:map-check": "tsx src/map-check.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
