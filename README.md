@@ -95,6 +95,21 @@ Metrics to check once a month (Ruben):
 | Servers with ≥1 site visit per week | Vercel Analytics → Pages, last 7 days: distinct ids among `/s/<id>/...` paths |
 | `/setup` completion rate | `select count(*) from guild_settings s join guilds g using (guild_id);` ÷ servers with the bot |
 | Recap posts per month | `select month, count(*) from monthly_recaps where posted_at is not null group by 1 order by 1;` |
+| Riftbound funnel, per week | `select * from riftbound_funnel();` (SQL editor or service role only) |
+
+`riftbound_funnel()` gives one row per ISO week (Monday, UTC) of the last 12, counting distinct
+people by the week they first reached each step:
+
+- `logged_in`: first logged in to the site with Discord.
+- `first_card`: first added a card to their collection.
+- `ten_cards`: the collection first held 10 copies. Recorded since #349: collections already at
+  10 then are not counted.
+- `shares_server`: first shared a server that has the bot with another person with a collection,
+  having one themselves. Memberships from before #349 have no date; a pair where neither has one does not count.
+- `first_loan_or_trade`: first loan, as lender or borrower, or first trade match, either side.
+
+People who used `/forget-me` are not counted: their rows are gone. Collection activity is
+recorded since #303, so a collection started before that counts from its first addition after.
 
 ## Features
 
