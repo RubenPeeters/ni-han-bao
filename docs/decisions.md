@@ -13,3 +13,23 @@
 **Facet icons.** OpenRift has none; the existing Riot icon rows are kept as static data. (Default set when the issues were written; not yet confirmed by Ruben.)
 
 **Ids.** Card and printing ids become OpenRift's UUIDs, with OpenRift's slug kept alongside. (Default set when the issues were written; not yet confirmed by Ruben.)
+
+## 2026-11-10: Review and direction
+
+Ruben had the product reviewed on 2026-11-10 (strategy, technical, UX, legal) and chose a direction.
+
+**Riftbound first.** The Riftbound tools for a playgroup (collection, lending, trades, wishlists between people who meet) are the product to grow. The landing page leads with them; server statistics come second. **Why:** Ruben: they are the most used part, and the group features are what Piltover Archive, the existing collection tracker, does not have. Today the bot is in three servers, all friends.
+
+**Server statistics.** They keep working, and get no new features for now. **Why:** focus; statistics bots are common and free.
+
+**Game time.** Game time from Discord status becomes opt-in per member. **Why:** it is the most invasive data the bot keeps and members were never asked. Ruben chose opt-in over removing the feature.
+
+**Login return.** After logging in, a visitor returns to the page they came from, not always the server picker. **Why:** a Riftbound player who logs in on the Collection page should land there.
+
+**Contact.** Questions and data requests go to an email address read from a site setting, next to the GitHub link. **Why:** a data request should not have to be a public issue. Ruben chose a setting he fills in, so no address is committed to this public repository.
+
+**Data retention.** A server's data is deleted 30 days after the bot is removed from it. **Why:** data should not be kept without a purpose; 30 days allows for a mistaken kick. (30 days is a default set when the issues were written; not yet confirmed by Ruben.)
+
+**Pinned dependencies.** `next`, `@supabase/ssr` and `@supabase/supabase-js` are pinned to versions instead of `latest`. **Why:** a build must not change without a commit.
+
+**Not decided, waiting on Ruben.** Paid features (Riot's rules, the Vercel plan and his legal status as operator come first), the privacy text's facts (where the database is hosted), and the format of a Piltover Archive export.
