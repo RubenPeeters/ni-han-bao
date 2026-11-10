@@ -43,10 +43,13 @@ export const discordId = (user: User) => user.user_metadata.provider_id ?? user.
 // No `scopes`: Supabase's Discord provider always asks for `identify email` and only
 // appends extra scopes, so identify-only is not possible without a custom OAuth flow.
 // Membership comes from the bot, so the `guilds` scope is not needed.
+// `next` brings the visitor back to this page; the callback checks it (lib/next-path.ts).
 const logIn = () =>
   void createClient().auth.signInWithOAuth({
     provider: "discord",
-    options: { redirectTo: `${location.origin}/auth/callback` },
+    options: {
+      redirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(location.pathname + location.search)}`,
+    },
   });
 
 export function LoginButton({ size }: { size: "sm" | "lg" }) {
