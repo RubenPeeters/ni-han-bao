@@ -1,0 +1,10 @@
+{
+  "schema": {
+    "old": "old printing id (riftbound_printings.id, e.g. ogn-279-298)",
+    "finish": "normal | foil",
+    "language": "en | zh-Hans | fr",
+    "openrift": "OpenRift printing id (UUID)",
+    "reason": "why this OpenRift printing is the old one, for the reviewer"
+  },
+  "entries": []
+}
