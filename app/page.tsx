@@ -5,7 +5,8 @@ import { HomeStats, HomeStatsSkeleton } from "@/components/home-stats";
 import { Board } from "@/components/leaderboard";
 import { HomeFeed } from "@/components/home-feed";
 import { NotConfigured, PageHeader, StatsSkeleton } from "@/components/stat-ui";
-import { ServersButton } from "@/components/auth-button";
+import { LoanRow, type Loan } from "@/components/profile-loans";
+import { MemberRankRow, RankList, RankRow, StatCard } from "@/components/stat-ui";
 import { Button } from "@/components/ui/button";
 import { parseFilter, parseShow } from "@/lib/feed";
 import { createClient } from "@/lib/supabase/server";
@@ -18,6 +19,25 @@ import { Suspense, type ReactNode } from "react";
 // applications.commands scope.
 const INSTALL_URL =
   "https://discord.com/oauth2/authorize?client_id=1561027678838980680&permissions=117760&scope=bot+applications.commands";
+
+// Drafts for Ruben: every text of the logged-out landing page, in one place to edit.
+const COPY = {
+  title: "nexus: Riftbound cards for your playgroup",
+  description: "A Riftbound collection, lending and trade tool for playgroups on Discord, with server statistics.",
+  hero: "Your playgroup's Riftbound cards in one place: who owns what, what you can borrow, and who has the card you are looking for.",
+  start: "Start your collection",
+  install: "Add to Discord",
+  collection: { title: "Your collection", text: "Count your cards by printing, finish and language. Import a CSV, export it again." },
+  loans: { title: "Lend and borrow", text: "See which cards your group can lend, ask for them, and keep track of what is out and when it is due." },
+  trades: { title: "Trades and wishlists", text: "Add what you are looking for. When someone in your server has it for trade, you both hear about it." },
+  alone: "You can keep a collection on your own. Lending and trades start when the bot is in a server you share with other players.",
+  stats: "And your server's numbers",
+  leaderboard: { title: "A leaderboard for every server", text: "Who sent the most messages this week, and of all time. Members click through to their own stats." },
+  heatmap: { title: "When your server is awake", text: "Messages by weekday and hour, in your server's time zone, so you know when to post." },
+  emoji: { title: "The emoji people actually use", text: "The most used reactions, and whose messages get the most of them." },
+};
+
+export const metadata = { title: COPY.title, description: COPY.description };
 
 // Made-up example data: the previews render the real cards, but no real server or person.
 const EXAMPLE_TALKERS = [
@@ -46,6 +66,43 @@ const EXAMPLE_EMOJI = [
   animated: false,
   reaction_count: count as number,
 }));
+
+const EXAMPLE_SETS = [
+  ["OGN · Origins", 214, 151],
+  ["SFD · Spiritforged", 96, 72],
+  ["OGS · Proving Grounds", 24, 24],
+] as const;
+
+// Fixed dates, so the "Overdue" badge does not depend on the day the page is built.
+const EXAMPLE_TODAY = "2026-11-10";
+const EXAMPLE_LOANS: Loan[] = [
+  {
+    other: "Jonas",
+    due_on: "2026-11-21",
+    cards: [
+      { name: "Jinx, Loose Cannon", code: "OGN-202", finish: "normal", quantity: 1 },
+      { name: "Get Excited!", code: "OGN-008", finish: "foil", quantity: 3 },
+    ],
+  },
+  { other: "Ayla", due_on: "2026-11-03", cards: [{ name: "Ahri, Alluring", code: "OGN-066", finish: "normal", quantity: 2 }] },
+].map(({ other, due_on, cards }, i) => ({
+  id: 12 + i,
+  lent: true,
+  other_id: String(i),
+  other_name: other,
+  other_avatar: null,
+  due_on,
+  state: "open",
+  answer: "confirmed",
+  note: null,
+  cards: cards.map((c) => ({ ...c, condition: "NM", language: "en" })),
+  deck_name: null,
+}));
+
+const EXAMPLE_TRADES = [
+  { card: "Yasuo, Unforgiven", want: 1, traders: [["Mira", 1, "You are both going: Sat 15 Nov 13:00 · Weekly league"]] },
+  { card: "Fight or Flight", want: 2, traders: [["Sam", 2, "You are both regulars at the card shop in town"], ["Teo", 1, "No shared event or store yet: ask in the server"]] },
+] as const;
 
 // Quiet nights, a busy evening peak, a little more at the weekend.
 const EXAMPLE_HEATMAP = Array.from({ length: 7 }, (_, d) =>
@@ -95,10 +152,7 @@ function Landing() {
         )}
         <div className="flex flex-col items-center gap-3 sm:items-start">
           <h1 className="text-4xl font-semibold">nexus</h1>
-          <p className="text-lg text-muted-foreground">
-            A Discord bot that counts messages, reactions and voice time, and shows who talks the
-            most.
-          </p>
+          <p className="text-lg text-muted-foreground">{COPY.hero}</p>
           {hasEnvVars ? (
             <Suspense fallback={<StatusPill tone="unknown">Checking…</StatusPill>}>
               <HeroStatus />
@@ -108,29 +162,72 @@ function Landing() {
           )}
           <div className="mt-2 flex min-h-10 flex-wrap justify-center gap-3 sm:justify-start">
             <Button asChild size="lg">
-              <a href={INSTALL_URL}>Add to Discord</a>
+              <Link href="/collection">{COPY.start}</Link>
             </Button>
-            <ServersButton />
+            <Button asChild size="lg" variant="outline">
+              <a href={INSTALL_URL}>{COPY.install}</a>
+            </Button>
           </div>
         </div>
       </section>
 
-      <Feature
-        title="A leaderboard for every server"
-        text="Who sent the most messages this week, and of all time. Members click through to their own stats."
-      >
+      <Feature {...COPY.collection}>
+        <StatCard title="Per set" description="334 copies in all">
+          <RankList>
+            {EXAMPLE_SETS.map(([set, copies, cards], i) => (
+              <RankRow key={set} rank={i + 1} value={copies.toLocaleString("en-US")}>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">{set}</span>
+                  <span className="text-xs text-muted-foreground">{cards} different cards</span>
+                </span>
+              </RankRow>
+            ))}
+          </RankList>
+        </StatCard>
+      </Feature>
+      <Feature {...COPY.loans}>
+        <StatCard title="Who has my cards" description="Lent and not back yet">
+          <ul className="flex flex-col divide-y">
+            {EXAMPLE_LOANS.map((l) => (
+              <LoanRow key={l.id} loan={l} today={EXAMPLE_TODAY} byCode={new Map()} />
+            ))}
+          </ul>
+        </StatCard>
+      </Feature>
+      <Feature {...COPY.trades}>
+        <StatCard title="Trade matches" description="Cards on your wishlist that other members have for trade">
+          {EXAMPLE_TRADES.map((m) => (
+            <div key={m.card} className="flex min-w-0 flex-col gap-2">
+              <h3 className="flex items-center justify-between gap-3 text-sm font-medium">
+                <span className="truncate">{m.card}</span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">You want {m.want}</span>
+              </h3>
+              <RankList>
+                {m.traders.map(([name, copies, meet], i) => (
+                  <MemberRankRow
+                    key={name}
+                    rank={i + 1}
+                    name={name}
+                    avatarUrl={null}
+                    value={`${copies} for trade`}
+                    detail={<span className="truncate">{meet}</span>}
+                  />
+                ))}
+              </RankList>
+            </div>
+          ))}
+        </StatCard>
+      </Feature>
+      <p className="text-muted-foreground">{COPY.alone}</p>
+
+      <h2 className="border-t pt-8 text-4xl font-semibold">{COPY.stats}</h2>
+      <Feature {...COPY.leaderboard}>
         <Board title="This week" description="Since Monday" rows={EXAMPLE_TALKERS} />
       </Feature>
-      <Feature
-        title="When your server is awake"
-        text="Messages by weekday and hour, in your server's time zone, so you know when to post."
-      >
+      <Feature {...COPY.heatmap}>
         <Heatmap grid={EXAMPLE_HEATMAP} timeZone="UTC" />
       </Feature>
-      <Feature
-        title="The emoji people actually use"
-        text="The most used reactions, and whose messages get the most of them."
-      >
+      <Feature {...COPY.emoji}>
         <TopEmoji rows={EXAMPLE_EMOJI} />
       </Feature>
 

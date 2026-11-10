@@ -11,7 +11,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 /** A row of profile_loans(), from the visitor's side: `lent` is true for their own cards. */
-interface Loan {
+export interface Loan {
   id: number;
   lent: boolean;
   other_id: string;
@@ -97,7 +97,7 @@ export async function ProfileLoans({ user, own }: { user: string; own?: boolean 
   );
 }
 
-function LoanRow({ loan, today, byCode }: { loan: Loan; today: string; byCode: Map<string, Printed> }) {
+export function LoanRow({ loan, today, byCode }: { loan: Loan; today: string; byCode: Map<string, Printed> }) {
   const name = loan.other_name ?? "A hidden member";
   const open = loan.state === "open";
   // A deck is lent with its Legend, a card line like the others.
