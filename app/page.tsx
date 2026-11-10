@@ -10,15 +10,9 @@ import { MemberRankRow, RankList, RankRow, StatCard } from "@/components/stat-ui
 import { Button } from "@/components/ui/button";
 import { parseFilter, parseShow } from "@/lib/feed";
 import { createClient } from "@/lib/supabase/server";
-import { hasEnvVars } from "@/lib/utils";
+import { hasEnvVars, INSTALL_URL } from "@/lib/utils";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
-
-// View Channels, Send Messages, Embed Links (the report cards), Attach Files (the monthly
-// recap image) and Read Message History (counting past messages). Slash commands need the
-// applications.commands scope.
-const INSTALL_URL =
-  "https://discord.com/oauth2/authorize?client_id=1561027678838980680&permissions=117760&scope=bot+applications.commands";
 
 // Drafts for Ruben: every text of the logged-out landing page, in one place to edit.
 const COPY = {

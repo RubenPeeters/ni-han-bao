@@ -1,9 +1,11 @@
 import { LoginButton } from "@/components/auth-button";
-import { EmptyState, ErrorState } from "@/components/stat-ui";
+import { ErrorState } from "@/components/stat-ui";
+import { Button } from "@/components/ui/button";
 import { guildInfo, guildTimeZone } from "@/lib/guild";
 import { serverSummary } from "@/lib/home";
 import { createClient } from "@/lib/supabase/server";
 import { weekStart } from "@/lib/time";
+import { INSTALL_URL } from "@/lib/utils";
 import { GuildIcon, ServerNav, type Guild } from "@/components/site-nav";
 import Link from "next/link";
 
@@ -24,6 +26,33 @@ export async function ServerPicker() {
   return <MyServers />;
 }
 
+/** No shared server is not a dead end: the Riftbound pages work without one. Texts are drafts for Ruben. */
+export function NoServers() {
+  return (
+    <div className="flex flex-col items-start gap-4 rounded-lg border border-dashed p-5">
+      <p className="font-medium">The bot is not in any of your servers yet.</p>
+      <p className="text-muted-foreground">You can already keep your Riftbound collection, decks and wishlist.</p>
+      <div className="flex flex-wrap gap-2">
+        <Button asChild size="sm">
+          <Link href="/collection">Collection</Link>
+        </Button>
+        <Button asChild size="sm" variant="outline">
+          <Link href="/decks">Decks</Link>
+        </Button>
+        <Button asChild size="sm" variant="outline">
+          <Link href="/wishlist">Wishlist</Link>
+        </Button>
+      </div>
+      <p className="text-muted-foreground">
+        Lending and trades start when the bot is in a server you share with other players.
+      </p>
+      <Button asChild size="sm" variant="outline">
+        <a href={INSTALL_URL}>Add to Discord</a>
+      </Button>
+    </div>
+  );
+}
+
 /**
  * The visitor's servers with this week's messages and the visitor's rank.
  * profile_servers() of the visitor themselves lists exactly their servers, with their rank.
@@ -37,7 +66,7 @@ export async function MyServers() {
   }
   const guilds = servers.data as (Guild & { rank: number | null })[];
   if (guilds.length === 0) {
-    return <EmptyState>The bot is not in any of your servers yet.</EmptyState>;
+    return <NoServers />;
   }
   const now = new Date();
   const weeks = await Promise.all(
