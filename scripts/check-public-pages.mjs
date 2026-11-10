@@ -61,6 +61,18 @@ try {
   const installOk = /href="https:\/\/discord\.com\/oauth2\/authorize\?client_id=\d+&amp;permissions=117760&amp;scope=bot\+applications\.commands"/.test(home);
   if (!installOk) failed = true;
   console.log(`${installOk ? "ok  " : "FAIL"} / has the Add to Discord install link`);
+  // Security headers (#345) on every route, checked on the home page.
+  const headers = (await fetch(base)).headers;
+  for (const [name, value] of [
+    ["x-content-type-options", "nosniff"],
+    ["referrer-policy", "strict-origin-when-cross-origin"],
+    ["x-frame-options", "DENY"],
+    ["permissions-policy", "camera=(), microphone=(), geolocation=()"],
+  ]) {
+    const ok = headers.get(name) === value;
+    if (!ok) failed = true;
+    console.log(`${ok ? "ok  " : "FAIL"} / sends ${name}: ${headers.get(name)}`);
+  }
   // Unknown paths get the styled not-found page (#58), not Next's default one.
   const res = await fetch(`${base}/no-such-page`, { redirect: "manual" });
   const ok = res.status === 404 && (await res.text()).includes("Page not found");
