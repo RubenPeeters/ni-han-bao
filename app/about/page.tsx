@@ -137,6 +137,7 @@ export default function AboutPage() {
           you type <Cmd>/show-me</Cmd>, which starts counting you again, you also cannot open
           your servers&apos; pages here.
         </p>
+        <p>You can download a copy of everything stored about you on the Settings page.</p>
         <p>
           To remove the bot from a server, a server admin can kick it like any member (or via
           Server Settings → Integrations). It stops counting immediately and the server

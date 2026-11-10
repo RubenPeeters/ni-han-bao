@@ -1,6 +1,7 @@
 import { setBorrowLanguages, setFeedCollection, setLending, setVisibility, setWishlistMode } from "@/app/u/[userId]/actions";
 import { ChampionPicker } from "@/components/champion-picker";
 import { VISIBILITIES } from "@/components/profile-stats";
+import { MyDataDownload } from "@/components/my-data-download";
 import { LogInPrompt } from "@/components/server-picker";
 import { Checkboxes, Options, SettingsForm, ThemeSettings } from "@/components/settings-form";
 import { ErrorState, PageHeader, StatsSkeleton } from "@/components/stat-ui";
@@ -24,7 +25,7 @@ const SECTIONS = [
   { id: "appearance", title: "Appearance" },
   { id: "linked-accounts", title: "Linked accounts" },
   { id: "servers", title: "Visibility per server" },
-  { id: "delete", title: "Delete my data" },
+  { id: "my-data", title: "My data" },
 ] as const;
 
 const LEND_DEFAULTS = [
@@ -208,12 +209,18 @@ async function Settings() {
         )}
       </Section>
 
-      {/* Destructive, so last and set apart. */}
+      {/* Holds the destructive /forget-me, so last and set apart. */}
       <Section
-        id="delete"
-        description="Deleting happens in Discord only."
+        id="my-data"
+        description="Download a copy of everything stored about you. Deleting happens in Discord only."
         className="mt-6 border-destructive/50 bg-destructive/5"
       >
+        <MyDataDownload />
+        <Help>
+          One JSON file: your settings, servers, counts, game time, linked accounts, Riftbound collection, decks,
+          wishlist, loans, borrow requests, trade matches, stores and events. Other members appear by name only.
+        </Help>
+        <hr />
         <p className="text-sm">
           <Cmd>/forget-me</Cmd> in Discord deletes everything the bot stores about you, in every server: your counts, name
           and avatar, linked accounts, Riftbound collection, decks, wishlist and loans, and these settings. Server totals keep
