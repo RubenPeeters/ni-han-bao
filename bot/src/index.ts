@@ -95,6 +95,7 @@ import {
   type Period,
 } from "./stats.js";
 import { backfillGuild } from "./server-history.js";
+import { retentionPlan, type StoredServer } from "./retention.js";
 import { flushServers, Server, type ServerWriter } from "./servers.js";
 import {
   canRemove,
@@ -194,6 +195,7 @@ const BORROW_REQUESTS_MS = 60_000;
 const TRADES_MS = 60 * 60_000;
 const FEED_CHECK_MS = 24 * 60 * 60_000;
 const STORE_IMAGES_MS = 24 * 60 * 60_000;
+const RETENTION_MS = 24 * 60 * 60_000;
 const STORE_IMAGE_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
 
 const config = loadConfig();
@@ -541,6 +543,8 @@ async function upsertGuild(guild: Guild): Promise<void> {
     name: guild.name,
     icon_url: guild.iconURL(),
     updated_at: new Date().toISOString(),
+    // The bot was added again: its data is no longer due for deletion.
+    left_at: null,
   });
   if (error) throw new Error(`guilds upsert: ${error.message}`);
 }
@@ -603,6 +607,33 @@ async function syncGuildNow(guild: Guild): Promise<Collection<string, GuildMembe
   return members;
 }
 
+/**
+ * Marks servers removed while the bot was offline as left now, then deletes the data of
+ * servers left more than 30 days ago (forget_guild() checks the date), one transaction each.
+ */
+async function forgetLeftServers(): Promise<void> {
+  const stored = await readAll(async (from, to) => {
+    const { data, error } = await db.from("guilds").select("guild_id, left_at").order("guild_id").range(from, to);
+    if (error) throw new Error(`guilds select: ${error.message}`);
+    return data as StoredServer[];
+  });
+  const plan = retentionPlan(stored, new Set(client.guilds.cache.keys()));
+  if (plan.markLeft.length) {
+    const { error } = await db
+      .from("guilds")
+      .update({ left_at: new Date().toISOString() })
+      .in("guild_id", plan.markLeft)
+      .is("left_at", null);
+    if (error) throw new Error(`guilds update: ${error.message}`);
+    log("info", "servers_marked_left", { guilds: plan.markLeft });
+  }
+  for (const guildId of plan.forget) {
+    const { data, error } = await db.rpc("forget_guild", { guild: guildId });
+    if (error) log("error", "forget_guild_failed", { guild: guildId, error: error.message });
+    else if (data) log("info", "server_forgotten", { guild: guildId });
+  }
+}
+
 // Emitted after ready only for servers the bot joins; those it is already in start on ready.
 client.on(Events.GuildCreate, (guild) => {
   void startServer(guild);
@@ -641,7 +672,7 @@ client.on(Events.GuildUpdate, (_old, guild) => void tracked("guild_update", memb
 
 // Only when the bot leaves or is removed: discord.js reports an outage as GuildUnavailable.
 // Counting stops because no more events arrive; what is buffered still gets written, and
-// the server's stats stay.
+// the server's stats stay until forgetLeftServers() deletes them 30 days later.
 client.on(Events.GuildDelete, (guild) => {
   const server = servers.get(guild.id);
   // Otherwise every flush would keep adding voice time for sessions nobody can end.
@@ -652,8 +683,8 @@ client.on(Events.GuildDelete, (guild) => {
     membership(guild.id, async () => {
       const members = await db.from("guild_members").delete().eq("guild_id", guild.id);
       if (members.error) throw new Error(`guild_members delete: ${members.error.message}`);
-      const row = await db.from("guilds").delete().eq("guild_id", guild.id);
-      if (row.error) throw new Error(`guilds delete: ${row.error.message}`);
+      const row = await db.from("guilds").update({ left_at: new Date().toISOString() }).eq("guild_id", guild.id);
+      if (row.error) throw new Error(`guilds update: ${row.error.message}`);
     }),
   );
 });
@@ -3261,6 +3292,9 @@ client.once(Events.ClientReady, async (c) => {
   });
   await registerGlobalCommands();
   for (const guild of c.guilds.cache.values()) await startServer(guild);
+  // After startServer, which clears left_at of every server the bot is in.
+  void tracked("retention", forgetLeftServers());
+  setInterval(() => void tracked("retention", forgetLeftServers()), RETENTION_MS);
   // After startServer: the role sync needs every server's members cached.
   void refreshRanks();
 });

@@ -14,6 +14,8 @@ insert into auth.users (id) values ('00000000-0000-0000-0000-0000000000b1');
 insert into auth.identities (user_id, provider, provider_id, identity_data) values
     ('00000000-0000-0000-0000-0000000000b1', 'discord', 't-discord', '{"sub": "t-discord"}');
 insert into public.guilds (guild_id, name) values ('t-a', 'Bravo'), ('t-b', 'Alpha'), ('t-c', 'Other');
+-- The bot left t-d: it is no longer one of the servers (#351).
+insert into public.guilds (guild_id, name, left_at) values ('t-d', 'Gone', now());
 -- t-discord is in two servers and counts once; t-hidden is hidden and still counts.
 insert into public.guild_members (guild_id, user_id) values
     ('t-a', 't-discord'), ('t-b', 't-discord'), ('t-c', 't-hidden');

@@ -140,8 +140,8 @@ export default function AboutPage() {
         <p>
           To remove the bot from a server, a server admin can kick it like any member (or via
           Server Settings → Integrations). It stops counting immediately and the server
-          disappears from the server picker. Statistics already collected are kept; ask below
-          if you want them deleted.
+          disappears from the server picker. Statistics already collected are deleted 30 days
+          after the bot leaves, unless it is added again in that time.
         </p>
       </Section>
       <Section title="Numbers about the site">
