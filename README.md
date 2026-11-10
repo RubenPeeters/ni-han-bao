@@ -172,7 +172,10 @@ If you wish to just develop locally and not deploy to Vercel, [follow the steps 
   ```env
   NEXT_PUBLIC_SUPABASE_URL=[INSERT SUPABASE PROJECT URL]
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=[INSERT SUPABASE PROJECT API PUBLISHABLE OR ANON KEY]
+  NEXT_PUBLIC_CONTACT_EMAIL=[OPTIONAL CONTACT ADDRESS]
   ```
+  `NEXT_PUBLIC_CONTACT_EMAIL` is optional: when set, `/about` and `/terms` offer it as an email
+  link before the GitHub one. It is read at build time, so redeploy after changing it in Vercel.
   > [!NOTE]
   > This example uses `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, which refers to Supabase's new **publishable** key format.
   > Both legacy **anon** keys and new **publishable** keys can be used with this variable name during the transition period. Supabase's dashboard may show `NEXT_PUBLIC_SUPABASE_ANON_KEY`; its value can be used in this example.

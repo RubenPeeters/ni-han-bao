@@ -73,6 +73,14 @@ try {
     if (!ok) failed = true;
     console.log(`${ok ? "ok  " : "FAIL"} / sends ${name}: ${headers.get(name)}`);
   }
+  // Contact (#350): a mailto link on /about and /terms exactly when the setting is set at build.
+  const email = process.env.NEXT_PUBLIC_CONTACT_EMAIL;
+  for (const path of ["/about", "/terms"]) {
+    const page = await (await fetch(base + path)).text();
+    const ok = email ? page.includes(`href="mailto:${email}"`) : !page.includes("mailto:");
+    if (!ok) failed = true;
+    console.log(`${ok ? "ok  " : "FAIL"} ${path} ${email ? "has a" : "has no"} mailto link`);
+  }
   // Unknown paths get the styled not-found page (#58), not Next's default one.
   const res = await fetch(`${base}/no-such-page`, { redirect: "manual" });
   const ok = res.status === 404 && (await res.text()).includes("Page not found");
