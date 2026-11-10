@@ -58,6 +58,7 @@ begin
     perform set_config('ni_han_bao.erase_loans', 'off', true);
     delete from public.riftbound_collection where user_id = any (users);
     delete from public.riftbound_collection_activity where user_id = any (users);
+    delete from public.riftbound_ten_copies where user_id = any (users);
     delete from public.riftbound_decks where user_id = any (users);
     delete from public.riftbound_wishlist where user_id = any (users);
     delete from public.riftbound_playset_goals where user_id = any (users);

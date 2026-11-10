@@ -6,6 +6,47 @@
 alter table public.guild_members add column if not exists created_at timestamptz;
 alter table public.guild_members alter column created_at set default now();
 
+-- Activity counts additions only, so it cannot tell when a collection held ten copies. This
+-- records the first time it does, from now on.
+create table if not exists public.riftbound_ten_copies (
+    user_id text primary key,
+    reached_at timestamptz
+);
+
+-- RLS on and no policies: read through riftbound_funnel() only.
+alter table public.riftbound_ten_copies enable row level security;
+
+create trigger skip_forgotten before insert on public.riftbound_ten_copies
+    for each row execute function public.skip_forgotten();
+
+-- Collections already at ten reached it on an unknown date: a null, not a guess, so their next
+-- change is not taken for the crossing.
+insert into public.riftbound_ten_copies (user_id, reached_at)
+select c.user_id, null from public.riftbound_collection c group by c.user_id having sum(c.quantity) >= 10
+on conflict (user_id) do nothing;
+
+-- Below ten a collection has at most nine rows, so the sum stays cheap until the row exists.
+create function public.record_riftbound_ten_copies()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+    if not exists (select from public.riftbound_ten_copies t where t.user_id = new.user_id)
+        and (select sum(c.quantity) from public.riftbound_collection c where c.user_id = new.user_id) >= 10 then
+        insert into public.riftbound_ten_copies (user_id, reached_at) values (new.user_id, now())
+        on conflict (user_id) do nothing;
+    end if;
+    return null;
+end;
+$$;
+
+revoke execute on function public.record_riftbound_ten_copies() from public, anon, authenticated;
+
+create trigger record_ten_copies after insert or update of quantity on public.riftbound_collection
+    for each row execute function public.record_riftbound_ten_copies();
+
 -- One row per ISO week (Monday, UTC) of the last 12, with the people who first reached each
 -- step that week. Forgotten users (/forget-me) are left out: their rows are deleted, and
 -- their auth user, which stays, is skipped by its hash.
@@ -24,13 +65,13 @@ as $$
         where not exists (select from public.forgotten_users f where f.user_hash = public.user_hash(i.provider_id))
         group by i.provider_id
     ),
-    -- Additions only (removals are not recorded), so "held 10" is "had added 10".
-    totals as (
-        select a.user_id, a.day, sum(a.copies_added) over (partition by a.user_id order by a.day) as copies
-        from public.riftbound_collection_activity a
+    first_cards as (
+        select a.user_id, min(a.day) as at from public.riftbound_collection_activity a group by a.user_id
     ),
-    first_cards as (select t.user_id, min(t.day) as at from totals t group by t.user_id),
-    ten_cards as (select t.user_id, min(t.day) as at from totals t where t.copies >= 10 group by t.user_id),
+    ten_cards as (
+        select t.user_id, (t.reached_at at time zone 'utc')::date as at
+        from public.riftbound_ten_copies t where t.reached_at is not null
+    ),
     -- Both people have a collection. A null created_at predates the column, so it is before
     -- the other's known one and greatest() may skip it; with both null the date is unknown.
     shares as (

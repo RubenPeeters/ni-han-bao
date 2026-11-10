@@ -102,7 +102,8 @@ people by the week they first reached each step:
 
 - `logged_in`: first logged in to the site with Discord.
 - `first_card`: first added a card to their collection.
-- `ten_cards`: had added 10 copies in total (removals are not recorded, so they are not subtracted).
+- `ten_cards`: the collection first held 10 copies. Recorded since #349: collections already at
+  10 then are not counted.
 - `shares_server`: first shared a server that has the bot with another person with a collection,
   having one themselves. Memberships from before #349 have no date; a pair where neither has one does not count.
 - `first_loan_or_trade`: first loan, as lender or borrower, or first trade match, either side.

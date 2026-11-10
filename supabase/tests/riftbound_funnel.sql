@@ -11,11 +11,13 @@ create temp table w (n int primary key, monday date);
 insert into w select n, (date_trunc('week', now() at time zone 'utc') - make_interval(weeks => n))::date
 from generate_series(0, 20) n;
 
--- f-a: logs in week -2, adds 5 copies that week and 5 more in week -1, lends to f-b this week.
+-- f-a: logs in week -2, first card that week, lends to f-b this week. This week: 5 copies,
+-- removed, 5 more (never ten held), then 5 more (ten held).
 -- f-b: never logs in, first card in week -1, in f-a's server from before created_at existed.
 -- f-c: logged in 20 weeks ago (outside the window), in the server, no collection.
 -- f-d: logs in this week, then used /forget-me.
--- f-e and f-f: collections, sharing a server where neither membership has a timestamp.
+-- f-e and f-f: collections, sharing a server where neither membership has a timestamp. f-e held
+-- ten before the ten-copies table existed, so reaching it again this week does not count.
 insert into auth.users (id, created_at) values
     ('00000000-0000-0000-0000-0000000349a0', (select monday from w where n = 2) + time '12:00'),
     ('00000000-0000-0000-0000-0000000349c0', (select monday from w where n = 20) + time '12:00'),
@@ -37,6 +39,20 @@ insert into public.guild_members (guild_id, user_id, created_at) values
     ('f-g', 'f-c', now()),
     ('f-h', 'f-e', null),
     ('f-h', 'f-f', null);
+insert into public.riftbound_ten_copies (user_id, reached_at) values ('f-e', null);
+insert into public.riftbound_collection (user_id, printing_id, finish, condition, language, quantity)
+values ('f-a', 'ogn-255-298', 'normal', 'NM', 'en', 5);
+delete from public.riftbound_collection where user_id = 'f-a';
+insert into public.riftbound_collection (user_id, printing_id, finish, condition, language, quantity)
+values ('f-a', 'ogn-255-298', 'normal', 'NM', 'en', 5), ('f-e', 'ogn-255-298', 'normal', 'NM', 'en', 10);
+do $$
+begin
+    if exists (select from public.riftbound_ten_copies where user_id = 'f-a') then
+        raise exception 'additions separated by a removal count as ten held';
+    end if;
+end;
+$$;
+update public.riftbound_collection set quantity = 10 where user_id = 'f-a';
 insert into public.riftbound_loans (lender_id, borrower_id) values ('f-a', 'f-b');
 
 do $$
@@ -47,7 +63,7 @@ begin
         a.shares_server - b.shares_server, a.first_loan_or_trade - b.first_loan_or_trade), ' ' order by w.n)
     into got
     from public.riftbound_funnel() a join funnel_before b using (week) join w on w.monday = a.week;
-    if got is distinct from '0:0/0/0/0/2 1:0/3/1/2/0 2:1/1/0/0/0 3:0/0/0/0/0 4:0/0/0/0/0 5:0/0/0/0/0 '
+    if got is distinct from '0:0/0/1/0/2 1:0/3/0/2/0 2:1/1/0/0/0 3:0/0/0/0/0 4:0/0/0/0/0 5:0/0/0/0/0 '
         '6:0/0/0/0/0 7:0/0/0/0/0 8:0/0/0/0/0 9:0/0/0/0/0 10:0/0/0/0/0 11:0/0/0/0/0' then
         raise exception 'riftbound_funnel() added %', got;
     end if;
