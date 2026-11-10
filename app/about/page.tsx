@@ -1,3 +1,4 @@
+import { Contact } from "@/components/contact";
 import { PageHeader } from "@/components/stat-ui";
 import { RIOT_DISCLAIMER } from "@/lib/utils";
 import type { ReactNode } from "react";
@@ -6,8 +7,6 @@ export const metadata = {
   title: "About & privacy · nexus",
   description: "What the bot counts, who can see it, and how to opt out or delete your data.",
 };
-
-const REPO = "https://github.com/RubenPeeters/ni-han-bao";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -161,12 +160,7 @@ export default function AboutPage() {
       <Section title="Who runs it">
         <p>
           nexus is a hobby project by Ruben. Questions, or a request to delete data?{" "}
-          <a
-            href={`${REPO}/issues`}
-            className="font-medium text-crystal underline underline-offset-4 hover:text-crystal/80"
-          >
-            Open an issue on GitHub
-          </a>
+          <Contact />
           . The code is public there too.
         </p>
         <p>{RIOT_DISCLAIMER}</p>

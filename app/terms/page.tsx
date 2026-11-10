@@ -1,3 +1,4 @@
+import { Contact } from "@/components/contact";
 import { PageHeader } from "@/components/stat-ui";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -6,8 +7,6 @@ export const metadata = {
   title: "Terms of service · nexus",
   description: "The rules for using the nexus bot and website.",
 };
-
-const REPO = "https://github.com/RubenPeeters/ni-han-bao";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -66,12 +65,7 @@ export default function TermsPage() {
       <Section title="Changes and contact">
         <p>
           These terms may change; the version on this page is the one that applies. Questions?{" "}
-          <a
-            href={`${REPO}/issues`}
-            className="font-medium text-crystal underline underline-offset-4 hover:text-crystal/80"
-          >
-            Open an issue on GitHub
-          </a>
+          <Contact />
           .
         </p>
       </Section>
