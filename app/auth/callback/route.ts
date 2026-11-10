@@ -1,3 +1,4 @@
+import { nextPath } from "@/lib/next-path";
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -10,6 +11,6 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) console.error("auth callback: code exchange failed", error.message);
   }
-  // Always the server picker, never a URL from the query string, so this cannot be an open redirect.
-  return NextResponse.redirect(`${origin}/s`);
+  // Always behind our own origin: nextPath only lets through paths on this site.
+  return NextResponse.redirect(`${origin}${nextPath(searchParams.get("next"))}`);
 }
