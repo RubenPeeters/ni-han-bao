@@ -80,10 +80,10 @@ begin
     insert into public.guild_members (guild_id, user_id) select g, u from unnest(users) u;
     -- Anna (the viewer) shares with members; a few are public, the rest stay private.
     -- Anna and Bram lend everything (Anna for /loans' summary, #300), Chloé the cards she marks;
-    -- Daan lends too, but his profile is private.
-    insert into public.profiles (user_id, visibility, lends_cards, lend_all)
+    -- Daan lends too, but his profile is private. All but member 6 count their game time (#354).
+    insert into public.profiles (user_id, visibility, lends_cards, lend_all, count_games)
         select users[i], case when i in (1, 2, 5) then 'members' when i in (3, 8) then 'public' else 'private' end,
-               i in (1, 2, 3, 4), i in (1, 2)
+               i in (1, 2, 3, 4), i in (1, 2), i <> 6
         from generate_series(1, 12) i;
     -- Favourite champions (#306): Anna's differs from her most played, so both show.
     update public.profiles set favourite_champion = case user_id when users[1] then 'MonkeyKing' when users[2] then 'Ahri' else 'Thresh' end
@@ -143,7 +143,7 @@ begin
         select users[i], d::date, 'playing', game, (1 + abs(hashtext(users[i] || game || d::text)) % 6) * 1800
         from generate_series(1, 12) i, generate_series(today - 59, today, '1 day') d,
              unnest(array['League of Legends', 'Riftbound', 'Teamfight Tactics', 'Valorant']) game
-        where abs(hashtext('a' || users[i] || game || d::text)) % 4 = 0;
+        where abs(hashtext('a' || users[i] || game || d::text)) % 4 = 0 and i <> 6;
     insert into public.activity_seconds (user_id, day, kind, name, seconds)
         select users[i], d::date, 'streaming', 'League of Legends', 3600 * (1 + abs(hashtext('s' || d::text)) % 3)
         from generate_series(2, 3) i, generate_series(today - 59, today, '1 day') d

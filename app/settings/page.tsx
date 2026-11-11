@@ -1,4 +1,4 @@
-import { setBorrowLanguages, setFeedCollection, setLending, setVisibility, setWishlistMode } from "@/app/u/[userId]/actions";
+import { setBorrowLanguages, setCountGames, setFeedCollection, setLending, setVisibility, setWishlistMode } from "@/app/u/[userId]/actions";
 import { ChampionPicker } from "@/components/champion-picker";
 import { VISIBILITIES } from "@/components/profile-stats";
 import { MyDataDownload } from "@/components/my-data-download";
@@ -59,6 +59,7 @@ interface MySettings {
   borrow_languages: string[];
   feed_collection: boolean;
   favourite_champion: string | null;
+  count_games: boolean;
 }
 
 async function Settings() {
@@ -68,7 +69,7 @@ async function Settings() {
   const me = await supabase.rpc("current_discord_id");
   const [profile, servers, accounts, champions] = await Promise.all([
     // The caller's own row is always visible to them (can_see_profile()); no row is the defaults.
-    supabase.from("profiles").select("visibility, lends_cards, lend_all, wishlist_mode, borrow_languages, feed_collection, favourite_champion").eq("user_id", me.data ?? "").maybeSingle<MySettings>(),
+    supabase.from("profiles").select("visibility, lends_cards, lend_all, wishlist_mode, borrow_languages, feed_collection, favourite_champion, count_games").eq("user_id", me.data ?? "").maybeSingle<MySettings>(),
     supabase.rpc("my_server_visibility"),
     supabase.rpc("my_game_accounts"),
     loadChampions(),
@@ -95,7 +96,7 @@ async function Settings() {
         </ul>
       </nav>
 
-      <Section id="profile" failed={profileFailed} description="Who can see your profile: your activity, collection, loans and wishlist; and your favourite champion on it.">
+      <Section id="profile" failed={profileFailed} description="Who can see your profile: your activity, collection, loans and wishlist; your favourite champion on it; and whether your game time is counted.">
         <SettingsForm action={setVisibility}>
           <fieldset className="flex flex-col gap-1">
             <legend className="mb-2 text-sm font-medium">Who can see my profile</legend>
@@ -113,6 +114,22 @@ async function Settings() {
             Shown on your profile next to your most played champion. Also with <Cmd>/profile champion</Cmd> in Discord.
           </Help>
         </div>
+        <hr />
+        <SettingsForm action={setCountGames}>
+          <label className="flex min-h-11 items-start gap-3 py-1 text-sm">
+            <input type="checkbox" name="games" defaultChecked={mine?.count_games ?? false} className="mt-0.5 size-4 shrink-0 accent-primary" />
+            <span className="flex flex-col">
+              <span className="font-medium">Count my game time</span>
+              <span className="text-muted-foreground">
+                The game in your Discord status and for how long, for your servers&apos; Games pages and your profile. Off: nothing
+                is counted, and switching it off deletes your game time.
+              </span>
+            </span>
+          </label>
+          <Help>
+            Also with <Cmd>/profile games</Cmd> in Discord.
+          </Help>
+        </SettingsForm>
       </Section>
 
       <Section id="riftbound" failed={profileFailed} description="Lending, borrowing, how your decks count on your wishlist, and the home feed.">

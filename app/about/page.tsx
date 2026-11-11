@@ -34,10 +34,12 @@ export default function AboutPage() {
           <li>Reactions and emoji: which ones are used, and by whom.</li>
           <li>Voice: how long members spend in voice channels.</li>
           <li>
-            Games: from your Discord status, the name of the game you are playing or competing
-            in, or that you are streaming, and for how long, per day. The game&apos;s Discord
-            application id is kept with the game, not with you, to show its icon. Nothing else from
-            your status is stored: no rich presence details, no Spotify songs, no custom status.
+            Games: only if you switch it on with <Cmd>/profile games on</Cmd> or on Settings. Then,
+            from your Discord status, the name of the game you are playing or competing in, or that
+            you are streaming, and for how long, per day. The game&apos;s Discord application id is
+            kept with the game, not with you, to show its icon. Nothing else from your status is
+            stored: no rich presence details, no Spotify songs, no custom status.{" "}
+            <Cmd>/profile games off</Cmd> stops it and deletes it.
           </li>
           <li>
             League ranks: only if you link your League account with <Cmd>/lol link</Cmd>, Riot&apos;s
@@ -131,7 +133,7 @@ export default function AboutPage() {
           To have your data deleted instead, type <Cmd>/forget-me</Cmd> in any server and
           confirm. It deletes everything the bot stored about you, in every server: your
           message, reaction and voice counts, your game time, your name and avatar, your server memberships, your
-          linked League account with its ranks and games, your Riftbound collection, decks, wishlist, trade matches and loans (they go for the other member too), your profile and lending settings and your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
+          linked League account with its ranks and games, your Riftbound collection, decks, wishlist, trade matches and loans (they go for the other member too), your profile, game time and lending settings and your <Cmd>/hide-me</Cmd> setting. Server totals such as messages per channel keep
           their counts, without anything that points to you. The bot then stops counting you,
           keeping only a scrambled (hashed) copy of your Discord id to recognise you by. Until
           you type <Cmd>/show-me</Cmd>, which starts counting you again, you also cannot open

@@ -47,7 +47,7 @@ import {
   type UpcomingEvent,
 } from "./events.js";
 import { Backoff, flushUntil, InFlight } from "./backoff.js";
-import { flushGames, gameApps, GameBuffer, gameKeys, GameSessions } from "./games.js";
+import { flushGames, gameApps, GameBuffer, GameOptIns, GameSessions } from "./games.js";
 import { loadConfig } from "./config.js";
 import { FEEDBACK_FAILED, feedbackRequest, feedbackThanks, sendFeedback } from "./feedback.js";
 import { FEEDBACK_COMMAND, feedbackContext, feedbackId, feedbackModal, parseFeedbackId, withFeedback } from "./feedback-modal.js";
@@ -110,7 +110,7 @@ import {
 } from "./stores.js";
 import { isDiscordUrl, storeImage } from "./store-image.js";
 import { challengeText, GAME, LOL_COMMAND, startLink, verifyLink, type Platform, type RiotLookup } from "./lol.js";
-import { type Champion, championChoices, PROFILE_COMMAND, setFavouriteChampion, setProfileVisibility } from "./profile.js";
+import { type Champion, championChoices, PROFILE_COMMAND, setCountGames, setFavouriteChampion, setProfileVisibility } from "./profile.js";
 import { KEEP_MS, MATCH_TYPES, allIds, matchIdsPath, matchRegion, matchRow, type Match, type MatchRow } from "./matches.js";
 import { rankChanges, rankRolesProblem, rankRows, roleChanges, roleTier, TIERS, tierName, type LeagueEntry } from "./ranks.js";
 import { RiotApi } from "./riot.js";
@@ -187,6 +187,8 @@ const FLUSH_MS = 10_000;
 const SHUTDOWN_DEADLINE_MS = 8_000;
 const SHUTDOWN_KILL_MS = 9_500;
 const PRESENCE_MS = 5 * 60_000;
+// How soon a game time switch made on the website reaches the bot.
+const OPT_INS_MS = 5 * 60_000;
 const REPORT_CHECK_MS = 60_000;
 const RANKS_MS = 3 * 60 * 60_000;
 const MATCHES_MS = 6 * 60 * 60_000;
@@ -337,6 +339,22 @@ function writerFor(guildId: string): ServerWriter {
 // Game time is per user across servers (#101), so it is kept and written outside `servers`.
 const games = new GameSessions();
 const gameBuffer = new GameBuffer();
+const gameOptIns = new GameOptIns(games, gameBuffer);
+
+/** Who switched game time on (#354), from the database. */
+async function loadGameOptIns(): Promise<void> {
+  const ids = await readAll(async (from, to) => {
+    const { data, error } = await db
+      .from("profiles")
+      .select("user_id, count_games_since")
+      .eq("count_games", true)
+      .order("user_id")
+      .range(from, to);
+    if (error) throw new Error(`profiles select: ${error.message}`);
+    return data.map((r) => ({ userId: r.user_id as string, since: r.count_games_since as string }));
+  });
+  gameOptIns.replace(ids, cachedActivities, new Date());
+}
 
 /** Logs each stream that failed and reports whether all of them were written. */
 async function flushAll(): Promise<boolean> {
@@ -351,7 +369,7 @@ async function flushAll(): Promise<boolean> {
   try {
     await flushGames(gameBuffer, {
       async incrementGames(batch) {
-        const { error } = await db.rpc("increment_games", { batch: batch.id, games: batch.games });
+        const { error } = await db.rpc("increment_games", { batch: batch.id, games: gameOptIns.stamp(batch.games) });
         if (error) throw new Error(`increment_games: ${error.message}`);
       },
     });
@@ -703,13 +721,18 @@ client.on(Events.VoiceStateUpdate, (_old, state) => {
   server.voice.update(state.id, true, new Date());
 });
 
+/** A user's activities from any shared server's presence cache; none when offline or unknown. */
+const cachedActivities = (userId: string) =>
+  client.guilds.cache.find((g) => g.presences.cache.has(userId))?.presences.cache.get(userId)?.activities ?? [];
+
 // discord.js drops the member or guild from its cache before emitting the leave or delete.
 const sharesServer = (userId: string) => client.guilds.cache.some((g) => g.members.cache.has(userId));
 
 // Arrives once per shared server; GameSessions counts the user once. Offline presences have no activities.
+// Only for members who switched game time on (#354): the others' presences are ignored, game icons too.
 client.on(Events.PresenceUpdate, (_old, presence) => {
-  if (presence.user?.bot) return;
-  gameBuffer.add(games.update(presence.userId, gameKeys(presence.activities), new Date()));
+  if (presence.user?.bot || !gameOptIns.has(presence.userId)) return;
+  gameOptIns.presence(presence.userId, presence.activities, new Date());
   for (const [name, id] of gameApps(presence.activities)) {
     if (gameIconsLooked.has(name)) continue;
     gameIconsLooked.add(name);
@@ -1716,7 +1739,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           // which drops only what arrives while the member is hidden.
           games.drop(row.user_id);
           gameBuffer.drop(row.user_id);
-          gameBuffer.add(games.update(row.user_id, gameKeys(interaction.member.presence?.activities ?? []), new Date()));
+          gameOptIns.presence(row.user_id, interaction.member.presence?.activities ?? [], new Date());
         },
       },
       memberRow(interaction.user, interaction.member),
@@ -1754,6 +1777,7 @@ async function forgetCommand(interaction: ChatInputCommandInteraction<"cached">)
       async forget(userId) {
         const { error } = await db.rpc("forget_user", { member: userId });
         if (error) throw new Error(`forget_user: ${error.message}`);
+        gameOptIns.switchOff(userId);
       },
     },
     interaction.user.id,
@@ -1763,9 +1787,31 @@ async function forgetCommand(interaction: ChatInputCommandInteraction<"cached">)
   await interaction.editReply({ content: reply, components: [] });
 }
 
-/** /profile visibility: who can see the caller's /u/[userId] page; /profile champion: their favourite. */
+/** /profile visibility: who can see the caller's /u/[userId] page; /profile champion: their favourite; /profile games: game time on or off. */
 async function profileCommand(interaction: ChatInputCommandInteraction<"cached">): Promise<void> {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  if (interaction.options.getSubcommand() === "games") {
+    await interaction.editReply(
+      await setCountGames(
+        {
+          async setCountGames(userId, on) {
+            const { data, error } = await db
+              .from("profiles")
+              .upsert({ user_id: userId, count_games: on, updated_at: new Date().toISOString() }, { onConflict: "user_id" })
+              .select("user_id, count_games_since");
+            if (error) throw new Error(`profiles upsert: ${error.message}`);
+            if (data.length === 0) return false;
+            if (on) gameOptIns.switchOn(userId, data[0].count_games_since as string, interaction.member.presence?.activities ?? [], new Date());
+            else gameOptIns.switchOff(userId);
+            return true;
+          },
+        },
+        interaction.user.id,
+        interaction.options.getString("state", true),
+      ),
+    );
+    return;
+  }
   if (interaction.options.getSubcommand() === "champion") {
     const typed = interaction.options.getString("champion");
     await interaction.editReply(
@@ -3030,7 +3076,7 @@ async function startServer(guild: Guild): Promise<void> {
     server.timeline.addVoice(server.voice.sync(inVoice.map((m) => m.id), new Date()));
     // Whoever was already playing is counted from now on, like voice.
     for (const p of guild.presences.cache.values()) {
-      if (!p.user?.bot) gameBuffer.add(games.update(p.userId, gameKeys(p.activities), new Date()));
+      if (!p.user?.bot) gameOptIns.presence(p.userId, p.activities, new Date());
     }
   } catch (err) {
     log("error", "member_sync_failed", { guild: guild.id, error: err });
@@ -3268,6 +3314,7 @@ client.once(Events.ClientReady, async (c) => {
   setInterval(() => void periodicFlush(), FLUSH_MS);
   void rotatePresence();
   setInterval(() => void rotatePresence(), PRESENCE_MS);
+  setInterval(() => void tracked("game_opt_ins", loadGameOptIns()), OPT_INS_MS);
   // Reread daily too, so a failed read on start does not leave /card empty until a restart.
   const cardCatalogue = () => {
     void tracked("riftbound_catalogue", loadCatalogue());
@@ -3291,6 +3338,8 @@ client.once(Events.ClientReady, async (c) => {
     setInterval(weeklyReports, REPORT_CHECK_MS);
   });
   await registerGlobalCommands();
+  // Before startServer, which starts the game time of whoever is already playing.
+  await tracked("game_opt_ins", loadGameOptIns());
   for (const guild of c.guilds.cache.values()) await startServer(guild);
   // After startServer, which clears left_at of every server the bot is in.
   void tracked("retention", forgetLeftServers());

@@ -35,6 +35,23 @@ export const PROFILE_COMMAND = {
     },
     {
       type: ApplicationCommandOptionType.Subcommand,
+      name: "games",
+      description: "Whether the bot counts your game time from your Discord status",
+      options: [
+        {
+          type: ApplicationCommandOptionType.String,
+          name: "state",
+          description: "On or off",
+          required: true,
+          choices: [
+            { name: "On: count the games in my Discord status", value: "on" },
+            { name: "Off: stop, and delete my game time", value: "off" },
+          ],
+        },
+      ],
+    },
+    {
+      type: ApplicationCommandOptionType.Subcommand,
       name: "champion",
       description: "Your favourite League champion on your profile; leave it out to clear it",
       options: [
@@ -80,6 +97,28 @@ export interface ProfileWriter {
   setVisibility(userId: string, visibility: Visibility): Promise<boolean>;
   /** The same for the favourite champion's id; null clears it. */
   setChampion(userId: string, champion: string | null): Promise<boolean>;
+  /** The same for counting game time; off also deletes the stored game time (the database does). */
+  setCountGames(userId: string, on: boolean): Promise<boolean>;
+}
+
+/** /profile games: `state` is the raw option value, "on" or "off". */
+export async function setCountGames(
+  writer: Pick<ProfileWriter, "setCountGames">,
+  userId: string,
+  state: string,
+): Promise<string> {
+  const on = state === "on";
+  try {
+    if (!(await writer.setCountGames(userId, on))) {
+      return "You asked to be forgotten, so nothing was saved. Use /show-me first.";
+    }
+  } catch (err) {
+    console.error("count games update failed:", err);
+    return "Something went wrong, nothing was changed. Please try again later.";
+  }
+  return on
+    ? "Game time is on: the bot counts the games in your Discord status, unless you are hidden with /hide-me. /profile games off stops it and deletes it."
+    : "Game time is off: the bot no longer counts it, and your stored game time is deleted.";
 }
 
 /** Apply the choice and return the (ephemeral) reply; `level` is the raw option value. */
