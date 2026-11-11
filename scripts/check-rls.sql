@@ -6,7 +6,8 @@
 -- matches follow it too (#178), and decks not for lending hold their cards (#179); that borrow requests
 -- reach only lenders Who has it? shows (#299); that only public decks are teased logged
 -- out (#175); that the home feed follows decks, profiles, loan parties and hidden members (#302), and collection
--- activity sums a day and follows its setting (#303); then that /forget-me deletes
+-- activity sums a day and follows its setting (#303), and game time counts only members who switch it on
+-- (#354); then that /forget-me deletes
 -- and keeps out a user (#72). Needs a database,
 -- so it is not part of `make check`; migrate.yml runs it on the dev project after the seed.
 -- Run against a local Supabase or the dev project (never production); everything is rolled back.
@@ -69,13 +70,14 @@ begin
     insert into public.members (guild_id, user_id, display_name) values ('rls-other', 'rls-rls-other', 'x');
     insert into public.members (guild_id, user_id, display_name) values ('rls-other', 'rls-public', 'x');
     insert into public.guild_members (guild_id, user_id) values ('rls-other', 'rls-public');
-    insert into public.profiles (user_id, visibility)
-    values ('rls-rls-mine', 'members'), ('rls-rls-other', 'members'), ('rls-public', 'public'), ('rls-hidden', 'public');
+    insert into public.profiles (user_id, visibility, count_games)
+    values ('rls-rls-mine', 'members', true), ('rls-rls-other', 'members', true), ('rls-public', 'public', true), ('rls-hidden', 'public', true);
     -- Game time (#101): one row each, all playing now. rls-hidden is a member of rls-mine.
-    insert into public.guild_members (guild_id, user_id) values ('rls-mine', 'rls-hidden');
+    -- rls-games-off is too, without game time switched on (#354); the test user switches it on below.
+    insert into public.guild_members (guild_id, user_id) values ('rls-mine', 'rls-hidden'), ('rls-mine', 'rls-games-off');
     insert into public.activity_seconds (user_id, day, kind, name, seconds, live_at)
     select u, current_date, 'playing', 'Game', 3600, now()
-    from unnest(array['rls-user', 'rls-rls-mine', 'rls-hidden', 'rls-public']) u;
+    from unnest(array['rls-user', 'rls-rls-mine', 'rls-hidden', 'rls-public', 'rls-games-off']) u;
     -- Game icons (#141): read through guild_games() only.
     insert into public.games (name, application_id, icon) values ('Game', '1', 'i');
     -- Linked game accounts (#102): the bot's only, read by nobody else.
@@ -273,7 +275,12 @@ begin
     if (select visibility from public.profiles where user_id = 'rls-user') <> 'public' then
         raise exception 'set_profile_visibility() does not save your own setting';
     end if;
-    -- Game time (#101): read through functions only, per shared server, hidden members left out.
+    perform public.set_count_games(true);
+    if not (select count_games from public.profiles where user_id = 'rls-user') then
+        raise exception 'set_count_games() does not save your own setting';
+    end if;
+    -- Game time (#101): read through functions only, per shared server, hidden members and
+    -- members without game time switched on (#354) left out.
     -- Private again, so guild_playing_now() must count rls-user without naming them.
     perform public.set_profile_visibility('private');
     if exists (select from public.activity_seconds) then raise exception 'a member reads game time directly'; end if;
@@ -557,7 +564,7 @@ begin
         raise exception 'guild_games() does not return the game icon';
     end if;
     if (select players from public.guild_games('rls-mine', current_date)) <> 2 then
-        raise exception 'guild_games() does not count just the visible members';
+        raise exception 'guild_games() does not count just the visible members who switched game time on';
     end if;
     if exists (select from public.guild_games('rls-other', current_date))
         or exists (select from public.guild_playing_now('rls-other')) then
@@ -565,12 +572,14 @@ begin
     end if;
     if (select players from public.guild_playing_now('rls-mine')) <> array['x']
         or (select others from public.guild_playing_now('rls-mine')) <> 1 then
-        raise exception 'guild_playing_now() names a private profile or a hidden member';
+        raise exception 'guild_playing_now() names a private profile, a hidden member or one without game time on';
     end if;
     if not exists (select from public.profile_games('rls-rls-mine')) or exists (select from public.profile_games('rls-public'))
         or exists (select from public.profile_games('rls-hidden')) then
         raise exception 'profile_games() does not follow the profile and shared servers';
     end if;
+    -- Switching game time off deletes it (#354): checked as postgres below.
+    perform public.set_count_games(false);
     -- A hidden member's messages count towards the total without being readable one by one.
     if public.message_total('2026-01-01', 'rls-mine') <> 2 then
         raise exception 'message_total() leaves out hidden members';
@@ -981,6 +990,19 @@ set role postgres;
 do $$
 declare t text; n bigint;
 begin
+    if exists (select from public.activity_seconds where user_id = 'rls-user') then
+        raise exception 'switching game time off keeps the stored game time';
+    end if;
+    if not exists (select from public.activity_seconds where user_id = 'rls-rls-mine') then
+        raise exception 'switching game time off deletes someone else''s';
+    end if;
+    -- The bot's writes (#354): only members who switched it on are counted.
+    perform public.increment_games(gen_random_uuid(),
+        '[{"user_id": "rls-rls-mine", "day": "2026-01-01", "kind": "playing", "name": "Game", "seconds": 60, "live": false},
+          {"user_id": "rls-games-off", "day": "2026-01-01", "kind": "playing", "name": "Game", "seconds": 60, "live": false}]');
+    if (select array_agg(user_id) from public.activity_seconds where day = '2026-01-01' and user_id like 'rls-%') <> array['rls-rls-mine'] then
+        raise exception 'increment_games() counts a member without game time switched on';
+    end if;
     perform public.forget_user('rls-user');
     for t in
         select c.relname::text from pg_catalog.pg_attribute a

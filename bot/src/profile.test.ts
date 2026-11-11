@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { championChoices, matchChampion, PROFILE_COMMAND, setFavouriteChampion, setProfileVisibility, VISIBILITIES } from "./profile.js";
+import { championChoices, matchChampion, PROFILE_COMMAND, setCountGames, setFavouriteChampion, setProfileVisibility, VISIBILITIES } from "./profile.js";
 
 describe("PROFILE_COMMAND", () => {
   it("offers every visibility the profiles table accepts", () => {
@@ -38,6 +38,26 @@ describe("setProfileVisibility", () => {
       null,
     );
     expect(reply).toMatch(/nothing was changed/);
+  });
+});
+
+describe("setCountGames", () => {
+  it.each([
+    ["on", true, /is on/],
+    ["off", false, /deleted/],
+  ])("writes %s for the caller", async (state, on, reply) => {
+    const write = vi.fn(async () => true);
+    expect(await setCountGames({ setCountGames: write }, "a", state)).toMatch(reply);
+    expect(write).toHaveBeenCalledWith("a", on);
+  });
+
+  it("tells a forgotten user nothing was saved", async () => {
+    expect(await setCountGames({ setCountGames: async () => false }, "a", "on")).toMatch(/\/show-me/);
+  });
+
+  it("tells the caller when the write fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await setCountGames({ setCountGames: async () => Promise.reject(new Error("down")) }, "a", "off")).toMatch(/nothing was changed/);
   });
 });
 

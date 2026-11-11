@@ -133,6 +133,51 @@ export class GameSessions {
   }
 }
 
+/**
+ * Game time is counted only for members who switched it on (#354). Everyone else's presence is
+ * ignored: no session is opened and nothing is buffered.
+ */
+export class GameOptIns {
+  private on = new Set<string>();
+
+  constructor(
+    private sessions: GameSessions,
+    private buffer: GameBuffer,
+  ) {}
+
+  has(userId: string): boolean {
+    return this.on.has(userId);
+  }
+
+  /** A presence's activities (empty when offline); counted only when the member switched it on. */
+  presence(userId: string, activities: readonly { type: number; name: string }[], at: Date): void {
+    if (this.on.has(userId)) this.buffer.add(this.sessions.update(userId, gameKeys(activities), at));
+  }
+
+  switchOn(userId: string, activities: readonly { type: number; name: string }[], at: Date): void {
+    this.on.add(userId);
+    this.presence(userId, activities, at);
+  }
+
+  /** Forgets the open sessions and unwritten time; the database deletes what was written. */
+  switchOff(userId: string): void {
+    this.on.delete(userId);
+    this.sessions.drop(userId);
+    this.buffer.drop(userId);
+  }
+
+  /**
+   * Everyone the database has switched on, which also takes in switches made on the website.
+   * shortcut: a member switched on on the website counts from their next status change, start
+   * from the cached presence if that delay matters.
+   */
+  replace(userIds: Iterable<string>): void {
+    const next = new Set(userIds);
+    for (const userId of this.on) if (!next.has(userId)) this.switchOff(userId);
+    for (const userId of next) this.on.add(userId);
+  }
+}
+
 /** Sent under one id, so the database can drop a retry it already applied. */
 export interface GameBatch {
   id: string;

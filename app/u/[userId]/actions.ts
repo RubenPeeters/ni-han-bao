@@ -58,6 +58,16 @@ export async function setFeedCollection(formData: FormData) {
   revalidatePath("/settings");
 }
 
+/** Count my game time, on /settings; off deletes the stored game time too (a trigger in the database). */
+export async function setCountGames(formData: FormData) {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_count_games", { p_on: formData.get("games") === "on" });
+  if (error) throw new Error(`set_count_games failed: ${error.message}`);
+  revalidatePath("/s/[guildId]/games", "page");
+  revalidatePath("/u/[userId]", "page");
+  revalidatePath("/settings");
+}
+
 /** The once-asked question of how decks count on the wishlist; preset on new decks. */
 export async function setWishlistMode(formData: FormData) {
   const supabase = await createClient();

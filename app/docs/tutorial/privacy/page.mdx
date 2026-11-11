@@ -8,7 +8,7 @@ The Demo server's members see each other's names and counts. This last page is a
 
 ## What is stored
 
-The bot stores counts, times, ids and names: how many messages, in which channel, at which hour; reactions; time in voice; games from your Discord status; joins and leaves. It never stores what anyone writes: it does not even have Discord's permission to read message content. League ranks and games are stored only after `/lol link`, Riftbound cards only when you enter them. [About & privacy](/about) has the full list.
+The bot stores counts, times, ids and names: how many messages, in which channel, at which hour; reactions; time in voice; games from your Discord status, only for members who switch that on; joins and leaves. It never stores what anyone writes: it does not even have Discord's permission to read message content. League ranks and games are stored only after `/lol link`, Riftbound cards only when you enter them. [About & privacy](/about) has the full list.
 
 Logged out, the site shows totals across all servers only: no server names, nobody's name. The Demo server is not even in those totals, since Anna [left it out](/docs/tutorial/new-server#choosing-the-settings).
 
@@ -23,6 +23,10 @@ Anna's profile brings her servers together: her activity, her ranks, her collect
 ![A profile page](/docs/shots/profile.png)
 
 A private profile also keeps you out of **Playing now** and out of **Who has it?** on card pages.
+
+## Game time
+
+The bot counts the game in your Discord status only if you ask it to. Bram types `/profile games on`, or ticks **Count my game time** on [Settings](/settings#profile): from then on his games count towards the server's **What we play** page and show on his profile. Hana never switches it on, so the bot ignores her status. `/profile games off` stops it and deletes the game time stored so far.
 
 ## Hiding in one server
 

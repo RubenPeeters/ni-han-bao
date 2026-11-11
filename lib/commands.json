@@ -58,6 +58,22 @@
         ]
       },
       {
+        "name": "profile games",
+        "description": "Whether the bot counts your game time from your Discord status",
+        "options": [
+          {
+            "name": "state",
+            "description": "On or off",
+            "type": "string",
+            "required": true,
+            "choices": [
+              "On: count the games in my Discord status",
+              "Off: stop, and delete my game time"
+            ]
+          }
+        ]
+      },
+      {
         "name": "profile champion",
         "description": "Your favourite League champion on your profile; leave it out to clear it",
         "options": [

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { flushGames, gameApps, GameBuffer, gameKeys, GameSessions, MAX_SESSION_S, type GameBatch } from "./games.js";
+import { flushGames, gameApps, GameBuffer, gameKeys, GameOptIns, GameSessions, MAX_SESSION_S, type GameBatch } from "./games.js";
 
 const at = (time: string, day = "17") => new Date(`2026-10-${day}T${time}Z`);
 
@@ -108,6 +108,53 @@ describe("GameSessions", () => {
     expect(s.collect(at("10:30:00"))).toEqual([]);
     s.update("a", ["playing:A"], at("10:30:00"));
     expect(s.collect(at("10:40:00"))).toMatchObject([{ seconds: 600 }]);
+  });
+});
+
+describe("GameOptIns", () => {
+  const playing = [{ type: 0, name: "Riftbound" }];
+  const optIns = () => {
+    const sessions = new GameSessions();
+    const buffer = new GameBuffer();
+    return { sessions, buffer, optIns: new GameOptIns(sessions, buffer) };
+  };
+
+  it("ignores the presence of a member who did not switch game time on", () => {
+    const { sessions, buffer, optIns: o } = optIns();
+    o.presence("u", playing, at("10:00:00"));
+    o.presence("u", [], at("11:00:00"));
+    expect(sessions.size).toBe(0);
+    expect(buffer.drain()).toEqual([]);
+  });
+
+  it("counts a member who switched it on", () => {
+    const { buffer, optIns: o } = optIns();
+    o.replace(["u"]);
+    o.presence("u", playing, at("10:00:00"));
+    o.presence("u", [], at("11:00:00"));
+    expect(buffer.drain()).toEqual([{ user_id: "u", day: "2026-10-17", kind: "playing", name: "Riftbound", seconds: 3600, live: false }]);
+  });
+
+  it("starts from the current status when switched on, and forgets it all when switched off", () => {
+    const { sessions, buffer, optIns: o } = optIns();
+    o.switchOn("u", playing, at("10:00:00"));
+    expect(sessions.size).toBe(1);
+    buffer.add(sessions.collect(at("10:30:00")));
+    o.switchOff("u");
+    expect(sessions.size).toBe(0);
+    expect(buffer.drain()).toEqual([]);
+    o.presence("u", playing, at("11:00:00"));
+    expect(sessions.size).toBe(0);
+  });
+
+  it("takes in switches made on the website", () => {
+    const { sessions, optIns: o } = optIns();
+    o.switchOn("u", playing, at("10:00:00"));
+    o.replace(["v"]);
+    expect(o.has("u")).toBe(false);
+    expect(sessions.size).toBe(0);
+    o.presence("v", playing, at("10:00:00"));
+    expect(sessions.size).toBe(1);
   });
 });
 
