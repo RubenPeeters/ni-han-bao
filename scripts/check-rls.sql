@@ -996,12 +996,20 @@ begin
     if not exists (select from public.activity_seconds where user_id = 'rls-rls-mine') then
         raise exception 'switching game time off deletes someone else''s';
     end if;
-    -- The bot's writes (#354): only members who switched it on are counted.
-    perform public.increment_games(gen_random_uuid(),
-        '[{"user_id": "rls-rls-mine", "day": "2026-01-01", "kind": "playing", "name": "Game", "seconds": 60, "live": false},
-          {"user_id": "rls-games-off", "day": "2026-01-01", "kind": "playing", "name": "Game", "seconds": 60, "live": false}]');
+    -- The bot's writes (#354): only members who switched it on are counted, and only time counted
+    -- since their latest switch on.
+    perform public.increment_games(gen_random_uuid(), jsonb_build_array(
+        jsonb_build_object('user_id', 'rls-rls-mine', 'day', '2026-01-01', 'kind', 'playing', 'name', 'Game', 'seconds', 60, 'live', false,
+            'since', (select count_games_since from public.profiles where user_id = 'rls-rls-mine')),
+        jsonb_build_object('user_id', 'rls-rls-mine', 'day', '2026-01-02', 'kind', 'playing', 'name', 'Game', 'seconds', 60, 'live', false,
+            'since', '2000-01-01T00:00:00Z'),
+        jsonb_build_object('user_id', 'rls-games-off', 'day', '2026-01-01', 'kind', 'playing', 'name', 'Game', 'seconds', 60, 'live', false,
+            'since', '2000-01-01T00:00:00Z')));
     if (select array_agg(user_id) from public.activity_seconds where day = '2026-01-01' and user_id like 'rls-%') <> array['rls-rls-mine'] then
         raise exception 'increment_games() counts a member without game time switched on';
+    end if;
+    if exists (select from public.activity_seconds where day = '2026-01-02' and user_id like 'rls-%') then
+        raise exception 'increment_games() counts time from before the latest switch on';
     end if;
     perform public.forget_user('rls-user');
     for t in

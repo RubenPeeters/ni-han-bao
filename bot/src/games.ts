@@ -138,7 +138,8 @@ export class GameSessions {
  * ignored: no session is opened and nothing is buffered.
  */
 export class GameOptIns {
-  private on = new Set<string>();
+  /** User to when they last switched it on (profiles.count_games_since), sent with their rows. */
+  private on = new Map<string, string>();
 
   constructor(
     private sessions: GameSessions,
@@ -154,8 +155,12 @@ export class GameOptIns {
     if (this.on.has(userId)) this.buffer.add(this.sessions.update(userId, gameKeys(activities), at));
   }
 
-  switchOn(userId: string, activities: readonly { type: number; name: string }[], at: Date): void {
-    this.on.add(userId);
+  /** A new `since` is a new switch on: what was counted under the old one is forgotten. */
+  switchOn(userId: string, since: string, activities: readonly { type: number; name: string }[], at: Date): void {
+    if (this.on.get(userId) !== since) {
+      this.switchOff(userId);
+      this.on.set(userId, since);
+    }
     this.presence(userId, activities, at);
   }
 
@@ -167,14 +172,27 @@ export class GameOptIns {
   }
 
   /**
-   * Everyone the database has switched on, which also takes in switches made on the website.
-   * shortcut: a member switched on on the website counts from their next status change, start
-   * from the cached presence if that delay matters.
+   * Everyone the database has switched on, which also takes in switches made on the website,
+   * an off and on again between two polls too. `activities` is a member's cached presence.
    */
-  replace(userIds: Iterable<string>): void {
-    const next = new Set(userIds);
-    for (const userId of this.on) if (!next.has(userId)) this.switchOff(userId);
-    for (const userId of next) this.on.add(userId);
+  replace(
+    optIns: Iterable<{ userId: string; since: string }>,
+    activities: (userId: string) => readonly { type: number; name: string }[],
+    at: Date,
+  ): void {
+    const next = new Map([...optIns].map((o) => [o.userId, o.since]));
+    for (const userId of this.on.keys()) if (!next.has(userId)) this.switchOff(userId);
+    for (const [userId, since] of next) {
+      if (this.on.get(userId) !== since) this.switchOn(userId, since, activities(userId), at);
+    }
+  }
+
+  /** Rows with the switch on they were counted under; the database drops any but the latest. */
+  stamp(rows: GameSecondsRow[]): (GameSecondsRow & { since: string })[] {
+    return rows.flatMap((r) => {
+      const since = this.on.get(r.user_id);
+      return since ? [{ ...r, since }] : [];
+    });
   }
 }
 

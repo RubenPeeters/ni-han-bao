@@ -2,6 +2,29 @@
 -- or on Settings. Off by default, for existing members too.
 
 alter table public.profiles add column if not exists count_games boolean not null default false;
+-- When it was last switched on. The bot sends it with every row and increment_games() takes only
+-- the current one, so time the bot counted before an off and on again on the site, which it
+-- learns of only at its next poll, is never written back.
+alter table public.profiles add column if not exists count_games_since timestamptz;
+
+create function public.stamp_count_games()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+    if new.count_games and (tg_op = 'INSERT' or not old.count_games) then
+        new.count_games_since := now();
+    end if;
+    return new;
+end;
+$$;
+
+revoke execute on function public.stamp_count_games() from public, anon, authenticated;
+
+create trigger stamp_count_games before insert or update of count_games on public.profiles
+    for each row execute function public.stamp_count_games();
 
 -- Nobody has switched it on yet, so all stored game time goes. The games table (names and
 -- icons, nothing about people) stays.
@@ -50,8 +73,9 @@ $$;
 revoke execute on function public.set_count_games(boolean) from public, anon;
 grant execute on function public.set_count_games(boolean) to authenticated;
 
--- As in 20261022120000_game_time.sql, and only for members who switched it on: the bot skips
--- the others, this drops what it sent before it learnt of a switch on the site.
+-- As in 20261022120000_game_time.sql, and only for members who switched it on, since the
+-- switch the bot counted under: the bot skips the others, this drops what it sent before it
+-- learnt of a switch on the site.
 create or replace function public.increment_games(batch uuid, games jsonb)
 returns void
 language plpgsql
@@ -68,9 +92,9 @@ begin
 
     insert into public.activity_seconds (user_id, day, kind, name, seconds, live_at)
     select g.user_id, g.day, g.kind, g.name, least(g.seconds, 86400), case when g.live then now() end
-    from jsonb_to_recordset(games) as g(user_id text, day date, kind text, name text, seconds integer, live boolean)
+    from jsonb_to_recordset(games) as g(user_id text, day date, kind text, name text, seconds integer, live boolean, since timestamptz)
     where not exists (select from public.members m where m.user_id = g.user_id and m.hidden)
-        and exists (select from public.profiles p where p.user_id = g.user_id and p.count_games)
+        and exists (select from public.profiles p where p.user_id = g.user_id and p.count_games and p.count_games_since = g.since)
     on conflict (user_id, day, kind, name)
     do update set
         seconds = least(public.activity_seconds.seconds + excluded.seconds, 86400),

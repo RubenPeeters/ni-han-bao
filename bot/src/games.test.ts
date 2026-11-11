@@ -129,15 +129,17 @@ describe("GameOptIns", () => {
 
   it("counts a member who switched it on", () => {
     const { buffer, optIns: o } = optIns();
-    o.replace(["u"]);
+    o.replace([{ userId: "u", since: "s1" }], () => [], at("09:00:00"));
     o.presence("u", playing, at("10:00:00"));
     o.presence("u", [], at("11:00:00"));
-    expect(buffer.drain()).toEqual([{ user_id: "u", day: "2026-10-17", kind: "playing", name: "Riftbound", seconds: 3600, live: false }]);
+    expect(o.stamp(buffer.drain())).toEqual([
+      { user_id: "u", day: "2026-10-17", kind: "playing", name: "Riftbound", seconds: 3600, live: false, since: "s1" },
+    ]);
   });
 
   it("starts from the current status when switched on, and forgets it all when switched off", () => {
     const { sessions, buffer, optIns: o } = optIns();
-    o.switchOn("u", playing, at("10:00:00"));
+    o.switchOn("u", "s1", playing, at("10:00:00"));
     expect(sessions.size).toBe(1);
     buffer.add(sessions.collect(at("10:30:00")));
     o.switchOff("u");
@@ -147,14 +149,35 @@ describe("GameOptIns", () => {
     expect(sessions.size).toBe(0);
   });
 
-  it("takes in switches made on the website", () => {
-    const { sessions, optIns: o } = optIns();
-    o.switchOn("u", playing, at("10:00:00"));
-    o.replace(["v"]);
+  it("takes in switches made on the website, starting from the cached status", () => {
+    const { sessions, buffer, optIns: o } = optIns();
+    o.switchOn("u", "s1", playing, at("10:00:00"));
+    o.replace([{ userId: "v", since: "s1" }], (userId) => (userId === "v" ? playing : []), at("10:00:00"));
     expect(o.has("u")).toBe(false);
-    expect(sessions.size).toBe(0);
-    o.presence("v", playing, at("10:00:00"));
     expect(sessions.size).toBe(1);
+    buffer.add(sessions.collect(at("10:10:00")));
+    expect(buffer.drain()).toMatchObject([{ user_id: "v", seconds: 600 }]);
+  });
+
+  it("forgets what was counted before an off and on again on the website, between two polls", () => {
+    const { sessions, buffer, optIns: o } = optIns();
+    o.replace([{ userId: "u", since: "s1" }], () => playing, at("10:00:00"));
+    buffer.add(sessions.collect(at("10:10:00")));
+    // Sent before the poll: still stamped s1, which the database no longer takes.
+    expect(o.stamp(buffer.drain())).toMatchObject([{ seconds: 600, since: "s1" }]);
+    buffer.add(sessions.collect(at("10:20:00")));
+    o.replace([{ userId: "u", since: "s2" }], () => playing, at("10:30:00"));
+    expect(buffer.drain()).toEqual([]);
+    buffer.add(sessions.collect(at("10:40:00")));
+    expect(o.stamp(buffer.drain())).toMatchObject([{ seconds: 600, since: "s2" }]);
+  });
+
+  it("keeps counting when a poll finds the same switch", () => {
+    const { sessions, buffer, optIns: o } = optIns();
+    o.replace([{ userId: "u", since: "s1" }], () => playing, at("10:00:00"));
+    o.replace([{ userId: "u", since: "s1" }], () => [], at("10:05:00"));
+    buffer.add(sessions.collect(at("10:10:00")));
+    expect(buffer.drain()).toMatchObject([{ seconds: 600 }]);
   });
 });
 

@@ -344,11 +344,16 @@ const gameOptIns = new GameOptIns(games, gameBuffer);
 /** Who switched game time on (#354), from the database. */
 async function loadGameOptIns(): Promise<void> {
   const ids = await readAll(async (from, to) => {
-    const { data, error } = await db.from("profiles").select("user_id").eq("count_games", true).order("user_id").range(from, to);
+    const { data, error } = await db
+      .from("profiles")
+      .select("user_id, count_games_since")
+      .eq("count_games", true)
+      .order("user_id")
+      .range(from, to);
     if (error) throw new Error(`profiles select: ${error.message}`);
-    return data.map((r) => r.user_id as string);
+    return data.map((r) => ({ userId: r.user_id as string, since: r.count_games_since as string }));
   });
-  gameOptIns.replace(ids);
+  gameOptIns.replace(ids, cachedActivities, new Date());
 }
 
 /** Logs each stream that failed and reports whether all of them were written. */
@@ -364,7 +369,7 @@ async function flushAll(): Promise<boolean> {
   try {
     await flushGames(gameBuffer, {
       async incrementGames(batch) {
-        const { error } = await db.rpc("increment_games", { batch: batch.id, games: batch.games });
+        const { error } = await db.rpc("increment_games", { batch: batch.id, games: gameOptIns.stamp(batch.games) });
         if (error) throw new Error(`increment_games: ${error.message}`);
       },
     });
@@ -715,6 +720,10 @@ client.on(Events.VoiceStateUpdate, (_old, state) => {
   server.timeline.setMember(memberRow(state.member.user, state.member));
   server.voice.update(state.id, true, new Date());
 });
+
+/** A user's activities from any shared server's presence cache; none when offline or unknown. */
+const cachedActivities = (userId: string) =>
+  client.guilds.cache.find((g) => g.presences.cache.has(userId))?.presences.cache.get(userId)?.activities ?? [];
 
 // discord.js drops the member or guild from its cache before emitting the leave or delete.
 const sharesServer = (userId: string) => client.guilds.cache.some((g) => g.members.cache.has(userId));
@@ -1789,10 +1798,10 @@ async function profileCommand(interaction: ChatInputCommandInteraction<"cached">
             const { data, error } = await db
               .from("profiles")
               .upsert({ user_id: userId, count_games: on, updated_at: new Date().toISOString() }, { onConflict: "user_id" })
-              .select("user_id");
+              .select("user_id, count_games_since");
             if (error) throw new Error(`profiles upsert: ${error.message}`);
             if (data.length === 0) return false;
-            if (on) gameOptIns.switchOn(userId, interaction.member.presence?.activities ?? [], new Date());
+            if (on) gameOptIns.switchOn(userId, data[0].count_games_since as string, interaction.member.presence?.activities ?? [], new Date());
             else gameOptIns.switchOff(userId);
             return true;
           },
